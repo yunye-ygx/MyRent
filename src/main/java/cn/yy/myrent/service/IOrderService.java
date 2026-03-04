@@ -14,5 +14,5 @@ import com.baomidou.mybatisplus.extension.service.IService;
  */
 public interface IOrderService extends IService<Order> {
 
-    void createOrder(LockHouseReqDTO lockHouse, Long userId);
+    void createOrder(LockHouseReqDTO lockHouse);
 }
