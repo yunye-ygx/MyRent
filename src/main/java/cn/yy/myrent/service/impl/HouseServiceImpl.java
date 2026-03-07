@@ -1,10 +1,16 @@
 package cn.yy.myrent.service.impl;
 
+import cn.yy.myrent.dto.SearchHouseReqDTO;
 import cn.yy.myrent.entity.House;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.service.IHouseService;
+import cn.yy.myrent.vo.HouseVO;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
 
 /**
  * <p>
@@ -17,4 +23,12 @@ import org.springframework.stereotype.Service;
 @Service
 public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements IHouseService {
 
+    @Autowired
+    private ElasticsearchOperations elasticsearchOperations;
+
+    @Override
+    public List<HouseVO> searchNearbyHouse(SearchHouseReqDTO reqDTO) {
+
+        return null;
+    }
 }

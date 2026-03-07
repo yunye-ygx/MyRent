@@ -1,7 +1,11 @@
 package cn.yy.myrent.service;
 
+import cn.yy.myrent.dto.SearchHouseReqDTO;
 import cn.yy.myrent.entity.House;
+import cn.yy.myrent.vo.HouseVO;
 import com.baomidou.mybatisplus.extension.service.IService;
+
+import java.util.List;
 
 /**
  * <p>
@@ -14,4 +18,5 @@ import com.baomidou.mybatisplus.extension.service.IService;
 public interface IHouseService extends IService<House> {
 
 
+    List<HouseVO> searchNearbyHouse(SearchHouseReqDTO reqDTO);
 }
