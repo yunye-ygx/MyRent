@@ -32,3 +32,12 @@ springdoc:
     enabled: true
   swagger-ui:
     enabled: true
+
+canal:
+  server:
+    host: 127.0.0.1
+    port: 11111
+    destination: example
+    username: canal
+    password: Canal@123456
+    batchSize: 1000

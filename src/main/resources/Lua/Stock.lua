@@ -4,18 +4,18 @@
 
 local key = "house:lock:" .. KEYS[1]
 
-local current = redis.call('GET', key)
+local current = redis.call('GET', key,'EX',30)
 
 -- 如果不存在，说明房源未初始化（可视为可租）
 if current == false then
-    redis.call('SET', key, '2')
+    redis.call('SET', key, '2','EX',30)
 
     return 1  -- 成功锁定
 end
 
 -- 如果当前是"可租"(1)，则锁定为"已锁定"(2)
 if current == '1' then
-    redis.call('SET', key, '2')
+    redis.call('SET', key, '2','EX',30)
 
     return 1  -- 成功锁定
 end

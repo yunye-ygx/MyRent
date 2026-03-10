@@ -32,30 +32,33 @@ public class OrderTimeoutListener {
     @RabbitListener(queues = RabbitMQConfig.ORDER_DL_QUEUE, ackMode = "MANUAL")
     @Transactional(rollbackFor = Exception.class)
     public void orderTimeout(String orderNo, Message message, Channel channel) throws IOException {
-        try {
-            Order order = orderMapper.selectOrderNo(orderNo);
-            if (order != null && order.getStatus() == 0) {
-                boolean updated = orderService.update()
-                        .set("status", 2)
-                        .eq("order_no", orderNo)
-                        .eq("status", 0)
-                        .update();
+        boolean flag=stringRedisTemplate.opsForValue().setIfAbsent("ordertime:key:",orderNo);
+        if(flag){
+            try {
+                Order order = orderMapper.selectOrderNo(orderNo);
+                if (order != null && order.getStatus() == 0) {
+                    boolean updated = orderService.update()
+                            .set("status", 2)
+                            .eq("order_no", orderNo)
+                            .eq("status", 0)
+                            .update();
 
-                House house = houseMapper.selectById(order.getHouseId());
-                if (updated && house != null && house.getStatus() == 2) {
-                    house.setStatus(1);
-                    houseMapper.updateById(house);
-                    System.out.println("订单[" + orderNo + "]超时未支付，已自动关单并释放房源[" + house.getId() + "]");
-                    stringRedisTemplate.opsForValue().set("house:lock:" + house.getId().toString(), "1");
+                    House house = houseMapper.selectById(order.getHouseId());
+                    if (updated && house != null && house.getStatus() == 2) {
+                        house.setStatus(1);
+                        houseMapper.updateById(house);
+                        System.out.println("订单[" + orderNo + "]超时未支付，已自动关单并释放房源[" + house.getId() + "]");
+                        stringRedisTemplate.opsForValue().set("house:lock:" + house.getId().toString(), "1");
+                    }
+                } else {
+                    System.out.println("订单[" + orderNo + "]已支付，无需处理延时关单任务");
                 }
-            } else {
-                System.out.println("订单[" + orderNo + "]已支付，无需处理延时关单任务");
+                channel.basicAck(message.getMessageProperties().getDeliveryTag(), false);
+            } catch (Exception e) {
+                // 出现异常时拒绝消息，避免反复重试；可按需改为重回队列
+                channel.basicNack(message.getMessageProperties().getDeliveryTag(), false, false);
+                throw e;
             }
-            channel.basicAck(message.getMessageProperties().getDeliveryTag(), false);
-        } catch (Exception e) {
-            // 出现异常时拒绝消息，避免反复重试；可按需改为重回队列
-            channel.basicNack(message.getMessageProperties().getDeliveryTag(), false, false);
-            throw e;
         }
 
     }
