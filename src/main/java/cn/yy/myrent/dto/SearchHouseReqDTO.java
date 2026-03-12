@@ -18,7 +18,7 @@ public class SearchHouseReqDTO {
     // 搜索半径（单位：公里），默认 3 公里
     @Min(value = 100, message = "搜索半径最小为100米")
     @Max(value = 50000, message = "搜索半径最大为50km")
-    private String radius = "5km";
+    private String radius = "10km";
 
     // 分页参数
     @Min(value = 1, message = "页码最小为1")

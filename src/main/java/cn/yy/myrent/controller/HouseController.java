@@ -30,7 +30,7 @@ public class HouseController {
     @Autowired
     private IHouseService houseService;
 
-    @GetMapping("/nearby")
+    @PostMapping("/nearby")
     @Operation(summary = "根据坐标查询房源", description = "通过坐标获取房源详情") // ← 方法描述
     public Result searchHouse(@RequestBody SearchHouseReqDTO reqDTO){
 
