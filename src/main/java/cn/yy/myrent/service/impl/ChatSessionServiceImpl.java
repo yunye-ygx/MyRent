@@ -80,15 +80,15 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
             }
         }
 
-        ChatMessage chatMessage = new ChatMessage();
-        chatMessage.setId(IdUtil.getSnowflakeNextId());
-        chatMessage.setSessionId(sessionId);
-        chatMessage.setSenderId(senderId);
-        chatMessage.setReceiverId(receiverId);
-        chatMessage.setMsgType(1);
-        chatMessage.setContent(content);
-        chatMessage.setStatus(0);
-        chatMessage.setCreateTime(now);
+        ChatMessage chatMessage = new ChatMessage()
+                .setId(IdUtil.getSnowflakeNextId())
+                .setSessionId(sessionId)
+                .setSenderId(senderId)
+                .setReceiverId(receiverId)
+                .setMsgType(1)
+                .setContent(content)
+                .setStatus(0)
+                .setCreateTime(now);
 
         int rows = chatMessageMapper.insert(chatMessage);
         if (rows != 1) {
@@ -109,4 +109,3 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
         return minUserId + "_" + maxUserId;
     }
 }
-
