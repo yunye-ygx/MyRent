@@ -2,6 +2,7 @@ package cn.yy.myrent.service.impl;
 
 import cn.yy.myrent.common.Constant;
 import cn.yy.myrent.common.GenerateOrder;
+import cn.yy.myrent.common.UserContext;
 import cn.yy.myrent.config.RabbitMQConfig;
 import cn.yy.myrent.dto.LockHouseReqDTO;
 import cn.yy.myrent.entity.House;
@@ -56,8 +57,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void createOrder(LockHouseReqDTO lockHouse) {
+        Long currentUserId = UserContext.requireCurrentUserId();
 
-        log.info("下单请求开始，houseId={}, userId={}", lockHouse.getHouseId(), 1L);
+        log.info("下单请求开始，houseId={}, userId={}", lockHouse.getHouseId(), currentUserId);
         // 先走 Redis + Lua 原子判定/锁定
         Long locked = stringRedisTemplate.execute(
                 lockHouseScript,
@@ -101,7 +103,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 
         Order order = new Order();
         order.setOrderNo(GenerateOrder.generateOrderNo(Constant.ORDER_NO_PREFIX));
-        order.setUserId(1L);
+        order.setUserId(currentUserId);
         order.setHouseId(house.getId());
         order.setAmount(house.getDepositAmount());
         order.setStatus(0); // 0-待支付

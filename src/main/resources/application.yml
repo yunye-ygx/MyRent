@@ -41,3 +41,8 @@ canal:
     username: canal
     password: Canal@123456
     batchSize: 1000
+
+myrent:
+  jwt:
+    secret: MyRentJwtSecretChangeMe
+    expire-seconds: 86400

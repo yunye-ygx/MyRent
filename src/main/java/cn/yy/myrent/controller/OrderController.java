@@ -1,57 +1,101 @@
 package cn.yy.myrent.controller;
 
-
 import cn.yy.myrent.common.Result;
 import cn.yy.myrent.dto.LockHouseReqDTO;
+import cn.yy.myrent.entity.Order;
 import cn.yy.myrent.service.IOrderService;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-
-/**
- * <p>
- * 定金订单表 前端控制器
- * </p>
- *
- * @author yy
- * @since 2026-02-26
- */
 @RestController
 @RequestMapping("/order")
 public class OrderController {
+
     @Autowired
     private IOrderService orderService;
 
     @PostMapping("/createOrder")
-    @Operation(summary = "创建订单", description = "创建订单接口")
-    public ResponseEntity<Result> createOrder(@RequestBody LockHouseReqDTO lockHouse){
+    @Operation(summary = "创建订单", description = "下单并锁定房源")
+    public ResponseEntity<Result<Void>> createOrder(@RequestBody LockHouseReqDTO lockHouse) {
         try {
             orderService.createOrder(lockHouse);
-            return ResponseEntity.ok(Result.success("订单创建成功,请尽快支付"));
+            return ResponseEntity.ok(Result.success("订单创建成功，请尽快支付", null));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Result.error(401, e.getMessage()));
         } catch (RuntimeException e) {
-            // 业务失败提示前端
             String msg = e.getMessage() != null ? e.getMessage() : "房源已下架";
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Result.error(msg));
         } catch (Exception e) {
-            // 兜底错误
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Result.error("系统繁忙，请稍后重试"));
         }
     }
 
+    @GetMapping("/{id}")
+    @Operation(summary = "按ID查询订单")
+    public Result<Order> getById(@PathVariable("id") Long id) {
+        Order order = orderService.getById(id);
+        if (order == null) {
+            return Result.error("订单不存在");
+        }
+        return Result.success(order);
+    }
 
+    @GetMapping("/page")
+    @Operation(summary = "分页查询订单")
+    public Result<Page<Order>> page(
+            @RequestParam(value = "current", defaultValue = "1") Long current,
+            @RequestParam(value = "size", defaultValue = "10") Long size) {
+        long safeCurrent = Math.max(current, 1L);
+        long safeSize = Math.min(Math.max(size, 1L), 100L);
+        Page<Order> page = orderService.lambdaQuery()
+                .orderByDesc(Order::getId)
+                .page(new Page<>(safeCurrent, safeSize));
+        return Result.success(page);
+    }
+
+    @PostMapping
+    @Operation(summary = "新增订单")
+    public Result<Long> create(@RequestBody Order order) {
+        order.setId(null);
+        boolean saved = orderService.save(order);
+        if (!saved) {
+            return Result.error("新增订单失败");
+        }
+        return Result.success("新增订单成功", order.getId());
+    }
+
+    @PutMapping("/{id}")
+    @Operation(summary = "更新订单")
+    public Result<Void> update(@PathVariable("id") Long id, @RequestBody Order order) {
+        order.setId(id);
+        boolean updated = orderService.updateById(order);
+        if (!updated) {
+            return Result.error("更新订单失败或订单不存在");
+        }
+        return Result.success();
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(summary = "删除订单")
+    public Result<Void> delete(@PathVariable("id") Long id) {
+        boolean removed = orderService.removeById(id);
+        if (!removed) {
+            return Result.error("删除订单失败或订单不存在");
+        }
+        return Result.success();
+    }
 }

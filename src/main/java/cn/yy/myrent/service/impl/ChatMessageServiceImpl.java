@@ -1,21 +1,31 @@
 package cn.yy.myrent.service.impl;
 
 import cn.yy.myrent.entity.ChatMessage;
+import cn.yy.myrent.entity.User;
 import cn.yy.myrent.mapper.ChatMessageMapper;
+import cn.yy.myrent.mapper.UserMapper;
 import cn.yy.myrent.service.IChatMessageService;
 import cn.yy.myrent.vo.ChatPullVO;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatMessage> implements IChatMessageService {
 
     private static final int DEFAULT_PULL_LIMIT = 50;
     private static final int MAX_PULL_LIMIT = 200;
+
+    @Autowired
+    private UserMapper userMapper;
 
     @Override
     public ChatPullVO pullNewMessages(Long userId, Long lastMessageId, String sessionId, Integer limit) {
@@ -29,6 +39,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                 .orderByAsc(ChatMessage::getId)
                 .last("limit " + safeLimit)
                 .list();
+        fillUserNames(messages);
 
         long nextCursor = cursor;
         if (!messages.isEmpty()) {
@@ -40,6 +51,11 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         response.setNextCursor(nextCursor);
         response.setHasMore(messages.size() >= safeLimit);
         return response;
+    }
+
+    @Override
+    public void fillUserNames(List<ChatMessage> messages) {
+        attachUserNames(messages);
     }
 
     @Override
@@ -62,5 +78,35 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             return DEFAULT_PULL_LIMIT;
         }
         return Math.min(limit, MAX_PULL_LIMIT);
+    }
+
+    private void attachUserNames(List<ChatMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+
+        Set<Long> userIds = new HashSet<>();
+        for (ChatMessage message : messages) {
+            if (message.getSenderId() != null) {
+                userIds.add(message.getSenderId());
+            }
+            if (message.getReceiverId() != null) {
+                userIds.add(message.getReceiverId());
+            }
+        }
+        if (userIds.isEmpty()) {
+            return;
+        }
+
+        List<User> users = userMapper.selectBatchIds(userIds);
+        Map<Long, String> userNameMap = new HashMap<>();
+        for (User user : users) {
+            userNameMap.put(user.getId(), user.getName());
+        }
+
+        for (ChatMessage message : messages) {
+            message.setSenderName(userNameMap.get(message.getSenderId()));
+            message.setReceiverName(userNameMap.get(message.getReceiverId()));
+        }
     }
 }

@@ -4,8 +4,10 @@ import cn.hutool.core.util.IdUtil;
 import cn.yy.myrent.dto.MessageDTO;
 import cn.yy.myrent.entity.ChatMessage;
 import cn.yy.myrent.entity.ChatSession;
+import cn.yy.myrent.entity.User;
 import cn.yy.myrent.mapper.ChatMessageMapper;
 import cn.yy.myrent.mapper.ChatSessionMapper;
+import cn.yy.myrent.mapper.UserMapper;
 import cn.yy.myrent.service.IChatSessionService;
 import cn.yy.myrent.websocket.ChatWebSocketSessionManager;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -34,6 +36,9 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
 
     @Autowired
     private ChatWebSocketSessionManager sessionManager;
+
+    @Autowired
+    private UserMapper userMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -94,6 +99,11 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
         if (rows != 1) {
             throw new RuntimeException("发送消息失败");
         }
+
+        User sender = userMapper.selectById(senderId);
+        User receiver = userMapper.selectById(receiverId);
+        chatMessage.setSenderName(sender == null ? null : sender.getName());
+        chatMessage.setReceiverName(receiver == null ? null : receiver.getName());
 
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
