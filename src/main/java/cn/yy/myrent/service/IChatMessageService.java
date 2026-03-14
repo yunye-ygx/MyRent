@@ -10,6 +10,8 @@ public interface IChatMessageService extends IService<ChatMessage> {
 
     ChatPullVO pullNewMessages(Long userId, Long lastMessageId, String sessionId, Integer limit);
 
+    ChatPullVO pullHistoryMessages(Long userId, String sessionId, Long beforeMessageId, Integer limit);
+
     int markMessagesRead(Long userId, String sessionId, Long upToMessageId);
 
     void fillUserNames(List<ChatMessage> messages);

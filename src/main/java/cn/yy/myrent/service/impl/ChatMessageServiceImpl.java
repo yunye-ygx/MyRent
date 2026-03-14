@@ -12,6 +12,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -50,6 +52,48 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         response.setMessages(messages);
         response.setNextCursor(nextCursor);
         response.setHasMore(messages.size() >= safeLimit);
+        return response;
+    }
+
+    @Override
+    public ChatPullVO pullHistoryMessages(Long userId, String sessionId, Long beforeMessageId, Integer limit) {
+        if (userId == null || !StringUtils.hasText(sessionId)) {
+            ChatPullVO empty = new ChatPullVO();
+            empty.setMessages(Collections.emptyList());
+            empty.setNextCursor(beforeMessageId);
+            empty.setHasMore(false);
+            return empty;
+        }
+
+        int safeLimit = normalizeLimit(limit);
+
+        List<ChatMessage> messages = this.lambdaQuery()
+                .eq(ChatMessage::getSessionId, sessionId)
+                .and(wrapper -> wrapper.eq(ChatMessage::getSenderId, userId)
+                        .or()
+                        .eq(ChatMessage::getReceiverId, userId))
+                .lt(beforeMessageId != null, ChatMessage::getId, beforeMessageId)
+                .orderByDesc(ChatMessage::getId)
+                .last("limit " + (safeLimit + 1))
+                .list();
+
+        boolean hasMore = messages.size() > safeLimit;
+        if (hasMore) {
+            messages = new ArrayList<>(messages.subList(0, safeLimit));
+        }
+
+        Collections.reverse(messages);
+        fillUserNames(messages);
+
+        Long nextCursor = beforeMessageId;
+        if (!messages.isEmpty()) {
+            nextCursor = messages.get(0).getId();
+        }
+
+        ChatPullVO response = new ChatPullVO();
+        response.setMessages(messages);
+        response.setNextCursor(nextCursor);
+        response.setHasMore(hasMore);
         return response;
     }
 

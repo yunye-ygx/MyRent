@@ -4,7 +4,9 @@ import cn.yy.myrent.common.Result;
 import cn.yy.myrent.common.UserContext;
 import cn.yy.myrent.dto.ChatReadReqDTO;
 import cn.yy.myrent.entity.ChatMessage;
+import cn.yy.myrent.entity.ChatSession;
 import cn.yy.myrent.service.IChatMessageService;
+import cn.yy.myrent.service.IChatSessionService;
 import cn.yy.myrent.vo.ChatPullVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,6 +31,9 @@ public class ChatMessageController {
     @Autowired
     private IChatMessageService chatMessageService;
 
+    @Autowired
+    private IChatSessionService chatSessionService;
+
     @GetMapping("/pull")
     @Operation(description = "重连后补拉新消息")
     public Result<ChatPullVO> pull(
@@ -39,7 +44,34 @@ public class ChatMessageController {
         if (userId == null) {
             return Result.error(401, "请先登录");
         }
+        if (StringUtils.hasText(sessionId) && !hasSessionPermission(sessionId, userId)) {
+            return Result.error(403, "无权访问该会话");
+        }
         ChatPullVO result = chatMessageService.pullNewMessages(userId, lastMessageId, sessionId, limit);
+        return Result.success(result);
+    }
+
+    @GetMapping("/history")
+    @Operation(description = "上滑加载历史消息")
+    public Result<ChatPullVO> history(
+            @RequestParam("sessionId") String sessionId,
+            @RequestParam(value = "beforeMessageId", required = false) Long beforeMessageId,
+            @RequestParam(value = "limit", required = false) Integer limit) {
+        Long userId = UserContext.getCurrentUserId();
+        if (userId == null) {
+            return Result.error(401, "请先登录");
+        }
+        if (!StringUtils.hasText(sessionId)) {
+            return Result.error("sessionId不能为空");
+        }
+        if (beforeMessageId != null && beforeMessageId <= 0L) {
+            return Result.error("beforeMessageId必须大于0");
+        }
+        if (!hasSessionPermission(sessionId, userId)) {
+            return Result.error(403, "无权访问该会话");
+        }
+
+        ChatPullVO result = chatMessageService.pullHistoryMessages(userId, sessionId, beforeMessageId, limit);
         return Result.success(result);
     }
 
@@ -56,6 +88,10 @@ public class ChatMessageController {
                 || reqDTO.getUpToMessageId() <= 0L) {
             return Result.error("参数不能为空");
         }
+        if (!hasSessionPermission(reqDTO.getSessionId(), userId)) {
+            return Result.error(403, "无权操作该会话");
+        }
+
         int updatedCount = chatMessageService.markMessagesRead(userId, reqDTO.getSessionId(), reqDTO.getUpToMessageId());
         return Result.success("已读回执成功", updatedCount);
     }
@@ -63,10 +99,19 @@ public class ChatMessageController {
     @GetMapping("/{id}")
     @Operation(summary = "按ID查询消息")
     public Result<ChatMessage> getById(@PathVariable("id") Long id) {
+        Long userId = UserContext.getCurrentUserId();
+        if (userId == null) {
+            return Result.error(401, "请先登录");
+        }
+
         ChatMessage message = chatMessageService.getById(id);
         if (message == null) {
             return Result.error("消息不存在");
         }
+        if (!userId.equals(message.getSenderId()) && !userId.equals(message.getReceiverId())) {
+            return Result.error(403, "无权查看该消息");
+        }
+
         chatMessageService.fillUserNames(Collections.singletonList(message));
         return Result.success(message);
     }
@@ -77,9 +122,20 @@ public class ChatMessageController {
             @RequestParam(value = "current", defaultValue = "1") Long current,
             @RequestParam(value = "size", defaultValue = "10") Long size,
             @RequestParam(value = "sessionId", required = false) String sessionId) {
+        Long userId = UserContext.getCurrentUserId();
+        if (userId == null) {
+            return Result.error(401, "请先登录");
+        }
+        if (StringUtils.hasText(sessionId) && !hasSessionPermission(sessionId, userId)) {
+            return Result.error(403, "无权访问该会话");
+        }
+
         long safeCurrent = Math.max(current, 1L);
         long safeSize = Math.min(Math.max(size, 1L), 100L);
         Page<ChatMessage> page = chatMessageService.lambdaQuery()
+                .and(wrapper -> wrapper.eq(ChatMessage::getSenderId, userId)
+                        .or()
+                        .eq(ChatMessage::getReceiverId, userId))
                 .eq(StringUtils.hasText(sessionId), ChatMessage::getSessionId, sessionId)
                 .orderByDesc(ChatMessage::getId)
                 .page(new Page<>(safeCurrent, safeSize));
@@ -117,5 +173,17 @@ public class ChatMessageController {
             return Result.error("删除消息失败或消息不存在");
         }
         return Result.success();
+    }
+
+    private boolean hasSessionPermission(String sessionId, Long userId) {
+        if (!StringUtils.hasText(sessionId) || userId == null) {
+            return false;
+        }
+        return chatSessionService.lambdaQuery()
+                .eq(ChatSession::getSessionId, sessionId)
+                .and(wrapper -> wrapper.eq(ChatSession::getUserId1, userId)
+                        .or()
+                        .eq(ChatSession::getUserId2, userId))
+                .count() > 0;
     }
 }

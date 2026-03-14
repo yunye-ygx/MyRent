@@ -50,9 +50,17 @@ public class ChatSessionController {
     @GetMapping("/{id}")
     @Operation(summary = "按ID查询会话")
     public Result<ChatSession> getById(@PathVariable("id") Long id) {
+        Long userId = UserContext.getCurrentUserId();
+        if (userId == null) {
+            return Result.error(401, "请先登录");
+        }
+
         ChatSession session = chatSessionService.getById(id);
         if (session == null) {
             return Result.error("会话不存在");
+        }
+        if (!isSessionParticipant(session, userId)) {
+            return Result.error(403, "无权访问该会话");
         }
         return Result.success(session);
     }
@@ -62,9 +70,17 @@ public class ChatSessionController {
     public Result<Page<ChatSession>> page(
             @RequestParam(value = "current", defaultValue = "1") Long current,
             @RequestParam(value = "size", defaultValue = "10") Long size) {
+        Long userId = UserContext.getCurrentUserId();
+        if (userId == null) {
+            return Result.error(401, "请先登录");
+        }
+
         long safeCurrent = Math.max(current, 1L);
         long safeSize = Math.min(Math.max(size, 1L), 100L);
         Page<ChatSession> page = chatSessionService.lambdaQuery()
+                .and(wrapper -> wrapper.eq(ChatSession::getUserId1, userId)
+                        .or()
+                        .eq(ChatSession::getUserId2, userId))
                 .orderByDesc(ChatSession::getUpdateTime)
                 .page(new Page<>(safeCurrent, safeSize));
         return Result.success(page);
@@ -100,5 +116,11 @@ public class ChatSessionController {
             return Result.error("删除会话失败或会话不存在");
         }
         return Result.success();
+    }
+
+    private boolean isSessionParticipant(ChatSession session, Long userId) {
+        return session != null
+                && userId != null
+                && (userId.equals(session.getUserId1()) || userId.equals(session.getUserId2()));
     }
 }
