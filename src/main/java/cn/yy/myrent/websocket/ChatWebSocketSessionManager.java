@@ -47,6 +47,11 @@ public class ChatWebSocketSessionManager {
     public void register(Long userId, WebSocketSession session) {
         userSessionMap.computeIfAbsent(userId, key -> ConcurrentHashMap.newKeySet()).add(session);
         sessionUserMap.put(session.getId(), userId);
+        int connectionCount = userSessionMap.get(userId).size();
+        log.info("websocket session registered, userId={}, sessionId={}, userConnectionCount={}",
+                userId,
+                session.getId(),
+                connectionCount);
     }
 
     /**
@@ -67,6 +72,11 @@ public class ChatWebSocketSessionManager {
         if (sessions.isEmpty()) {
             userSessionMap.remove(userId);
         }
+        int leftCount = userSessionMap.containsKey(userId) ? userSessionMap.get(userId).size() : 0;
+        log.info("websocket session unregistered, userId={}, sessionId={}, userConnectionCount={}",
+                userId,
+                session.getId(),
+                leftCount);
     }
 
     /**
@@ -78,6 +88,7 @@ public class ChatWebSocketSessionManager {
     public void sendToUser(Long userId, Object payload) {
         Set<WebSocketSession> sessions = userSessionMap.get(userId);
         if (sessions == null || sessions.isEmpty()) {
+            log.debug("websocket push skipped: user offline, userId={}", userId);
             return;
         }
 
@@ -121,4 +132,3 @@ public class ChatWebSocketSessionManager {
         }
     }
 }
-

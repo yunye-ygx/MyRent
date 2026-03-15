@@ -4,6 +4,7 @@ import cn.yy.myrent.entity.User;
 import cn.yy.myrent.mapper.UserMapper;
 import cn.yy.myrent.service.IUserService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -17,6 +18,7 @@ import java.util.Base64;
 import java.util.regex.Pattern;
 
 @Service
+@Slf4j
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IUserService {
 
     private static final Pattern PHONE_PATTERN = Pattern.compile("^1\\d{10}$");
@@ -38,6 +40,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
 
         User existed = this.lambdaQuery().eq(User::getPhone, phone).one();
         if (existed != null) {
+            log.warn("注册失败：手机号已存在，phone={}", maskPhone(phone));
             throw new RuntimeException("手机号已注册");
         }
 
@@ -48,8 +51,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
                 .setCreateTime(LocalDateTime.now());
         boolean saved = this.save(user);
         if (!saved) {
+            log.error("注册失败：用户保存失败，phone={}", maskPhone(phone));
             throw new RuntimeException("注册失败");
         }
+        log.info("注册成功，userId={}, phone={}", user.getId(), maskPhone(phone));
         return toSafeUser(user);
     }
 
@@ -60,8 +65,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
 
         User user = this.lambdaQuery().eq(User::getPhone, phone).one();
         if (user == null || !matchesPassword(password, user.getPassword())) {
+            log.warn("登录失败：账号或密码错误，phone={}", maskPhone(phone));
             throw new RuntimeException("手机号或密码错误");
         }
+        log.info("登录成功，userId={}, phone={}", user.getId(), maskPhone(phone));
         return toSafeUser(user);
     }
 
@@ -141,9 +148,17 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             SecretKeyFactory skf = SecretKeyFactory.getInstance(PBKDF2_ALGORITHM);
             return skf.generateSecret(spec).getEncoded();
         } catch (Exception e) {
+            log.error("密码处理失败，algorithm={}", PBKDF2_ALGORITHM, e);
             throw new RuntimeException("密码处理失败");
         } finally {
             spec.clearPassword();
         }
+    }
+
+    private String maskPhone(String phone) {
+        if (!StringUtils.hasText(phone) || phone.length() < 7) {
+            return "***";
+        }
+        return phone.substring(0, 3) + "****" + phone.substring(phone.length() - 4);
     }
 }

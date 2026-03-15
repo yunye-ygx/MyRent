@@ -58,8 +58,21 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     @Transactional(rollbackFor = Exception.class)
     public void createOrder(LockHouseReqDTO lockHouse) {
         Long currentUserId = UserContext.requireCurrentUserId();
+        if (lockHouse == null || lockHouse.getHouseId() == null) {
+            throw new RuntimeException("houseId不能为空");
+        }
+
+        House house = houseService.getById(lockHouse.getHouseId());
+        if (house == null) {
+            throw new RuntimeException("房源不存在");
+        }
+        if (currentUserId.equals(house.getPublisherUserId())) {
+            throw new RuntimeException("不能租自己发布的房源");
+        }
 
         log.info("下单请求开始，houseId={}, userId={}", lockHouse.getHouseId(), currentUserId);
+        log.info("加载房源信息成功，houseId={}, deposit={}, status={}, publisherUserId={}",
+                house.getId(), house.getDepositAmount(), house.getStatus(), house.getPublisherUserId());
         // 先走 Redis + Lua 原子判定/锁定
         Long locked = stringRedisTemplate.execute(
                 lockHouseScript,
@@ -97,9 +110,6 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             throw new RuntimeException("房源已下架");
         }
         log.info("DB 乐观锁更新成功，houseId={} 状态置为锁定", lockHouse.getHouseId());
-
-        House house = houseService.getById(lockHouse.getHouseId());
-        log.info("加载房源信息成功，houseId={}, deposit={}, status={}", house.getId(), house.getDepositAmount(), house.getStatus());
 
         Order order = new Order();
         order.setOrderNo(GenerateOrder.generateOrderNo(Constant.ORDER_NO_PREFIX));

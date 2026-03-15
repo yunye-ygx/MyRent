@@ -6,6 +6,7 @@ import cn.yy.myrent.entity.Order;
 import cn.yy.myrent.service.IOrderService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/order")
+@Slf4j
 public class OrderController {
 
     @Autowired
@@ -29,16 +31,23 @@ public class OrderController {
     @PostMapping("/createOrder")
     @Operation(summary = "创建订单", description = "下单并锁定房源")
     public ResponseEntity<Result<Void>> createOrder(@RequestBody LockHouseReqDTO lockHouse) {
+        log.info("收到创建订单请求，houseId={}", lockHouse == null ? null : lockHouse.getHouseId());
         try {
             orderService.createOrder(lockHouse);
+            log.info("创建订单成功，houseId={}", lockHouse == null ? null : lockHouse.getHouseId());
             return ResponseEntity.ok(Result.success("订单创建成功，请尽快支付", null));
         } catch (IllegalStateException e) {
+            log.warn("创建订单失败：未登录或上下文缺失，houseId={}, message={}",
+                    lockHouse == null ? null : lockHouse.getHouseId(),
+                    e.getMessage());
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Result.error(401, e.getMessage()));
         } catch (RuntimeException e) {
             String msg = e.getMessage() != null ? e.getMessage() : "房源已下架";
+            log.warn("创建订单业务失败，houseId={}, message={}", lockHouse == null ? null : lockHouse.getHouseId(), msg);
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Result.error(msg));
         } catch (Exception e) {
+            log.error("创建订单系统异常，houseId={}", lockHouse == null ? null : lockHouse.getHouseId(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Result.error("系统繁忙，请稍后重试"));
         }

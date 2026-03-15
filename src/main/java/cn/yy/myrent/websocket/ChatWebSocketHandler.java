@@ -40,6 +40,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         Long userId = resolveUserId(session.getUri());
         if (userId == null) {
+            log.warn("websocket connect rejected: token invalid, sessionId={}, uri={}", session.getId(), session.getUri());
             session.close(CloseStatus.BAD_DATA.withReason("token is required"));
             return;
         }
@@ -63,6 +64,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
         sessionManager.unregister(session);
+        log.warn("websocket transport error, sessionId={}", session.getId(), exception);
         if (session.isOpen()) {
             session.close(CloseStatus.SERVER_ERROR);
         }

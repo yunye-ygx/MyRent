@@ -3,6 +3,7 @@ package cn.yy.myrent.entity;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableField;
 import java.time.LocalDateTime;
 import java.io.Serializable;
 import lombok.Data;
@@ -39,11 +40,13 @@ public class ChatSession implements Serializable {
     /**
      * 参与者A的ID (强制规定：存较小的ID)
      */
+    @TableField("user_id_1")
     private Long userId1;
 
     /**
      * 参与者B的ID (强制规定：存较大的ID)
      */
+    @TableField("user_id_2")
     private Long userId2;
 
     /**

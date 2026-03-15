@@ -8,6 +8,7 @@ import cn.yy.myrent.service.IChatMessageService;
 import cn.yy.myrent.vo.ChatPullVO;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -21,6 +22,7 @@ import java.util.Map;
 import java.util.Set;
 
 @Service
+@Slf4j
 public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatMessage> implements IChatMessageService {
 
     private static final int DEFAULT_PULL_LIMIT = 50;
@@ -43,6 +45,13 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                 .list();
         fillUserNames(messages);
 
+        log.debug("补拉新消息完成，userId={}, sessionId={}, cursor={}, limit={}, messageCount={}",
+                userId,
+                sessionId,
+                cursor,
+                safeLimit,
+                messages.size());
+
         long nextCursor = cursor;
         if (!messages.isEmpty()) {
             nextCursor = messages.get(messages.size() - 1).getId();
@@ -58,6 +67,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     @Override
     public ChatPullVO pullHistoryMessages(Long userId, String sessionId, Long beforeMessageId, Integer limit) {
         if (userId == null || !StringUtils.hasText(sessionId)) {
+            log.warn("拉取历史消息参数非法，userId={}, sessionId={}", userId, sessionId);
             ChatPullVO empty = new ChatPullVO();
             empty.setMessages(Collections.emptyList());
             empty.setNextCursor(beforeMessageId);
@@ -85,6 +95,14 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         Collections.reverse(messages);
         fillUserNames(messages);
 
+        log.debug("拉取历史消息完成，userId={}, sessionId={}, beforeMessageId={}, limit={}, messageCount={}, hasMore={}",
+                userId,
+                sessionId,
+                beforeMessageId,
+                safeLimit,
+                messages.size(),
+                hasMore);
+
         Long nextCursor = beforeMessageId;
         if (!messages.isEmpty()) {
             nextCursor = messages.get(0).getId();
@@ -105,6 +123,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     @Override
     public int markMessagesRead(Long userId, String sessionId, Long upToMessageId) {
         if (userId == null || !StringUtils.hasText(sessionId) || upToMessageId == null || upToMessageId <= 0L) {
+            log.warn("标记已读参数非法，userId={}, sessionId={}, upToMessageId={}", userId, sessionId, upToMessageId);
             return 0;
         }
 
@@ -114,7 +133,13 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                 .eq(ChatMessage::getSessionId, sessionId)
                 .le(ChatMessage::getId, upToMessageId)
                 .eq(ChatMessage::getStatus, 0);
-        return this.baseMapper.update(null, updateWrapper);
+        int updatedRows = this.baseMapper.update(null, updateWrapper);
+        log.info("标记已读完成，userId={}, sessionId={}, upToMessageId={}, updatedRows={}",
+                userId,
+                sessionId,
+                upToMessageId,
+                updatedRows);
+        return updatedRows;
     }
 
     private int normalizeLimit(Integer limit) {
