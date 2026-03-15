@@ -31,7 +31,7 @@ public class HouseController {
     private IHouseService houseService;
 
     @PostMapping("/nearby")
-    @Operation(summary = "附近房源搜索", description = "优先ES，失败自动降级DB")
+    @Operation(summary = "附近房源搜索", description = "优先ES，失败自动降级")
     public Result<HouseSearchResultVO> searchHouse(@RequestBody SearchHouseReqDTO reqDTO) {
         HouseSearchResultVO result = houseService.searchNearbyHouse(reqDTO);
         return Result.success(result);
@@ -73,7 +73,7 @@ public class HouseController {
 
         house.setId(null);
         house.setPublisherUserId(currentUserId);
-        boolean saved = houseService.save(house);
+        boolean saved = houseService.createHouseWithSync(house);
         if (!saved) {
             log.error("新增房源失败，publisherUserId={}, title={}", currentUserId, house.getTitle());
             return Result.error("新增房源失败");
@@ -107,7 +107,7 @@ public class HouseController {
 
         house.setId(id);
         house.setPublisherUserId(dbHouse.getPublisherUserId());
-        boolean updated = houseService.updateById(house);
+        boolean updated = houseService.updateHouseWithSync(id, house);
         if (!updated) {
             log.error("更新房源失败，houseId={}, currentUserId={}", id, currentUserId);
             return Result.error("更新房源失败或房源不存在");
@@ -139,7 +139,7 @@ public class HouseController {
             return Result.error(403, "仅发布人可删除该房源");
         }
 
-        boolean removed = houseService.removeById(id);
+        boolean removed = houseService.deleteHouseWithSync(id);
         if (!removed) {
             log.error("删除房源失败，houseId={}, currentUserId={}", id, currentUserId);
             return Result.error("删除房源失败或房源不存在");
@@ -148,3 +148,4 @@ public class HouseController {
         return Result.success();
     }
 }
+

@@ -3,18 +3,16 @@ package cn.yy.myrent.service.impl;
 import cn.yy.myrent.common.Constant;
 import cn.yy.myrent.common.GenerateOrder;
 import cn.yy.myrent.common.UserContext;
-import cn.yy.myrent.config.RabbitMQConfig;
 import cn.yy.myrent.dto.LockHouseReqDTO;
 import cn.yy.myrent.entity.House;
+import cn.yy.myrent.entity.LocalTask;
 import cn.yy.myrent.entity.Order;
-import cn.yy.myrent.entity.OrderTimeout;
 import cn.yy.myrent.mapper.OrderMapper;
 import cn.yy.myrent.service.IHouseService;
+import cn.yy.myrent.service.ILocalTaskService;
 import cn.yy.myrent.service.IOrderService;
-import cn.yy.myrent.service.IOrderTimeoutService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -27,6 +25,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.UUID;
 
 /**
  * 定金订单表 服务实现类
@@ -35,16 +34,19 @@ import java.util.Collections;
 @Slf4j
 public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements IOrderService {
 
+    private static final String LOCAL_TASK_BIZ_TYPE_ORDER = "ORDER";
+    private static final String LOCAL_TASK_EVENT_ORDER_TIMEOUT_RELEASE = "ORDER_TIMEOUT_RELEASE";
+    private static final int LOCAL_TASK_STATUS_PENDING = 0;
+    private static final int LOCAL_TASK_MAX_RETRY_COUNT = 5;
+
     @Autowired
     private IHouseService houseService;
     @Autowired
     private OrderMapper orderMapper;
     @Autowired
-    private RabbitTemplate rabbitTemplate;
-    @Autowired
     private StringRedisTemplate stringRedisTemplate;
     @Autowired
-    private IOrderTimeoutService orderTimeoutService;
+    private ILocalTaskService localTaskService;
 
     private DefaultRedisScript<Long> lockHouseScript;
 
@@ -99,12 +101,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         });
 
         // 用数据库的乐观锁解决超卖问题
-        boolean isUpdated = houseService.update()
-                .eq("id", lockHouse.getHouseId())
-                .eq("status", 1)
-                .set("status", 2)
-                .setSql("`version` = `version` + 1")
-                .update();
+        boolean isUpdated = houseService.updateHouseStatusWithSync(lockHouse.getHouseId(), 1, 2, "order-lock-house");
         if (!isUpdated) {
             log.warn("DB 乐观锁更新失败，houseId={} 可能已被抢", lockHouse.getHouseId());
             throw new RuntimeException("房源已下架");
@@ -122,12 +119,31 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         orderMapper.insert(order);
         log.info("订单入库成功，orderNo={}, expireAt={}", order.getOrderNo(), order.getExpireTime());
 
-      //写入本地表
-        OrderTimeout  orderTimeout = new OrderTimeout();
-        orderTimeout.setBizId(order.getOrderNo());
-        orderTimeout.setExpireTime(order.getExpireTime());
-        orderTimeoutService.save(orderTimeout);
-        log.info("本地消息记录写入成功，bizId={}, expireAt={}", orderTimeout.getBizId(), orderTimeout.getExpireTime());
+        // 写入本地任务表（通用本地消息/延迟任务）
+        LocalDateTime now = LocalDateTime.now();
+        LocalTask localTask = new LocalTask();
+        localTask.setMessageId(UUID.randomUUID().toString().replace("-", ""));
+        localTask.setBizType(LOCAL_TASK_BIZ_TYPE_ORDER);
+        localTask.setBizId(order.getOrderNo());
+        localTask.setEventType(LOCAL_TASK_EVENT_ORDER_TIMEOUT_RELEASE);
+        localTask.setPayload(order.getOrderNo());
+        localTask.setStatus(LOCAL_TASK_STATUS_PENDING);
+        localTask.setExecuteTime(order.getExpireTime());
+        localTask.setRetryCount(0);
+        localTask.setMaxRetryCount(LOCAL_TASK_MAX_RETRY_COUNT);
+        localTask.setVersion(0L);
+        localTask.setCreateTime(now);
+        localTask.setUpdateTime(now);
+
+        boolean taskSaved = localTaskService.save(localTask);
+        if (!taskSaved) {
+            throw new RuntimeException("写入本地任务失败");
+        }
+        log.info("本地任务写入成功，messageId={}, bizId={}, eventType={}, executeTime={}",
+                localTask.getMessageId(),
+                localTask.getBizId(),
+                localTask.getEventType(),
+                localTask.getExecuteTime());
 
 //        // 事务提交后再发 MQ，避免 DB 回滚但消息已发出的不一致问题，但是不能解决消息持久性
 //        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {

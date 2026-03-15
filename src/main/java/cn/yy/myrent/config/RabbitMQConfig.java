@@ -1,6 +1,7 @@
 package cn.yy.myrent.config;
 
 import org.springframework.amqp.core.*;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import java.util.HashMap;
@@ -19,6 +20,11 @@ public class RabbitMQConfig {
     public static final String ORDER_QUEUE = "order.queue";
     public static final String ORDER_ROUTING_KEY = "order.routing.key";
 
+    // 3. 房源DB->ES同步专用交换机与队列
+    public static final String HOUSE_SYNC_EXCHANGE = "house.sync.exchange";
+    public static final String HOUSE_SYNC_QUEUE = "house.sync.queue";
+    public static final String HOUSE_SYNC_ROUTING_KEY = "house.sync.routing.key";
+
     // ================== 死信组件配置 ==================
     @Bean
     public DirectExchange orderDlExchange() {
@@ -31,7 +37,8 @@ public class RabbitMQConfig {
     }
 
     @Bean
-    public Binding orderDlBinding(Queue orderDlQueue, DirectExchange orderDlExchange) {
+    public Binding orderDlBinding(@Qualifier("orderDlQueue") Queue orderDlQueue,
+                                  @Qualifier("orderDlExchange") DirectExchange orderDlExchange) {
         return BindingBuilder.bind(orderDlQueue).to(orderDlExchange).with(ORDER_DL_ROUTING_KEY);
     }
 
@@ -52,7 +59,24 @@ public class RabbitMQConfig {
     }
 
     @Bean
-    public Binding orderBinding(Queue orderQueue, DirectExchange orderExchange) {
+    public Binding orderBinding(@Qualifier("orderQueue") Queue orderQueue,
+                                @Qualifier("orderExchange") DirectExchange orderExchange) {
         return BindingBuilder.bind(orderQueue).to(orderExchange).with(ORDER_ROUTING_KEY);
+    }
+
+    @Bean
+    public DirectExchange houseSyncExchange() {
+        return new DirectExchange(HOUSE_SYNC_EXCHANGE);
+    }
+
+    @Bean
+    public Queue houseSyncQueue() {
+        return QueueBuilder.durable(HOUSE_SYNC_QUEUE).build();
+    }
+
+    @Bean
+    public Binding houseSyncBinding(@Qualifier("houseSyncQueue") Queue houseSyncQueue,
+                                    @Qualifier("houseSyncExchange") DirectExchange houseSyncExchange) {
+        return BindingBuilder.bind(houseSyncQueue).to(houseSyncExchange).with(HOUSE_SYNC_ROUTING_KEY);
     }
 }

@@ -5,6 +5,9 @@ import cn.yy.myrent.dto.SearchHouseReqDTO;
 import cn.yy.myrent.entity.House;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.service.IHouseService;
+import cn.yy.myrent.sync.house.HouseSyncConstants;
+import cn.yy.myrent.sync.house.HouseSyncDispatcher;
+import cn.yy.myrent.sync.house.model.HouseSyncContext;
 import cn.yy.myrent.vo.HouseSearchResultVO;
 import cn.yy.myrent.vo.HouseVO;
 import co.elastic.clients.elasticsearch._types.DistanceUnit;
@@ -16,39 +19,41 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * <p>
- * 房源信息表 服务实现类
- * </p>
- *
- * @author yy
- * @since 2026-02-26
+ * 房源信息表服务实现。
  */
 @Service
 public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements IHouseService {
 
     private static final Logger log = LoggerFactory.getLogger(HouseServiceImpl.class);
+
     private static final long ES_QUERY_TIMEOUT_MS = 1200;
+
     private static final String FALLBACK_SOURCE_ES = "ES";
     private static final String FALLBACK_SOURCE_REDIS_HOT = "REDIS_HOT";
     private static final String FALLBACK_SOURCE_DB_CITY_HOT = "DB_CITY_HOT";
+
     private static final String TIP_ES_DOWN = "附近房源加载异常，已为你展示推荐房源";
     private static final String TIP_OUT_OF_RANGE = "当前房源不在搜索范围内";
 
@@ -57,6 +62,9 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
 
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
+
+    @Autowired
+    private HouseSyncDispatcher houseSyncDispatcher;
 
     @Override
     public HouseSearchResultVO searchNearbyHouse(SearchHouseReqDTO reqDTO) {
@@ -92,6 +100,122 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         return searchWhenEsUnavailable(city, pageIndex, pageSize);
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean createHouseWithSync(House house) {
+        if (house == null) {
+            return false;
+        }
+        boolean saved = this.save(house);
+        if (!saved || house.getId() == null) {
+            return false;
+        }
+
+        dispatchCoreEvent(house.getId(), HouseSyncConstants.EVENT_HOUSE_ES_UPSERT, "house-create");
+        return true;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean updateHouseWithSync(Long id, House reqHouse) {
+        if (id == null || reqHouse == null) {
+            return false;
+        }
+
+        House dbHouse = this.getById(id);
+        if (dbHouse == null) {
+            return false;
+        }
+
+        House toUpdate = new House();
+        toUpdate.setId(id);
+
+        boolean hasAnyChange = false;
+        boolean coreFieldChanged = false;
+
+        if (reqHouse.getTitle() != null && !Objects.equals(reqHouse.getTitle(), dbHouse.getTitle())) {
+            toUpdate.setTitle(reqHouse.getTitle());
+            hasAnyChange = true;
+        }
+        if (reqHouse.getPrice() != null && !Objects.equals(reqHouse.getPrice(), dbHouse.getPrice())) {
+            toUpdate.setPrice(reqHouse.getPrice());
+            hasAnyChange = true;
+            coreFieldChanged = true;
+        }
+        if (reqHouse.getDepositAmount() != null && !Objects.equals(reqHouse.getDepositAmount(), dbHouse.getDepositAmount())) {
+            toUpdate.setDepositAmount(reqHouse.getDepositAmount());
+            hasAnyChange = true;
+            coreFieldChanged = true;
+        }
+        if (reqHouse.getLatitude() != null && !Objects.equals(reqHouse.getLatitude(), dbHouse.getLatitude())) {
+            toUpdate.setLatitude(reqHouse.getLatitude());
+            hasAnyChange = true;
+            coreFieldChanged = true;
+        }
+        if (reqHouse.getLongitude() != null && !Objects.equals(reqHouse.getLongitude(), dbHouse.getLongitude())) {
+            toUpdate.setLongitude(reqHouse.getLongitude());
+            hasAnyChange = true;
+            coreFieldChanged = true;
+        }
+        if (reqHouse.getStatus() != null && !Objects.equals(reqHouse.getStatus(), dbHouse.getStatus())) {
+            toUpdate.setStatus(reqHouse.getStatus());
+            hasAnyChange = true;
+            coreFieldChanged = true;
+        }
+
+        if (!hasAnyChange) {
+            log.info("房源更新请求无实际变更，houseId={}", id);
+            return true;
+        }
+
+        boolean updated = this.updateById(toUpdate);
+        if (!updated) {
+            return false;
+        }
+
+        if (coreFieldChanged) {
+            dispatchCoreEvent(id, HouseSyncConstants.EVENT_HOUSE_ES_UPSERT, "house-update-core");
+        } else {
+            dispatchNormalEventAfterCommit(id, HouseSyncConstants.EVENT_HOUSE_ES_UPSERT, "house-update-normal");
+        }
+        return true;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean deleteHouseWithSync(Long id) {
+        if (id == null) {
+            return false;
+        }
+        boolean removed = this.removeById(id);
+        if (!removed) {
+            return false;
+        }
+        dispatchCoreEvent(id, HouseSyncConstants.EVENT_HOUSE_ES_DELETE, "house-delete");
+        return true;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean updateHouseStatusWithSync(Long houseId, Integer expectedStatus, Integer targetStatus, String reason) {
+        if (houseId == null || targetStatus == null) {
+            return false;
+        }
+
+        boolean updated = this.lambdaUpdate()
+                .eq(House::getId, houseId)
+                .eq(expectedStatus != null, House::getStatus, expectedStatus)
+                .set(House::getStatus, targetStatus)
+                .setSql("`version` = IFNULL(`version`,0) + 1")
+                .update();
+        if (!updated) {
+            return false;
+        }
+
+        dispatchCoreEvent(houseId, HouseSyncConstants.EVENT_HOUSE_ES_UPSERT, reason);
+        return true;
+    }
+
     private HouseSearchResultVO searchWhenEsUnavailable(String city, int pageIndex, int pageSize) {
         try {
             List<HouseVO> redisRecommended = searchHotFromRedis(city, pageIndex, pageSize);
@@ -121,8 +245,6 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         return result;
     }
 
-
-    //es查询
     private List<HouseVO> searchInEs(double lat, double lon, String distanceStr, int pageIndex, int pageSize) {
         Query boolQuery = Query.of(q -> q.bool(b -> b
                 .must(m -> m.term(t -> t.field("status").value(1)))
@@ -163,7 +285,7 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         String cityKey = StringUtils.hasText(city) ? city.trim() : "DEFAULT_CITY";
         String cacheKey = "house:hot:" + cityKey;
 
-        // TODO 热门房源计算能力完成后，从 Redis 中按热度读取城市热门房源并组装 HouseVO
+        // TODO 热门房源计算能力完成后，从Redis中按热度读取城市热门房源并组装 HouseVO。
         log.warn("Redis热门房源查询逻辑待实现，cacheKey={}, pageIndex={}, pageSize={}", cacheKey, pageIndex, pageSize);
 
         if (stringRedisTemplate.getConnectionFactory() == null) {
@@ -243,15 +365,41 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         return Double.parseDouble(lower);
     }
 
-    /**
-     * 内部辅助方法：将距离米格式化为前端友好的字符串（1000米以内用m，以上用km）
-     */
     private String formatDistance(double meters) {
         if (meters < 1000) {
             return (int) meters + "m";
-        } else {
-            BigDecimal km = new BigDecimal(meters).divide(new BigDecimal(1000), 1, RoundingMode.HALF_UP);
-            return km.toString() + "km";
         }
+        BigDecimal km = new BigDecimal(meters).divide(new BigDecimal(1000), 1, RoundingMode.HALF_UP);
+        return km.toString() + "km";
+    }
+
+    private void dispatchCoreEvent(Long houseId, String eventType, String reason) {
+        HouseSyncContext context = new HouseSyncContext();
+        context.setHouseId(houseId);
+        context.setEventType(eventType);
+        context.setCoreEvent(true);
+        context.setReason(reason);
+        houseSyncDispatcher.dispatch(context);
+    }
+
+    private void dispatchNormalEventAfterCommit(Long houseId, String eventType, String reason) {
+        HouseSyncContext context = new HouseSyncContext();
+        context.setHouseId(houseId);
+        context.setEventType(eventType);
+        context.setCoreEvent(false);
+        context.setReason(reason);
+
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            houseSyncDispatcher.dispatch(context);
+            return;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                houseSyncDispatcher.dispatch(context);
+            }
+        });
     }
 }
+
