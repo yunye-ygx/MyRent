@@ -6,6 +6,8 @@ import cn.yy.myrent.mapper.LocalTaskMapper;
 import cn.yy.myrent.sync.house.HouseSyncConstants;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,7 +16,9 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 本地任务表定时扫描并发送MQ。
@@ -42,6 +46,9 @@ public class MessageSend {
 
     @Autowired
     private RabbitTemplate rabbitTemplate;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Scheduled(fixedRate = 2000)
     public void sendPendingMessages() {
@@ -143,7 +150,7 @@ public class MessageSend {
             rabbitTemplate.convertAndSend(
                     RabbitMQConfig.HOUSE_SYNC_EXCHANGE,
                     RabbitMQConfig.HOUSE_SYNC_ROUTING_KEY,
-                    task.getPayload());
+                    buildHouseSyncMessage(task));
             return;
         }
 
@@ -160,7 +167,7 @@ public class MessageSend {
         }
 
         final long ttlToSend = Math.max(ttlMs, 0);
-        String orderNo = task.getPayload() == null ? task.getBizId() : task.getPayload();
+        String orderNo = resolveOrderNo(task);
         rabbitTemplate.convertAndSend(
                 RabbitMQConfig.ORDER_EXCHANGE,
                 RabbitMQConfig.ORDER_ROUTING_KEY,
@@ -170,5 +177,70 @@ public class MessageSend {
                     return message;
                 });
     }
-}
 
+    private String resolveOrderNo(LocalTask task) {
+        String payload = task.getPayload();
+        if (payload == null || payload.trim().isEmpty()) {
+            return task.getBizId();
+        }
+
+        try {
+            JsonNode node = objectMapper.readTree(payload);
+            if (node.isObject()) {
+                JsonNode orderNoNode = node.get("orderNo");
+                if (orderNoNode != null && !orderNoNode.asText().trim().isEmpty()) {
+                    return orderNoNode.asText();
+                }
+            }
+            if (node.isTextual() && !node.asText().trim().isEmpty()) {
+                return node.asText();
+            }
+        } catch (Exception e) {
+            log.warn("订单本地任务payload非JSON格式，回退为原始值，messageId={}, payload={}", task.getMessageId(), payload);
+            return payload;
+        }
+
+        return task.getBizId();
+    }
+
+    private String buildHouseSyncMessage(LocalTask task) {
+        Map<String, Object> message = new LinkedHashMap<>();
+        message.put("messageId", task.getMessageId());
+        message.put("eventType", task.getEventType());
+        message.put("houseId", resolveHouseId(task));
+        try {
+            return objectMapper.writeValueAsString(message);
+        } catch (Exception e) {
+            throw new IllegalStateException("房源同步消息序列化失败", e);
+        }
+    }
+
+    private Long resolveHouseId(LocalTask task) {
+        String payload = task.getPayload();
+        if (payload != null && !payload.trim().isEmpty()) {
+            try {
+                JsonNode node = objectMapper.readTree(payload);
+                if (node.isObject()) {
+                    JsonNode houseIdNode = node.get("houseId");
+                    if (houseIdNode != null && !houseIdNode.isNull()) {
+                        if (houseIdNode.canConvertToLong()) {
+                            return houseIdNode.longValue();
+                        }
+                        String text = houseIdNode.asText();
+                        if (text != null && !text.trim().isEmpty()) {
+                            return Long.parseLong(text.trim());
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("房源本地任务payload解析失败，回退bizId，messageId={}, payload={}", task.getMessageId(), payload);
+            }
+        }
+
+        try {
+            return Long.parseLong(task.getBizId());
+        } catch (Exception e) {
+            throw new IllegalStateException("房源本地任务bizId无法解析为houseId, bizId=" + task.getBizId(), e);
+        }
+    }
+}

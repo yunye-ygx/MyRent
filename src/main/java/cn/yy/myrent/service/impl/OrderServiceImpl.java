@@ -12,6 +12,8 @@ import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IHouseService;
 import cn.yy.myrent.service.ILocalTaskService;
 import cn.yy.myrent.service.IOrderService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,6 +52,8 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     private StringRedisTemplate stringRedisTemplate;
     @Autowired
     private ILocalTaskService localTaskService;
+    @Autowired
+    private ObjectMapper objectMapper;
 
     private DefaultRedisScript<Long> lockHouseScript;
 
@@ -117,7 +121,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         order.setHouseId(house.getId());
         order.setAmount(house.getDepositAmount());
         order.setStatus(0); // 0-待支付
-        order.setExpireTime(LocalDateTime.now().plusSeconds(10));
+        order.setExpireTime(LocalDateTime.now().plusSeconds(30));
 
         orderMapper.insert(order);
         log.info("订单入库成功，orderNo={}, expireAt={}", order.getOrderNo(), order.getExpireTime());
@@ -129,7 +133,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         localTask.setBizType(LOCAL_TASK_BIZ_TYPE_ORDER);
         localTask.setBizId(order.getOrderNo());
         localTask.setEventType(LOCAL_TASK_EVENT_ORDER_TIMEOUT_RELEASE);
-        localTask.setPayload(order.getOrderNo());
+        localTask.setPayload(buildOrderLocalTaskPayload(order.getOrderNo()));
         localTask.setStatus(LOCAL_TASK_STATUS_PENDING);
         localTask.setExecuteTime(order.getExpireTime());
         localTask.setRetryCount(0);
@@ -164,5 +168,13 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 //            }
 //        });
 
+    }
+
+    private String buildOrderLocalTaskPayload(String orderNo) {
+        try {
+            return objectMapper.writeValueAsString(Collections.singletonMap("orderNo", orderNo));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("订单本地任务payload序列化失败", e);
+        }
     }
 }
