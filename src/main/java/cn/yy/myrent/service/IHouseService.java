@@ -17,12 +17,4 @@ public interface IHouseService extends IService<House> {
 
 
     HouseSearchResultVO searchNearbyHouse(SearchHouseReqDTO reqDTO);
-
-    boolean createHouseWithSync(House house);
-
-    boolean updateHouseWithSync(Long id, House house);
-
-    boolean deleteHouseWithSync(Long id);
-
-    boolean updateHouseStatusWithSync(Long houseId, Integer expectedStatus, Integer targetStatus, String reason);
 }

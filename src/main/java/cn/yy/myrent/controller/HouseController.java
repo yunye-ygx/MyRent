@@ -4,6 +4,7 @@ import cn.yy.myrent.common.Result;
 import cn.yy.myrent.common.UserContext;
 import cn.yy.myrent.dto.SearchHouseReqDTO;
 import cn.yy.myrent.entity.House;
+import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IHouseService;
 import cn.yy.myrent.vo.HouseSearchResultVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -29,6 +30,9 @@ public class HouseController {
 
     @Autowired
     private IHouseService houseService;
+
+    @Autowired
+    private IHouseCommandService houseCommandService;
 
     @PostMapping("/nearby")
     @Operation(summary = "附近房源搜索", description = "优先ES，失败自动降级")
@@ -73,7 +77,7 @@ public class HouseController {
 
         house.setId(null);
         house.setPublisherUserId(currentUserId);
-        boolean saved = houseService.createHouseWithSync(house);
+        boolean saved = houseCommandService.createHouseWithSync(house);
         if (!saved) {
             log.error("新增房源失败，publisherUserId={}, title={}", currentUserId, house.getTitle());
             return Result.error("新增房源失败");
@@ -107,7 +111,7 @@ public class HouseController {
 
         house.setId(id);
         house.setPublisherUserId(dbHouse.getPublisherUserId());
-        boolean updated = houseService.updateHouseWithSync(id, house);
+        boolean updated = houseCommandService.updateHouseWithSync(id, house);
         if (!updated) {
             log.error("更新房源失败，houseId={}, currentUserId={}", id, currentUserId);
             return Result.error("更新房源失败或房源不存在");
@@ -139,7 +143,7 @@ public class HouseController {
             return Result.error(403, "仅发布人可删除该房源");
         }
 
-        boolean removed = houseService.deleteHouseWithSync(id);
+        boolean removed = houseCommandService.deleteHouseWithSync(id);
         if (!removed) {
             log.error("删除房源失败，houseId={}, currentUserId={}", id, currentUserId);
             return Result.error("删除房源失败或房源不存在");
@@ -148,4 +152,3 @@ public class HouseController {
         return Result.success();
     }
 }
-

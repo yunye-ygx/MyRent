@@ -15,6 +15,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
 public class UserContextInterceptor implements HandlerInterceptor {
 
     private static final String AUTHORIZATION_HEADER = "Authorization";
+    private static final String TOKEN_HEADER = "token";
     private static final String BEARER_PREFIX = "Bearer ";
 
     @Autowired
@@ -27,16 +28,9 @@ public class UserContextInterceptor implements HandlerInterceptor {
         }
 
         String requestPath = request.getRequestURI();
-        String authorization = request.getHeader(AUTHORIZATION_HEADER);
-        if (!StringUtils.hasText(authorization) || !authorization.startsWith(BEARER_PREFIX)) {
-            log.warn("鉴权失败：缺少或非法Authorization头，path={}", requestPath);
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            return false;
-        }
-
-        String token = authorization.substring(BEARER_PREFIX.length()).trim();
+        String token = resolveToken(request);
         if (!StringUtils.hasText(token)) {
-            log.warn("鉴权失败：Bearer token为空，path={}", requestPath);
+            log.warn("鉴权失败：缺少或非法Authorization/token头，path={}", requestPath);
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             return false;
         }
@@ -56,5 +50,21 @@ public class UserContextInterceptor implements HandlerInterceptor {
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
         UserContext.clear();
+    }
+
+    private String resolveToken(HttpServletRequest request) {
+        String authorization = request.getHeader(AUTHORIZATION_HEADER);
+        if (StringUtils.hasText(authorization) && authorization.startsWith(BEARER_PREFIX)) {
+            String bearerToken = authorization.substring(BEARER_PREFIX.length()).trim();
+            if (StringUtils.hasText(bearerToken)) {
+                return bearerToken;
+            }
+        }
+
+        String token = request.getHeader(TOKEN_HEADER);
+        if (!StringUtils.hasText(token)) {
+            return null;
+        }
+        return token.trim();
     }
 }

@@ -8,6 +8,7 @@ import cn.yy.myrent.entity.House;
 import cn.yy.myrent.entity.LocalTask;
 import cn.yy.myrent.entity.Order;
 import cn.yy.myrent.mapper.OrderMapper;
+import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IHouseService;
 import cn.yy.myrent.service.ILocalTaskService;
 import cn.yy.myrent.service.IOrderService;
@@ -41,6 +42,8 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 
     @Autowired
     private IHouseService houseService;
+    @Autowired
+    private IHouseCommandService houseCommandService;
     @Autowired
     private OrderMapper orderMapper;
     @Autowired
@@ -101,7 +104,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         });
 
         // 用数据库的乐观锁解决超卖问题
-        boolean isUpdated = houseService.updateHouseStatusWithSync(lockHouse.getHouseId(), 1, 2, "order-lock-house");
+        boolean isUpdated = houseCommandService.updateHouseStatusWithSync(lockHouse.getHouseId(), 1, 2, "order-lock-house");
         if (!isUpdated) {
             log.warn("DB 乐观锁更新失败，houseId={} 可能已被抢", lockHouse.getHouseId());
             throw new RuntimeException("房源已下架");

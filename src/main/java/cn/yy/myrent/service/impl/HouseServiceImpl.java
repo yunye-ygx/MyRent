@@ -5,9 +5,6 @@ import cn.yy.myrent.dto.SearchHouseReqDTO;
 import cn.yy.myrent.entity.House;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.service.IHouseService;
-import cn.yy.myrent.sync.house.HouseSyncConstants;
-import cn.yy.myrent.sync.house.HouseSyncDispatcher;
-import cn.yy.myrent.sync.house.model.HouseSyncContext;
 import cn.yy.myrent.vo.HouseSearchResultVO;
 import cn.yy.myrent.vo.HouseVO;
 import co.elastic.clients.elasticsearch._types.DistanceUnit;
@@ -26,23 +23,16 @@ import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-/**
- * 房源信息表服务实现。
- */
 @Service
 public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements IHouseService {
 
@@ -62,9 +52,6 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
 
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
-
-    @Autowired
-    private HouseSyncDispatcher houseSyncDispatcher;
 
     @Override
     public HouseSearchResultVO searchNearbyHouse(SearchHouseReqDTO reqDTO) {
@@ -98,122 +85,6 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         }
 
         return searchWhenEsUnavailable(city, pageIndex, pageSize);
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public boolean createHouseWithSync(House house) {
-        if (house == null) {
-            return false;
-        }
-        boolean saved = this.save(house);
-        if (!saved || house.getId() == null) {
-            return false;
-        }
-
-        dispatchCoreEvent(house.getId(), HouseSyncConstants.EVENT_HOUSE_ES_UPSERT, "house-create");
-        return true;
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public boolean updateHouseWithSync(Long id, House reqHouse) {
-        if (id == null || reqHouse == null) {
-            return false;
-        }
-
-        House dbHouse = this.getById(id);
-        if (dbHouse == null) {
-            return false;
-        }
-
-        House toUpdate = new House();
-        toUpdate.setId(id);
-
-        boolean hasAnyChange = false;
-        boolean coreFieldChanged = false;
-
-        if (reqHouse.getTitle() != null && !Objects.equals(reqHouse.getTitle(), dbHouse.getTitle())) {
-            toUpdate.setTitle(reqHouse.getTitle());
-            hasAnyChange = true;
-        }
-        if (reqHouse.getPrice() != null && !Objects.equals(reqHouse.getPrice(), dbHouse.getPrice())) {
-            toUpdate.setPrice(reqHouse.getPrice());
-            hasAnyChange = true;
-            coreFieldChanged = true;
-        }
-        if (reqHouse.getDepositAmount() != null && !Objects.equals(reqHouse.getDepositAmount(), dbHouse.getDepositAmount())) {
-            toUpdate.setDepositAmount(reqHouse.getDepositAmount());
-            hasAnyChange = true;
-            coreFieldChanged = true;
-        }
-        if (reqHouse.getLatitude() != null && !Objects.equals(reqHouse.getLatitude(), dbHouse.getLatitude())) {
-            toUpdate.setLatitude(reqHouse.getLatitude());
-            hasAnyChange = true;
-            coreFieldChanged = true;
-        }
-        if (reqHouse.getLongitude() != null && !Objects.equals(reqHouse.getLongitude(), dbHouse.getLongitude())) {
-            toUpdate.setLongitude(reqHouse.getLongitude());
-            hasAnyChange = true;
-            coreFieldChanged = true;
-        }
-        if (reqHouse.getStatus() != null && !Objects.equals(reqHouse.getStatus(), dbHouse.getStatus())) {
-            toUpdate.setStatus(reqHouse.getStatus());
-            hasAnyChange = true;
-            coreFieldChanged = true;
-        }
-
-        if (!hasAnyChange) {
-            log.info("房源更新请求无实际变更，houseId={}", id);
-            return true;
-        }
-
-        boolean updated = this.updateById(toUpdate);
-        if (!updated) {
-            return false;
-        }
-
-        if (coreFieldChanged) {
-            dispatchCoreEvent(id, HouseSyncConstants.EVENT_HOUSE_ES_UPSERT, "house-update-core");
-        } else {
-            dispatchNormalEventAfterCommit(id, HouseSyncConstants.EVENT_HOUSE_ES_UPSERT, "house-update-normal");
-        }
-        return true;
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public boolean deleteHouseWithSync(Long id) {
-        if (id == null) {
-            return false;
-        }
-        boolean removed = this.removeById(id);
-        if (!removed) {
-            return false;
-        }
-        dispatchCoreEvent(id, HouseSyncConstants.EVENT_HOUSE_ES_DELETE, "house-delete");
-        return true;
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public boolean updateHouseStatusWithSync(Long houseId, Integer expectedStatus, Integer targetStatus, String reason) {
-        if (houseId == null || targetStatus == null) {
-            return false;
-        }
-
-        boolean updated = this.lambdaUpdate()
-                .eq(House::getId, houseId)
-                .eq(expectedStatus != null, House::getStatus, expectedStatus)
-                .set(House::getStatus, targetStatus)
-                .setSql("`version` = IFNULL(`version`,0) + 1")
-                .update();
-        if (!updated) {
-            return false;
-        }
-
-        dispatchCoreEvent(houseId, HouseSyncConstants.EVENT_HOUSE_ES_UPSERT, reason);
-        return true;
     }
 
     private HouseSearchResultVO searchWhenEsUnavailable(String city, int pageIndex, int pageSize) {
@@ -371,35 +242,6 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         }
         BigDecimal km = new BigDecimal(meters).divide(new BigDecimal(1000), 1, RoundingMode.HALF_UP);
         return km.toString() + "km";
-    }
-
-    private void dispatchCoreEvent(Long houseId, String eventType, String reason) {
-        HouseSyncContext context = new HouseSyncContext();
-        context.setHouseId(houseId);
-        context.setEventType(eventType);
-        context.setCoreEvent(true);
-        context.setReason(reason);
-        houseSyncDispatcher.dispatch(context);
-    }
-
-    private void dispatchNormalEventAfterCommit(Long houseId, String eventType, String reason) {
-        HouseSyncContext context = new HouseSyncContext();
-        context.setHouseId(houseId);
-        context.setEventType(eventType);
-        context.setCoreEvent(false);
-        context.setReason(reason);
-
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            houseSyncDispatcher.dispatch(context);
-            return;
-        }
-
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                houseSyncDispatcher.dispatch(context);
-            }
-        });
     }
 }
 
