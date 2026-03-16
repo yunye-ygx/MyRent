@@ -1,5 +1,6 @@
 package cn.yy.myrent.websocket;
 
+import cn.yy.myrent.common.JwtTokenUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -26,6 +27,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     @Autowired
     private ChatWebSocketSessionManager sessionManager;
 
+    @Autowired
+    private JwtTokenUtil jwtTokenUtil;
+
     /**
      * 握手成功后会进入这里。
      *
@@ -36,7 +40,8 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         Long userId = resolveUserId(session.getUri());
         if (userId == null) {
-            session.close(CloseStatus.BAD_DATA.withReason("userId is required"));
+            log.warn("websocket connect rejected: token invalid, sessionId={}, uri={}", session.getId(), session.getUri());
+            session.close(CloseStatus.BAD_DATA.withReason("token is required"));
             return;
         }
 
@@ -59,6 +64,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
         sessionManager.unregister(session);
+        log.warn("websocket transport error, sessionId={}", session.getId(), exception);
         if (session.isOpen()) {
             session.close(CloseStatus.SERVER_ERROR);
         }
@@ -74,20 +80,19 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             return null;
         }
 
-        String userIdText = UriComponentsBuilder.fromUri(uri)
+        String token = UriComponentsBuilder.fromUri(uri)
                 .build()
                 .getQueryParams()
-                .getFirst("userId");
+                .getFirst("token");
 
-        if (!StringUtils.hasText(userIdText)) {
+        if (!StringUtils.hasText(token)) {
             return null;
         }
 
         try {
-            return Long.valueOf(userIdText);
-        } catch (NumberFormatException ignored) {
+            return jwtTokenUtil.parseUserId(token);
+        } catch (RuntimeException ignored) {
             return null;
         }
     }
 }
-

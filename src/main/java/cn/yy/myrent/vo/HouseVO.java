@@ -24,6 +24,9 @@ public class HouseVO {
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Long id;
 
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long publisherUserId;
+
 
     private String title;
 

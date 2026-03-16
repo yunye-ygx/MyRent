@@ -4,11 +4,14 @@ import cn.hutool.core.util.IdUtil;
 import cn.yy.myrent.dto.MessageDTO;
 import cn.yy.myrent.entity.ChatMessage;
 import cn.yy.myrent.entity.ChatSession;
+import cn.yy.myrent.entity.User;
 import cn.yy.myrent.mapper.ChatMessageMapper;
 import cn.yy.myrent.mapper.ChatSessionMapper;
+import cn.yy.myrent.mapper.UserMapper;
 import cn.yy.myrent.service.IChatSessionService;
 import cn.yy.myrent.websocket.ChatWebSocketSessionManager;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +30,7 @@ import java.time.LocalDateTime;
  * @since 2026-03-12
  */
 @Service
+@Slf4j
 public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatSession> implements IChatSessionService {
 
     @Autowired
@@ -35,6 +39,9 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
     @Autowired
     private ChatWebSocketSessionManager sessionManager;
 
+    @Autowired
+    private UserMapper userMapper;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void sendMessage(MessageDTO messageDTO) {
@@ -42,7 +49,16 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
         Long receiverId = messageDTO.getReceiverId();
         String content = messageDTO.getContent();
 
+        log.info("开始发送消息，senderId={}, receiverId={}, contentLength={}",
+                senderId,
+                receiverId,
+                content == null ? 0 : content.length());
+
         if (senderId == null || receiverId == null || !StringUtils.hasText(content)) {
+            log.warn("发送消息参数非法，senderId={}, receiverId={}, hasContent={}",
+                    senderId,
+                    receiverId,
+                    StringUtils.hasText(content));
             throw new RuntimeException("消息参数不能为空");
         }
 
@@ -67,8 +83,10 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
 
             boolean savedSession = this.save(newSession);
             if (!savedSession) {
+                log.error("创建会话失败，sessionId={}, senderId={}, receiverId={}", sessionId, senderId, receiverId);
                 throw new RuntimeException("创建会话失败");
             }
+            log.info("创建新会话成功，sessionId={}, userId1={}, userId2={}", sessionId, userId1, userId2);
         } else {
             boolean updatedSession = this.lambdaUpdate()
                     .set(ChatSession::getLastMsgContent, content)
@@ -76,8 +94,10 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
                     .eq(ChatSession::getSessionId, sessionId)
                     .update();
             if (!updatedSession) {
+                log.error("更新会话失败，sessionId={}, senderId={}, receiverId={}", sessionId, senderId, receiverId);
                 throw new RuntimeException("更新会话失败");
             }
+            log.debug("更新会话成功，sessionId={}", sessionId);
         }
 
         ChatMessage chatMessage = new ChatMessage()
@@ -92,13 +112,25 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
 
         int rows = chatMessageMapper.insert(chatMessage);
         if (rows != 1) {
+            log.error("消息入库失败，sessionId={}, senderId={}, receiverId={}, rows={}", sessionId, senderId, receiverId, rows);
             throw new RuntimeException("发送消息失败");
         }
+        log.info("消息入库成功，messageId={}, sessionId={}", chatMessage.getId(), sessionId);
+
+        User sender = userMapper.selectById(senderId);
+        User receiver = userMapper.selectById(receiverId);
+        chatMessage.setSenderName(sender == null ? null : sender.getName());
+        chatMessage.setReceiverName(receiver == null ? null : receiver.getName());
 
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                sessionManager.sendToUser(receiverId, chatMessage);
+                try {
+                    sessionManager.sendToUser(receiverId, chatMessage);
+                    log.info("事务提交后已推送消息，messageId={}, receiverId={}", chatMessage.getId(), receiverId);
+                } catch (Exception e) {
+                    log.error("事务提交后推送消息失败，messageId={}, receiverId={}", chatMessage.getId(), receiverId, e);
+                }
             }
         });
     }

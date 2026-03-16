@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.IdType;
 import java.time.LocalDateTime;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableField;
 import java.io.Serializable;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -65,6 +66,12 @@ public class ChatMessage implements Serializable {
      * 消息发送时间 (聊天气泡按此字段正序排列)
      */
     private LocalDateTime createTime;
+
+    @TableField(exist = false)
+    private String senderName;
+
+    @TableField(exist = false)
+    private String receiverName;
 
 
 }

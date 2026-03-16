@@ -15,6 +15,9 @@ public class HouseDoc {
     @Id
     private Long id;
 
+    @Field(type = FieldType.Long)
+    private Long publisherUserId;
+
     @Field(type = FieldType.Text, analyzer = "ik_max_word")
     private String title; // 房源标题，支持分词搜索
 

@@ -13,4 +13,8 @@ import com.baomidou.mybatisplus.extension.service.IService;
  */
 public interface IUserService extends IService<User> {
 
+    User registerByPhone(String phone, String password, String name);
+
+    User loginByPhone(String phone, String password);
+
 }

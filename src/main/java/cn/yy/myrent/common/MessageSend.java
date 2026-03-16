@@ -1,10 +1,13 @@
 package cn.yy.myrent.common;
 
 import cn.yy.myrent.config.RabbitMQConfig;
-import cn.yy.myrent.entity.OrderTimeout;
-import cn.yy.myrent.mapper.OrderTimeoutMapper;
+import cn.yy.myrent.entity.LocalTask;
+import cn.yy.myrent.mapper.LocalTaskMapper;
+import cn.yy.myrent.sync.house.HouseSyncConstants;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,73 +16,249 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
- * 本地消息表定时扫描并发送 MQ。
+ * 本地任务表定时扫描并发送MQ。
  */
 @Component
 @Slf4j
 public class MessageSend {
+
+    private static final String LOCAL_TASK_BIZ_TYPE_ORDER = "ORDER";
+    private static final String LOCAL_TASK_EVENT_ORDER_TIMEOUT_RELEASE = "ORDER_TIMEOUT_RELEASE";
+    private static final String LOCAL_TASK_BIZ_TYPE_HOUSE = HouseSyncConstants.BIZ_TYPE_HOUSE;
+
+    private static final int LOCAL_TASK_STATUS_PENDING = 0;
+    private static final int LOCAL_TASK_STATUS_EXECUTING = 1;
+    private static final int LOCAL_TASK_STATUS_SUCCESS = 2;
+    private static final int LOCAL_TASK_STATUS_RETRY = 3;
+    private static final int LOCAL_TASK_STATUS_DEAD = 5;
+
+    private static final int RETRY_BASE_SECONDS = 5;
+    private static final int BATCH_SIZE = 50;
+    private static final int MAX_RETRY = 5;
+    private static final int CLEANUP_RETAIN_DAYS = 7;
+
     @Autowired
-    private OrderTimeoutMapper orderTimeoutMapper;
+    private LocalTaskMapper localTaskMapper;
+
     @Autowired
     private RabbitTemplate rabbitTemplate;
 
-    private static final int BATCH_SIZE = 50;
-    private static final int MAX_RETRY = 5;
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Scheduled(fixedRate = 2000)
     public void sendPendingMessages() {
         while (true) {
-            List<OrderTimeout> list = orderTimeoutMapper.selectList(new LambdaQueryWrapper<OrderTimeout>()
-                    .eq(OrderTimeout::getSendStatus, 0) // 0=未发送
-                    .orderByAsc(OrderTimeout::getId)
+            LocalDateTime now = LocalDateTime.now();
+            List<LocalTask> list = localTaskMapper.selectList(new LambdaQueryWrapper<LocalTask>()
+                    .in(LocalTask::getStatus, LOCAL_TASK_STATUS_PENDING, LOCAL_TASK_STATUS_RETRY)
+                    .le(LocalTask::getExecuteTime, now)
+                    .and(wrapper -> wrapper.isNull(LocalTask::getNextRetryTime)
+                            .or()
+                            .le(LocalTask::getNextRetryTime, now))
+                    .orderByAsc(LocalTask::getExecuteTime)
+                    .orderByAsc(LocalTask::getId)
                     .last("limit " + BATCH_SIZE));
+
             if (list == null || list.isEmpty()) {
                 return;
             }
-            for (OrderTimeout msg : list) {
-                try {
-                    long ttlMs = Duration.between(LocalDateTime.now(), msg.getExpireTime()).toMillis();
-                    if (ttlMs <= 0) {
-                        // 已到期，立即投递并记录
-                        log.warn("消息已超期，立即投递，bizId={}, expireTime={}", msg.getBizId(), msg.getExpireTime());
-                    }
-                    final long ttlToSend = Math.max(ttlMs, 0);
-                    rabbitTemplate.convertAndSend(
-                            RabbitMQConfig.ORDER_EXCHANGE,
-                            RabbitMQConfig.ORDER_ROUTING_KEY,
-                            msg.getBizId(),
-                            message -> {
-                                message.getMessageProperties().setExpiration(String.valueOf(ttlToSend));
-                                return message;
-                            });
-                    orderTimeoutMapper.update(null, new LambdaUpdateWrapper<OrderTimeout>()
-                            .eq(OrderTimeout::getId, msg.getId())
-                            .set(OrderTimeout::getSendStatus, 1)); // 1=已发送
 
-                    log.info("本地消息发送成功，bizId={}, ttlMs={}", msg.getBizId(), ttlToSend);
+            for (LocalTask task : list) {
+                int claimed = localTaskMapper.update(null, new LambdaUpdateWrapper<LocalTask>()
+                        .eq(LocalTask::getId, task.getId())
+                        .in(LocalTask::getStatus, LOCAL_TASK_STATUS_PENDING, LOCAL_TASK_STATUS_RETRY)
+                        .set(LocalTask::getStatus, LOCAL_TASK_STATUS_EXECUTING)
+                        .set(LocalTask::getUpdateTime, LocalDateTime.now())
+                        .setSql("`version` = IFNULL(`version`,0) + 1"));
+                if (claimed != 1) {
+                    continue;
+                }
+
+                try {
+                    sendTaskToMq(task);
+
+                    localTaskMapper.update(null, new LambdaUpdateWrapper<LocalTask>()
+                            .eq(LocalTask::getId, task.getId())
+                            .set(LocalTask::getStatus, LOCAL_TASK_STATUS_SUCCESS)
+                            .set(LocalTask::getNextRetryTime, null)
+                            .set(LocalTask::getUpdateTime, LocalDateTime.now()));
+
+                    log.info("本地任务发送成功，messageId={}, bizType={}, eventType={}, bizId={}",
+                            task.getMessageId(),
+                            task.getBizType(),
+                            task.getEventType(),
+                            task.getBizId());
                 } catch (Exception e) {
-                    int retry = msg.getRetryCount() == null ? 0 : msg.getRetryCount();
+                    int retry = task.getRetryCount() == null ? 0 : task.getRetryCount();
                     retry++;
-                    LambdaUpdateWrapper<OrderTimeout> uw = new LambdaUpdateWrapper<OrderTimeout>()
-                            .eq(OrderTimeout::getId, msg.getId())
-                            .set(OrderTimeout::getRetryCount, retry);
-                    if (retry > MAX_RETRY) {
-                        uw.set(OrderTimeout::getSendStatus, 2); // 2=永久失败
-                        log.error("本地消息发送多次失败标记为永久失败，bizId={}, retry={}", msg.getBizId(), retry, e);
+                    int maxRetry = task.getMaxRetryCount() == null ? MAX_RETRY : task.getMaxRetryCount();
+                    LambdaUpdateWrapper<LocalTask> uw = new LambdaUpdateWrapper<LocalTask>()
+                            .eq(LocalTask::getId, task.getId())
+                            .set(LocalTask::getRetryCount, retry)
+                            .set(LocalTask::getUpdateTime, LocalDateTime.now());
+                    if (retry > maxRetry) {
+                        uw.set(LocalTask::getStatus, LOCAL_TASK_STATUS_DEAD)
+                                .set(LocalTask::getNextRetryTime, null);
+                        log.error("本地任务发送多次失败标记为死信，messageId={}, bizType={}, eventType={}, bizId={}, retry={}, maxRetry={}",
+                                task.getMessageId(),
+                                task.getBizType(),
+                                task.getEventType(),
+                                task.getBizId(),
+                                retry,
+                                maxRetry,
+                                e);
                     } else {
-                        // 仍保持 sendStatus=0，等待下一轮调度重试
-                        uw.set(OrderTimeout::getSendStatus, 0);
-                        log.warn("本地消息发送失败，bizId={}，retry={}/{}，将在下轮重试", msg.getBizId(), retry, MAX_RETRY, e);
+                        long backoffSeconds = (long) RETRY_BASE_SECONDS * retry;
+                        LocalDateTime nextRetryTime = LocalDateTime.now().plusSeconds(backoffSeconds);
+                        uw.set(LocalTask::getStatus, LOCAL_TASK_STATUS_RETRY)
+                                .set(LocalTask::getNextRetryTime, nextRetryTime);
+                        log.warn("本地任务发送失败，messageId={}, bizType={}, eventType={}, bizId={}, retry={}/{}, nextRetryTime={}",
+                                task.getMessageId(),
+                                task.getBizType(),
+                                task.getEventType(),
+                                task.getBizId(),
+                                retry,
+                                maxRetry,
+                                nextRetryTime,
+                                e);
                     }
-                    orderTimeoutMapper.update(null, uw);
+                    localTaskMapper.update(null, uw);
                 }
             }
+
             if (list.size() < BATCH_SIZE) {
-                return; // 当前批已处理完
+                return;
             }
+        }
+    }
+
+    /**
+     * 每天凌晨2点清理无效本地任务，避免表数据无限堆积。
+     * 仅删除已完成/死信且超过保留时间的数据，不影响仍可能参与下单流程的任务。
+     */
+    @Scheduled(cron = "0 0 2 * * ?")
+    public void cleanupInvalidLocalTasks() {
+        LocalDateTime cutoffTime = LocalDateTime.now().minusDays(CLEANUP_RETAIN_DAYS);
+        int deleted = localTaskMapper.delete(new LambdaQueryWrapper<LocalTask>()
+                .in(LocalTask::getStatus, LOCAL_TASK_STATUS_SUCCESS, LOCAL_TASK_STATUS_DEAD)
+                .lt(LocalTask::getUpdateTime, cutoffTime));
+
+        log.info("本地任务清理完成，deleted={}, retainDays={}, cutoffTime={}",
+                deleted,
+                CLEANUP_RETAIN_DAYS,
+                cutoffTime);
+    }
+
+    private void sendTaskToMq(LocalTask task) {
+        if (LOCAL_TASK_BIZ_TYPE_ORDER.equals(task.getBizType())
+                && LOCAL_TASK_EVENT_ORDER_TIMEOUT_RELEASE.equals(task.getEventType())) {
+            sendOrderTimeoutTask(task);
+            return;
+        }
+
+        if (LOCAL_TASK_BIZ_TYPE_HOUSE.equals(task.getBizType())
+                && (HouseSyncConstants.EVENT_HOUSE_ES_UPSERT.equals(task.getEventType())
+                || HouseSyncConstants.EVENT_HOUSE_ES_DELETE.equals(task.getEventType()))) {
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.HOUSE_SYNC_EXCHANGE,
+                    RabbitMQConfig.HOUSE_SYNC_ROUTING_KEY,
+                    buildHouseSyncMessage(task));
+            return;
+        }
+
+        throw new IllegalStateException("不支持的本地任务类型，bizType=" + task.getBizType() + ", eventType=" + task.getEventType());
+    }
+
+    private void sendOrderTimeoutTask(LocalTask task) {
+        long ttlMs = Duration.between(LocalDateTime.now(), task.getExecuteTime()).toMillis();
+        if (ttlMs <= 0) {
+            log.warn("订单超时任务已到执行时间，立即投递，messageId={}, bizId={}, executeTime={}",
+                    task.getMessageId(),
+                    task.getBizId(),
+                    task.getExecuteTime());
+        }
+
+        final long ttlToSend = Math.max(ttlMs, 0);
+        String orderNo = resolveOrderNo(task);
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.ORDER_EXCHANGE,
+                RabbitMQConfig.ORDER_ROUTING_KEY,
+                orderNo,
+                message -> {
+                    message.getMessageProperties().setExpiration(String.valueOf(ttlToSend));
+                    return message;
+                });
+    }
+
+    private String resolveOrderNo(LocalTask task) {
+        String payload = task.getPayload();
+        if (payload == null || payload.trim().isEmpty()) {
+            return task.getBizId();
+        }
+
+        try {
+            JsonNode node = objectMapper.readTree(payload);
+            if (node.isObject()) {
+                JsonNode orderNoNode = node.get("orderNo");
+                if (orderNoNode != null && !orderNoNode.asText().trim().isEmpty()) {
+                    return orderNoNode.asText();
+                }
+            }
+            if (node.isTextual() && !node.asText().trim().isEmpty()) {
+                return node.asText();
+            }
+        } catch (Exception e) {
+            log.warn("订单本地任务payload非JSON格式，回退为原始值，messageId={}, payload={}", task.getMessageId(), payload);
+            return payload;
+        }
+
+        return task.getBizId();
+    }
+
+    private String buildHouseSyncMessage(LocalTask task) {
+        Map<String, Object> message = new LinkedHashMap<>();
+        message.put("messageId", task.getMessageId());
+        message.put("eventType", task.getEventType());
+        message.put("houseId", resolveHouseId(task));
+        try {
+            return objectMapper.writeValueAsString(message);
+        } catch (Exception e) {
+            throw new IllegalStateException("房源同步消息序列化失败", e);
+        }
+    }
+
+    private Long resolveHouseId(LocalTask task) {
+        String payload = task.getPayload();
+        if (payload != null && !payload.trim().isEmpty()) {
+            try {
+                JsonNode node = objectMapper.readTree(payload);
+                if (node.isObject()) {
+                    JsonNode houseIdNode = node.get("houseId");
+                    if (houseIdNode != null && !houseIdNode.isNull()) {
+                        if (houseIdNode.canConvertToLong()) {
+                            return houseIdNode.longValue();
+                        }
+                        String text = houseIdNode.asText();
+                        if (text != null && !text.trim().isEmpty()) {
+                            return Long.parseLong(text.trim());
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("房源本地任务payload解析失败，回退bizId，messageId={}, payload={}", task.getMessageId(), payload);
+            }
+        }
+
+        try {
+            return Long.parseLong(task.getBizId());
+        } catch (Exception e) {
+            throw new IllegalStateException("房源本地任务bizId无法解析为houseId, bizId=" + task.getBizId(), e);
         }
     }
 }

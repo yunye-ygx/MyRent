@@ -4,7 +4,7 @@
 
 local key = "house:lock:" .. KEYS[1]
 
-local current = redis.call('GET', key,'EX',30)
+local current = redis.call('GET', key)
 
 -- 如果不存在，说明房源未初始化（可视为可租）
 if current == false then

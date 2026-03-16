@@ -1,21 +1,35 @@
 package cn.yy.myrent.service.impl;
 
 import cn.yy.myrent.entity.ChatMessage;
+import cn.yy.myrent.entity.User;
 import cn.yy.myrent.mapper.ChatMessageMapper;
+import cn.yy.myrent.mapper.UserMapper;
 import cn.yy.myrent.service.IChatMessageService;
 import cn.yy.myrent.vo.ChatPullVO;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
+@Slf4j
 public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatMessage> implements IChatMessageService {
 
     private static final int DEFAULT_PULL_LIMIT = 50;
     private static final int MAX_PULL_LIMIT = 200;
+
+    @Autowired
+    private UserMapper userMapper;
 
     @Override
     public ChatPullVO pullNewMessages(Long userId, Long lastMessageId, String sessionId, Integer limit) {
@@ -29,6 +43,14 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                 .orderByAsc(ChatMessage::getId)
                 .last("limit " + safeLimit)
                 .list();
+        fillUserNames(messages);
+
+        log.debug("补拉新消息完成，userId={}, sessionId={}, cursor={}, limit={}, messageCount={}",
+                userId,
+                sessionId,
+                cursor,
+                safeLimit,
+                messages.size());
 
         long nextCursor = cursor;
         if (!messages.isEmpty()) {
@@ -43,8 +65,65 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     }
 
     @Override
+    public ChatPullVO pullHistoryMessages(Long userId, String sessionId, Long beforeMessageId, Integer limit) {
+        if (userId == null || !StringUtils.hasText(sessionId)) {
+            log.warn("拉取历史消息参数非法，userId={}, sessionId={}", userId, sessionId);
+            ChatPullVO empty = new ChatPullVO();
+            empty.setMessages(Collections.emptyList());
+            empty.setNextCursor(beforeMessageId);
+            empty.setHasMore(false);
+            return empty;
+        }
+
+        int safeLimit = normalizeLimit(limit);
+
+        List<ChatMessage> messages = this.lambdaQuery()
+                .eq(ChatMessage::getSessionId, sessionId)
+                .and(wrapper -> wrapper.eq(ChatMessage::getSenderId, userId)
+                        .or()
+                        .eq(ChatMessage::getReceiverId, userId))
+                .lt(beforeMessageId != null, ChatMessage::getId, beforeMessageId)
+                .orderByDesc(ChatMessage::getId)
+                .last("limit " + (safeLimit + 1))
+                .list();
+
+        boolean hasMore = messages.size() > safeLimit;
+        if (hasMore) {
+            messages = new ArrayList<>(messages.subList(0, safeLimit));
+        }
+
+        Collections.reverse(messages);
+        fillUserNames(messages);
+
+        log.debug("拉取历史消息完成，userId={}, sessionId={}, beforeMessageId={}, limit={}, messageCount={}, hasMore={}",
+                userId,
+                sessionId,
+                beforeMessageId,
+                safeLimit,
+                messages.size(),
+                hasMore);
+
+        Long nextCursor = beforeMessageId;
+        if (!messages.isEmpty()) {
+            nextCursor = messages.get(0).getId();
+        }
+
+        ChatPullVO response = new ChatPullVO();
+        response.setMessages(messages);
+        response.setNextCursor(nextCursor);
+        response.setHasMore(hasMore);
+        return response;
+    }
+
+    @Override
+    public void fillUserNames(List<ChatMessage> messages) {
+        attachUserNames(messages);
+    }
+
+    @Override
     public int markMessagesRead(Long userId, String sessionId, Long upToMessageId) {
         if (userId == null || !StringUtils.hasText(sessionId) || upToMessageId == null || upToMessageId <= 0L) {
+            log.warn("标记已读参数非法，userId={}, sessionId={}, upToMessageId={}", userId, sessionId, upToMessageId);
             return 0;
         }
 
@@ -54,7 +133,13 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                 .eq(ChatMessage::getSessionId, sessionId)
                 .le(ChatMessage::getId, upToMessageId)
                 .eq(ChatMessage::getStatus, 0);
-        return this.baseMapper.update(null, updateWrapper);
+        int updatedRows = this.baseMapper.update(null, updateWrapper);
+        log.info("标记已读完成，userId={}, sessionId={}, upToMessageId={}, updatedRows={}",
+                userId,
+                sessionId,
+                upToMessageId,
+                updatedRows);
+        return updatedRows;
     }
 
     private int normalizeLimit(Integer limit) {
@@ -62,5 +147,35 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             return DEFAULT_PULL_LIMIT;
         }
         return Math.min(limit, MAX_PULL_LIMIT);
+    }
+
+    private void attachUserNames(List<ChatMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+
+        Set<Long> userIds = new HashSet<>();
+        for (ChatMessage message : messages) {
+            if (message.getSenderId() != null) {
+                userIds.add(message.getSenderId());
+            }
+            if (message.getReceiverId() != null) {
+                userIds.add(message.getReceiverId());
+            }
+        }
+        if (userIds.isEmpty()) {
+            return;
+        }
+
+        List<User> users = userMapper.selectBatchIds(userIds);
+        Map<Long, String> userNameMap = new HashMap<>();
+        for (User user : users) {
+            userNameMap.put(user.getId(), user.getName());
+        }
+
+        for (ChatMessage message : messages) {
+            message.setSenderName(userNameMap.get(message.getSenderId()));
+            message.setReceiverName(userNameMap.get(message.getReceiverId()));
+        }
     }
 }

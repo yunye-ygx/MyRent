@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableField;
 import java.time.LocalDateTime;
 import java.io.Serializable;
 import lombok.Data;
@@ -28,6 +29,9 @@ public class House implements Serializable {
 
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;
+
+    @TableField("publisher_user_id")
+    private Long publisherUserId;
 
     /**
      * 房源标题(供ES全文搜索)
