@@ -40,6 +40,7 @@ public class MessageSend {
     private static final int RETRY_BASE_SECONDS = 5;
     private static final int BATCH_SIZE = 50;
     private static final int MAX_RETRY = 5;
+    private static final int CLEANUP_RETAIN_DAYS = 7;
 
     @Autowired
     private LocalTaskMapper localTaskMapper;
@@ -135,6 +136,23 @@ public class MessageSend {
                 return;
             }
         }
+    }
+
+    /**
+     * 每天凌晨2点清理无效本地任务，避免表数据无限堆积。
+     * 仅删除已完成/死信且超过保留时间的数据，不影响仍可能参与下单流程的任务。
+     */
+    @Scheduled(cron = "0 0 2 * * ?")
+    public void cleanupInvalidLocalTasks() {
+        LocalDateTime cutoffTime = LocalDateTime.now().minusDays(CLEANUP_RETAIN_DAYS);
+        int deleted = localTaskMapper.delete(new LambdaQueryWrapper<LocalTask>()
+                .in(LocalTask::getStatus, LOCAL_TASK_STATUS_SUCCESS, LOCAL_TASK_STATUS_DEAD)
+                .lt(LocalTask::getUpdateTime, cutoffTime));
+
+        log.info("本地任务清理完成，deleted={}, retainDays={}, cutoffTime={}",
+                deleted,
+                CLEANUP_RETAIN_DAYS,
+                cutoffTime);
     }
 
     private void sendTaskToMq(LocalTask task) {
