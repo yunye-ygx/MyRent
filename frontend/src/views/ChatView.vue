@@ -72,6 +72,7 @@ const wsRef = ref(null)
 const reconnectTimer = ref(null)
 const pullTimer = ref(null)
 const lastReadUpToId = ref(0)
+let pageActive = true
 
 function toNumericId(id) {
   const value = Number(id)
@@ -264,16 +265,30 @@ function buildWsUrl() {
 }
 
 function connectWs() {
+  if (!pageActive) {
+    return
+  }
+  if (reconnectTimer.value) {
+    clearTimeout(reconnectTimer.value)
+    reconnectTimer.value = null
+  }
   closeWs()
   const ws = new WebSocket(buildWsUrl())
   wsRef.value = ws
 
   ws.onopen = async () => {
+    if (!pageActive || wsRef.value !== ws) {
+      return
+    }
     wsConnected.value = true
+    stopPullTimer()
     await pullMissedMessages()
   }
 
   ws.onmessage = async (event) => {
+    if (!pageActive || wsRef.value !== ws) {
+      return
+    }
     try {
       const data = JSON.parse(event.data)
       if (String(data.sessionId) !== sessionId.value) {
@@ -289,16 +304,30 @@ function connectWs() {
   }
 
   ws.onclose = () => {
+    if (!pageActive) {
+      return
+    }
+    if (wsRef.value === ws) {
+      wsRef.value = null
+    }
     wsConnected.value = false
+    startPullTimer()
     reconnectLater()
   }
 
   ws.onerror = () => {
+    if (!pageActive || wsRef.value !== ws) {
+      return
+    }
     wsConnected.value = false
+    startPullTimer()
   }
 }
 
 function reconnectLater() {
+  if (!pageActive) {
+    return
+  }
   if (reconnectTimer.value) {
     clearTimeout(reconnectTimer.value)
   }
@@ -315,6 +344,9 @@ function closeWs() {
 }
 
 function startPullTimer() {
+  if (!pageActive) {
+    return
+  }
   stopPullTimer()
   pullTimer.value = setInterval(() => {
     pullMissedMessages()
@@ -360,13 +392,14 @@ async function send() {
 }
 
 onMounted(async () => {
+  pageActive = true
   await loadInitialHistory()
   await refreshLatestMessages()
   connectWs()
-  startPullTimer()
 })
 
 onUnmounted(() => {
+  pageActive = false
   stopPullTimer()
   closeWs()
   if (reconnectTimer.value) {

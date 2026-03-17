@@ -195,6 +195,7 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         return result;
     }
 
+    //查询ES返回房源
     private List<HouseVO> searchInEs(double lat, double lon, String distanceStr, int pageIndex, int pageSize) {
         Query boolQuery = Query.of(q -> q.bool(b -> b
                 .must(m -> m.term(t -> t.field("status").value(1)))
