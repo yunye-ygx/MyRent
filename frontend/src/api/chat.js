@@ -8,10 +8,6 @@ export function sendChatMessage(payload) {
   return http.post('/chat-session/send', payload)
 }
 
-export function fetchMessagePage(params = {}) {
-  return http.get('/chat-message/page', { params })
-}
-
 export function pullNewMessages(params = {}) {
   return http.get('/chat-message/pull', { params })
 }

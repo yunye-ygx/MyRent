@@ -44,7 +44,7 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { fetchMessagePage, markMessagesRead, pullHistoryMessages, pullNewMessages, sendChatMessage } from '@/api/chat'
+import { markMessagesRead, pullHistoryMessages, pullNewMessages, sendChatMessage } from '@/api/chat'
 import ChatBubble from '@/components/ChatBubble.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import LoadingState from '@/components/LoadingState.vue'
@@ -215,21 +215,6 @@ async function loadMoreHistory() {
   }
 }
 
-async function refreshLatestMessages() {
-  try {
-    const page = await fetchMessagePage({
-      current: 1,
-      size: 40,
-      sessionId: sessionId.value
-    })
-    const records = [...(page?.records || [])].reverse()
-    mergeMessages(records)
-    await syncReadState()
-  } catch {
-    // 忽略拉新失败，依赖 websocket/pull 继续补偿
-  }
-}
-
 async function pullMissedMessages() {
   try {
     const result = await pullNewMessages({
@@ -376,12 +361,13 @@ async function send() {
   }
   sending.value = true
   try {
-    await sendChatMessage({
+    const sentMessage = await sendChatMessage({
       receiverId: peerId.value,
       content: content.value
     })
     content.value = ''
-    await refreshLatestMessages()
+    mergeMessages(sentMessage ? [sentMessage] : [])
+    await syncReadState()
     await nextTick()
     scrollToBottom(true)
   } catch (err) {
@@ -394,7 +380,6 @@ async function send() {
 onMounted(async () => {
   pageActive = true
   await loadInitialHistory()
-  await refreshLatestMessages()
   connectWs()
 })
 

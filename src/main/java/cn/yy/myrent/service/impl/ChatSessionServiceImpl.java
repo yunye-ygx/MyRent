@@ -44,7 +44,7 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void sendMessage(MessageDTO messageDTO) {
+    public ChatMessage sendMessage(MessageDTO messageDTO) {
         Long senderId = messageDTO.getSenderId();
         Long receiverId = messageDTO.getReceiverId();
         String content = messageDTO.getContent();
@@ -133,6 +133,8 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
                 }
             }
         });
+
+        return chatMessage;
     }
 
     private String buildSessionId(Long userId1, Long userId2) {

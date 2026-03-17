@@ -285,6 +285,8 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         }
     }
 
+
+    //快速从 es 中找出 标题中同时包含指定地铁站名和租房类型（整租/合租）的房源 ID 列表
     private SmartGuidePrefilterResult querySmartGuideCandidateIdsFromEs(SmartGuideReqDTO reqDTO) {
         String rentKeyword = RENT_MODE_WHOLE.equals(normalizeEnumValue(reqDTO.getRentMode())) ? "整租" : "合租";
         try {
@@ -320,7 +322,7 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         return SmartGuidePrefilterResult.esUnavailable();
     }
 
-    //先找出合适的房源
+    //进行二次过滤筛选出可租的房源
     private List<House> querySmartGuideCandidatesFromDb(SmartGuideReqDTO reqDTO, int budgetCent, List<Long> esCandidateIds) {
         if (esCandidateIds == null || esCandidateIds.isEmpty()) {
             return Collections.emptyList();

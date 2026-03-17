@@ -3,6 +3,7 @@ package cn.yy.myrent.controller;
 import cn.yy.myrent.common.Result;
 import cn.yy.myrent.common.UserContext;
 import cn.yy.myrent.dto.MessageDTO;
+import cn.yy.myrent.entity.ChatMessage;
 import cn.yy.myrent.entity.ChatSession;
 import cn.yy.myrent.service.IChatSessionService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -28,7 +29,7 @@ public class ChatSessionController {
 
     @PostMapping("/send")
     @Operation(description = "发送消息")
-    public Result<Void> send(@RequestBody MessageDTO messageDTO) {
+    public Result<ChatMessage> send(@RequestBody MessageDTO messageDTO) {
         Long senderId = UserContext.getCurrentUserId();
         if (senderId == null) {
             return Result.error(401, "请先登录");
@@ -40,8 +41,8 @@ public class ChatSessionController {
         }
         try {
             messageDTO.setSenderId(senderId);
-            chatSessionService.sendMessage(messageDTO);
-            return Result.success();
+            ChatMessage chatMessage = chatSessionService.sendMessage(messageDTO);
+            return Result.success(chatMessage);
         } catch (Exception e) {
             return Result.error(e.getMessage() == null ? "发送失败" : e.getMessage());
         }

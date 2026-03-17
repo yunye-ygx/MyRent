@@ -1,6 +1,7 @@
 package cn.yy.myrent.service;
 
 import cn.yy.myrent.dto.MessageDTO;
+import cn.yy.myrent.entity.ChatMessage;
 import cn.yy.myrent.entity.ChatSession;
 import com.baomidou.mybatisplus.extension.service.IService;
 
@@ -14,6 +15,6 @@ import com.baomidou.mybatisplus.extension.service.IService;
  */
 public interface IChatSessionService extends IService<ChatSession> {
 
-    void sendMessage(MessageDTO messageDTO);
+    ChatMessage sendMessage(MessageDTO messageDTO);
 
 }
