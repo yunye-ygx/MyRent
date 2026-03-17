@@ -2,11 +2,14 @@ package cn.yy.myrent.service.impl;
 
 import cn.yy.myrent.document.HouseDoc;
 import cn.yy.myrent.dto.SearchHouseReqDTO;
+import cn.yy.myrent.dto.SmartGuideReqDTO;
 import cn.yy.myrent.entity.House;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.service.IHouseService;
 import cn.yy.myrent.vo.HouseSearchResultVO;
 import cn.yy.myrent.vo.HouseVO;
+import cn.yy.myrent.vo.SmartGuideItemVO;
+import cn.yy.myrent.vo.SmartGuideResultVO;
 import co.elastic.clients.elasticsearch._types.DistanceUnit;
 import co.elastic.clients.elasticsearch._types.SortOptions;
 import co.elastic.clients.elasticsearch._types.SortOrder;
@@ -28,10 +31,15 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 
 @Service
 public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements IHouseService {
@@ -44,8 +52,19 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
     private static final String FALLBACK_SOURCE_REDIS_HOT = "REDIS_HOT";
     private static final String FALLBACK_SOURCE_DB_CITY_HOT = "DB_CITY_HOT";
 
+    private static final String BUDGET_SCOPE_RENT_ONLY = "RENT_ONLY";
+    private static final String BUDGET_SCOPE_TOTAL = "TOTAL";
+    private static final String RENT_MODE_WHOLE = "WHOLE";
+    private static final String RENT_MODE_SHARED = "SHARED";
+    private static final int HOUSE_STATUS_AVAILABLE = 1;
+    private static final int HOUSE_STATUS_LOCKED = 2;
+    private static final int SMART_GUIDE_MAX_CANDIDATES = 200;
+    private static final int SMART_GUIDE_ES_PREFILTER_SIZE = 300;
+    private static final int RELAXED_BUDGET_DELTA_YUAN = 500;
+
     private static final String TIP_ES_DOWN = "附近房源加载异常，已为你展示推荐房源";
     private static final String TIP_OUT_OF_RANGE = "当前房源不在搜索范围内";
+    private static final String TIP_SMART_GUIDE_ES_DEGRADED = "ES预筛选暂不可用，已降级到DB方案，状态和价格均以DB为准";
 
     @Autowired
     private ElasticsearchOperations elasticsearchOperations;
@@ -85,6 +104,61 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         }
 
         return searchWhenEsUnavailable(city, pageIndex, pageSize);
+    }
+
+    @Override
+    public SmartGuideResultVO smartGuide(SmartGuideReqDTO reqDTO) {
+        validateSmartGuideReq(reqDTO);
+
+        int page = reqDTO.getPage() == null ? 1 : reqDTO.getPage();
+        int size = reqDTO.getSize() == null ? 10 : reqDTO.getSize();
+        int budgetCent = reqDTO.getBudgetYuan() * 100;
+        SmartGuidePrefilterResult prefilterResult = querySmartGuideCandidateIdsFromEs(reqDTO);
+
+        List<House> exactCandidates = querySmartGuideCandidatesFromDb(reqDTO, budgetCent, prefilterResult.getCandidateIds());
+        if (!prefilterResult.isEsAvailable()) {
+            exactCandidates = querySmartGuideCandidatesFallback(reqDTO, budgetCent);
+        }
+
+        SmartGuideResultVO result = new SmartGuideResultVO();
+        result.setOriginalBudgetYuan(reqDTO.getBudgetYuan());
+
+        List<House> candidates = exactCandidates;
+        int scoredBudgetYuan = reqDTO.getBudgetYuan();
+        if (exactCandidates.isEmpty()) {
+            int relaxedBudgetYuan = reqDTO.getBudgetYuan() + RELAXED_BUDGET_DELTA_YUAN;
+            candidates = querySmartGuideCandidatesFromDb(reqDTO, relaxedBudgetYuan * 100, prefilterResult.getCandidateIds());
+            if (!prefilterResult.isEsAvailable()) {
+                candidates = querySmartGuideCandidatesFallback(reqDTO, relaxedBudgetYuan * 100);
+            }
+            scoredBudgetYuan = relaxedBudgetYuan;
+            result.setRelaxedBudget(Boolean.TRUE);
+            result.setRelaxedBudgetYuan(relaxedBudgetYuan);
+            result.setTipMessage("No exact result, budget +500 recommendations are shown.");
+        } else {
+            result.setRelaxedBudget(Boolean.FALSE);
+            result.setTipMessage(prefilterResult.isEsAvailable()
+                    ? "Matched listings found and ranked by score."
+                    : TIP_SMART_GUIDE_ES_DEGRADED);
+        }
+
+        final int finalScoredBudgetYuan = scoredBudgetYuan;
+        List<SmartGuideItemVO> ranked = candidates.stream()
+                .map(house -> buildSmartGuideItem(house, reqDTO, finalScoredBudgetYuan))
+                .sorted(Comparator.comparing(SmartGuideItemVO::getScore).reversed())
+                .collect(Collectors.toList());
+
+        int start = Math.max((page - 1) * size, 0);
+        if (start >= ranked.size()) {
+            result.setRecommendations(new ArrayList<>());
+            return result;
+        }
+        int end = Math.min(start + size, ranked.size());
+        result.setRecommendations(ranked.subList(start, end));
+        if (!prefilterResult.isEsAvailable()) {
+            result.setTipMessage(TIP_SMART_GUIDE_ES_DEGRADED);
+        }
+        return result;
     }
 
     private HouseSearchResultVO searchWhenEsUnavailable(String city, int pageIndex, int pageSize) {
@@ -184,6 +258,223 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
                 pageSize,
                 voList.size());
         return voList;
+    }
+
+    //校验传递的参数是否为空或者非法
+    private void validateSmartGuideReq(SmartGuideReqDTO reqDTO) {
+        String budgetScope = normalizeEnumValue(reqDTO.getBudgetScope());
+        if (!BUDGET_SCOPE_RENT_ONLY.equals(budgetScope) && !BUDGET_SCOPE_TOTAL.equals(budgetScope)) {
+            throw new IllegalArgumentException("budgetScope only supports RENT_ONLY or TOTAL");
+        }
+
+        String rentMode = normalizeEnumValue(reqDTO.getRentMode());
+        if (!RENT_MODE_WHOLE.equals(rentMode) && !RENT_MODE_SHARED.equals(rentMode)) {
+            throw new IllegalArgumentException("rentMode only supports WHOLE or SHARED");
+        }
+
+        boolean hasStationLat = reqDTO.getStationLatitude() != null;
+        boolean hasStationLon = reqDTO.getStationLongitude() != null;
+        if (hasStationLat != hasStationLon) {
+            throw new IllegalArgumentException("stationLatitude and stationLongitude must be sent together");
+        }
+    }
+
+    private SmartGuidePrefilterResult querySmartGuideCandidateIdsFromEs(SmartGuideReqDTO reqDTO) {
+        String rentKeyword = RENT_MODE_WHOLE.equals(normalizeEnumValue(reqDTO.getRentMode())) ? "整租" : "合租";
+        try {
+            List<Long> candidateIds = CompletableFuture.supplyAsync(() -> {
+                        Query boolQuery = Query.of(q -> q.bool(b -> b
+                                .must(m -> m.match(mm -> mm.field("title").query(reqDTO.getCommuteMetroStation())))
+                                .must(m -> m.match(mm -> mm.field("title").query(rentKeyword)))
+                        ));
+
+                        NativeQuery nativeQuery = NativeQuery.builder()
+                                .withQuery(boolQuery)
+                                .withPageable(PageRequest.of(0, SMART_GUIDE_ES_PREFILTER_SIZE))
+                                .build();
+                        SearchHits<HouseDoc> hits = elasticsearchOperations.search(nativeQuery, HouseDoc.class);
+                        LinkedHashSet<Long> idSet = new LinkedHashSet<>();
+                        for (SearchHit<HouseDoc> hit : hits) {
+                            HouseDoc doc = hit.getContent();
+                            if (doc != null && doc.getId() != null) {
+                                idSet.add(doc.getId());
+                            }
+                        }
+                        return new ArrayList<>(idSet);
+                    })
+                    .get(ES_QUERY_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+
+            log.info("smartGuide ES预筛选完成，candidateCount={}", candidateIds.size());
+            return SmartGuidePrefilterResult.esAvailable(candidateIds);
+        } catch (TimeoutException te) {
+            log.warn("smartGuide ES预筛选超时({}ms)，降级DB", ES_QUERY_TIMEOUT_MS);
+        } catch (Exception e) {
+            log.error("smartGuide ES预筛选异常，降级DB", e);
+        }
+        return SmartGuidePrefilterResult.esUnavailable();
+    }
+
+    //先找出合适的房源
+    private List<House> querySmartGuideCandidatesFromDb(SmartGuideReqDTO reqDTO, int budgetCent, List<Long> esCandidateIds) {
+        if (esCandidateIds == null || esCandidateIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        String rentKeyword = RENT_MODE_WHOLE.equals(normalizeEnumValue(reqDTO.getRentMode())) ? "整租" : "合租";
+        return this.lambdaQuery()
+                .in(House::getId, esCandidateIds)
+                .in(House::getStatus, HOUSE_STATUS_AVAILABLE, HOUSE_STATUS_LOCKED)
+                .le(House::getPrice, budgetCent)
+                .like(StringUtils.hasText(reqDTO.getCommuteMetroStation()), House::getTitle, reqDTO.getCommuteMetroStation())
+                .like(House::getTitle, rentKeyword)
+                .orderByAsc(House::getPrice)
+                .last("limit " + SMART_GUIDE_MAX_CANDIDATES)
+                .list();
+    }
+
+    private List<House> querySmartGuideCandidatesFallback(SmartGuideReqDTO reqDTO, int budgetCent) {
+        String rentKeyword = RENT_MODE_WHOLE.equals(normalizeEnumValue(reqDTO.getRentMode())) ? "整租" : "合租";
+        return this.lambdaQuery()
+                .in(House::getStatus, HOUSE_STATUS_AVAILABLE, HOUSE_STATUS_LOCKED)
+                .le(House::getPrice, budgetCent)
+                .like(StringUtils.hasText(reqDTO.getCommuteMetroStation()), House::getTitle, reqDTO.getCommuteMetroStation())
+                .like(House::getTitle, rentKeyword)
+                .orderByAsc(House::getPrice)
+                .last("limit " + SMART_GUIDE_MAX_CANDIDATES)
+                .list();
+    }
+
+    private static class SmartGuidePrefilterResult {
+
+        private final boolean esAvailable;
+
+        private final List<Long> candidateIds;
+
+        private SmartGuidePrefilterResult(boolean esAvailable, List<Long> candidateIds) {
+            this.esAvailable = esAvailable;
+            this.candidateIds = candidateIds;
+        }
+
+        static SmartGuidePrefilterResult esAvailable(List<Long> candidateIds) {
+            return new SmartGuidePrefilterResult(true, candidateIds == null ? Collections.emptyList() : candidateIds);
+        }
+
+        static SmartGuidePrefilterResult esUnavailable() {
+            return new SmartGuidePrefilterResult(false, Collections.emptyList());
+        }
+
+        boolean isEsAvailable() {
+            return esAvailable;
+        }
+
+        List<Long> getCandidateIds() {
+            return candidateIds;
+        }
+    }
+
+    private SmartGuideItemVO buildSmartGuideItem(House house, SmartGuideReqDTO reqDTO, int scoredBudgetYuan) {
+        SmartGuideItemVO item = new SmartGuideItemVO();
+        item.setHouseId(house.getId());
+        item.setPublisherUserId(house.getPublisherUserId());
+        item.setTitle(house.getTitle());
+        item.setStatus(house.getStatus());
+        item.setPrice(convertCentToYuan(house.getPrice()));
+
+        BigDecimal score = BigDecimal.ZERO;
+        List<String> reasons = new ArrayList<>();
+
+        score = score.add(calculateBudgetScore(house.getPrice(), scoredBudgetYuan * 100));
+        reasons.add("Budget matched: " + convertCentToYuan(house.getPrice()) + " yuan/month");
+
+        if (HOUSE_STATUS_AVAILABLE == house.getStatus()) {
+            score = score.add(new BigDecimal("25"));
+            reasons.add("Currently available");
+        } else {
+            score = score.add(new BigDecimal("8"));
+            reasons.add("Temporarily locked, may be released if payment fails");
+        }
+
+        if (StringUtils.hasText(house.getTitle())
+                && StringUtils.hasText(reqDTO.getCommuteMetroStation())
+                && house.getTitle().contains(reqDTO.getCommuteMetroStation())) {
+            score = score.add(new BigDecimal("10"));
+            reasons.add("Commute station keyword matched");
+        }
+
+        score = score.add(applyCommuteScore(item, reqDTO, house, reasons));
+        score = score.add(applyFreshnessScore(house, reasons));
+
+        if (reasons.size() > 3) {
+            reasons = reasons.subList(0, 3);
+        }
+        item.setReasons(reasons);
+        item.setScore(score.setScale(2, RoundingMode.HALF_UP));
+        return item;
+    }
+
+    private BigDecimal applyCommuteScore(SmartGuideItemVO item, SmartGuideReqDTO reqDTO, House house, List<String> reasons) {
+        if (reqDTO.getStationLatitude() == null || reqDTO.getStationLongitude() == null
+                || house.getLatitude() == null || house.getLongitude() == null) {
+            return BigDecimal.ZERO;
+        }
+
+        double distanceKm = calculateDistanceKm(
+                reqDTO.getStationLatitude(),
+                reqDTO.getStationLongitude(),
+                house.getLatitude().doubleValue(),
+                house.getLongitude().doubleValue());
+
+        BigDecimal distance = new BigDecimal(distanceKm).setScale(2, RoundingMode.HALF_UP);
+        int commuteMinutes = Math.max(1, (int) Math.ceil((distanceKm * 1.35d / 4.5d) * 60));
+
+        item.setDistanceToMetroKm(distance);
+        item.setEstimatedCommuteMinutes(commuteMinutes);
+        reasons.add("To metro ~" + distance + "km, about " + commuteMinutes + " mins");
+
+        return new BigDecimal(Math.max(0, 25 - commuteMinutes * 0.6d));
+    }
+
+    private BigDecimal applyFreshnessScore(House house, List<String> reasons) {
+        if (house.getCreateTime() == null) {
+            return BigDecimal.ZERO;
+        }
+
+        long dayDiff = java.time.Duration.between(house.getCreateTime(), java.time.LocalDateTime.now()).toDays();
+        if (dayDiff <= 7) {
+            reasons.add("Listed within 7 days");
+            return new BigDecimal("10");
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private BigDecimal calculateBudgetScore(Integer housePriceCent, int budgetCent) {
+        if (housePriceCent == null || budgetCent <= 0) {
+            return BigDecimal.ZERO;
+        }
+        double gapRatio = Math.abs(budgetCent - housePriceCent) * 1.0d / budgetCent;
+        double score = 40d * (1 - Math.min(1d, gapRatio));
+        return new BigDecimal(Math.max(0d, score));
+    }
+
+    private String normalizeEnumValue(String value) {
+        return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private BigDecimal convertCentToYuan(Integer cent) {
+        if (cent == null) {
+            return null;
+        }
+        return new BigDecimal(cent).divide(new BigDecimal(100), 2, RoundingMode.HALF_UP);
+    }
+
+    private double calculateDistanceKm(double lat1, double lon1, double lat2, double lon2) {
+        double earthRadiusKm = 6371.0d;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return earthRadiusKm * c;
     }
 
     private HouseVO convertDocToVo(HouseDoc doc) {
