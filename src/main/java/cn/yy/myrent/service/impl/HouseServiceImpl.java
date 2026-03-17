@@ -6,6 +6,7 @@ import cn.yy.myrent.dto.SmartGuideReqDTO;
 import cn.yy.myrent.entity.House;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.service.IHouseService;
+import cn.yy.myrent.service.score.SmartGuideScoreCalculator;
 import cn.yy.myrent.vo.HouseSearchResultVO;
 import cn.yy.myrent.vo.HouseVO;
 import cn.yy.myrent.vo.SmartGuideItemVO;
@@ -71,6 +72,9 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
 
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
+
+    @Autowired
+    private SmartGuideScoreCalculator smartGuideScoreCalculator;
 
     @Override
     public HouseSearchResultVO searchNearbyHouse(SearchHouseReqDTO reqDTO) {
@@ -143,8 +147,9 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         }
 
         final int finalScoredBudgetYuan = scoredBudgetYuan;
+        final String rentKeyword = RENT_MODE_WHOLE.equals(normalizeEnumValue(reqDTO.getRentMode())) ? "整租" : "合租";
         List<SmartGuideItemVO> ranked = candidates.stream()
-                .map(house -> buildSmartGuideItem(house, reqDTO, finalScoredBudgetYuan))
+                .map(house -> buildSmartGuideItem(house, reqDTO, finalScoredBudgetYuan, rentKeyword))
                 .sorted(Comparator.comparing(SmartGuideItemVO::getScore).reversed())
                 .collect(Collectors.toList());
 
@@ -371,7 +376,10 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         }
     }
 
-    private SmartGuideItemVO buildSmartGuideItem(House house, SmartGuideReqDTO reqDTO, int scoredBudgetYuan) {
+    private SmartGuideItemVO buildSmartGuideItem(House house,
+                                                 SmartGuideReqDTO reqDTO,
+                                                 int scoredBudgetYuan,
+                                                 String rentKeyword) {
         SmartGuideItemVO item = new SmartGuideItemVO();
         item.setHouseId(house.getId());
         item.setPublisherUserId(house.getPublisherUserId());
@@ -379,80 +387,14 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         item.setStatus(house.getStatus());
         item.setPrice(convertCentToYuan(house.getPrice()));
 
-        BigDecimal score = BigDecimal.ZERO;
-        List<String> reasons = new ArrayList<>();
+        SmartGuideScoreCalculator.SmartGuideScoreResult scoreResult =
+                smartGuideScoreCalculator.calculate(house, reqDTO, scoredBudgetYuan * 100, rentKeyword);
 
-        score = score.add(calculateBudgetScore(house.getPrice(), scoredBudgetYuan * 100));
-        reasons.add("Budget matched: " + convertCentToYuan(house.getPrice()) + " yuan/month");
-
-        if (HOUSE_STATUS_AVAILABLE == house.getStatus()) {
-            score = score.add(new BigDecimal("25"));
-            reasons.add("Currently available");
-        } else {
-            score = score.add(new BigDecimal("8"));
-            reasons.add("Temporarily locked, may be released if payment fails");
-        }
-
-        if (StringUtils.hasText(house.getTitle())
-                && StringUtils.hasText(reqDTO.getCommuteMetroStation())
-                && house.getTitle().contains(reqDTO.getCommuteMetroStation())) {
-            score = score.add(new BigDecimal("10"));
-            reasons.add("Commute station keyword matched");
-        }
-
-        score = score.add(applyCommuteScore(item, reqDTO, house, reasons));
-        score = score.add(applyFreshnessScore(house, reasons));
-
-        if (reasons.size() > 3) {
-            reasons = reasons.subList(0, 3);
-        }
-        item.setReasons(reasons);
-        item.setScore(score.setScale(2, RoundingMode.HALF_UP));
+        item.setDistanceToMetroKm(scoreResult.getDistanceToMetroKm());
+        item.setEstimatedCommuteMinutes(scoreResult.getEstimatedCommuteMinutes());
+        item.setReasons(scoreResult.getReasons());
+        item.setScore(scoreResult.getScore());
         return item;
-    }
-
-    private BigDecimal applyCommuteScore(SmartGuideItemVO item, SmartGuideReqDTO reqDTO, House house, List<String> reasons) {
-        if (reqDTO.getStationLatitude() == null || reqDTO.getStationLongitude() == null
-                || house.getLatitude() == null || house.getLongitude() == null) {
-            return BigDecimal.ZERO;
-        }
-
-        double distanceKm = calculateDistanceKm(
-                reqDTO.getStationLatitude(),
-                reqDTO.getStationLongitude(),
-                house.getLatitude().doubleValue(),
-                house.getLongitude().doubleValue());
-
-        BigDecimal distance = new BigDecimal(distanceKm).setScale(2, RoundingMode.HALF_UP);
-        int commuteMinutes = Math.max(1, (int) Math.ceil((distanceKm * 1.35d / 4.5d) * 60));
-
-        item.setDistanceToMetroKm(distance);
-        item.setEstimatedCommuteMinutes(commuteMinutes);
-        reasons.add("To metro ~" + distance + "km, about " + commuteMinutes + " mins");
-
-        return new BigDecimal(Math.max(0, 25 - commuteMinutes * 0.6d));
-    }
-
-    private BigDecimal applyFreshnessScore(House house, List<String> reasons) {
-        if (house.getCreateTime() == null) {
-            return BigDecimal.ZERO;
-        }
-
-        long dayDiff = java.time.Duration.between(house.getCreateTime(), java.time.LocalDateTime.now()).toDays();
-        if (dayDiff <= 7) {
-            reasons.add("Listed within 7 days");
-            return new BigDecimal("10");
-        }
-        return BigDecimal.ZERO;
-    }
-
-    private BigDecimal calculateBudgetScore(Integer housePriceCent, int budgetCent) {
-        if (housePriceCent == null || budgetCent <= 0) {
-            return BigDecimal.ZERO;
-        }
-        double gapRatio = Math.abs(budgetCent - housePriceCent) * 1.0d / budgetCent;
-        double score = 40d * (1 - Math.min(1d, gapRatio));
-        return new BigDecimal(Math.max(0d, score));
     }
 
     private String normalizeEnumValue(String value) {
@@ -464,17 +406,6 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
             return null;
         }
         return new BigDecimal(cent).divide(new BigDecimal(100), 2, RoundingMode.HALF_UP);
-    }
-
-    private double calculateDistanceKm(double lat1, double lon1, double lat2, double lon2) {
-        double earthRadiusKm = 6371.0d;
-        double dLat = Math.toRadians(lat2 - lat1);
-        double dLon = Math.toRadians(lon2 - lon1);
-        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return earthRadiusKm * c;
     }
 
     private HouseVO convertDocToVo(HouseDoc doc) {
