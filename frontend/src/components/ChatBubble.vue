@@ -59,6 +59,7 @@ const displayName = computed(() => {
   color: #111827;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
   word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .bubble.self {

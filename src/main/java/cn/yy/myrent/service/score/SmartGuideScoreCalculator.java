@@ -1,7 +1,7 @@
 package cn.yy.myrent.service.score;
 
-import cn.yy.myrent.dto.SmartGuideReqDTO;
 import cn.yy.myrent.entity.House;
+import cn.yy.myrent.service.smartguide.SmartGuideQueryContext;
 import lombok.Getter;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -14,76 +14,71 @@ import java.util.List;
 @Component
 public class SmartGuideScoreCalculator {
 
-    private static final BigDecimal MATCH_WEIGHT = new BigDecimal("1000000");
-    private static final BigDecimal RENT_WEIGHT = new BigDecimal("1000");
+    private static final BigDecimal RENT_MODE_WEIGHT = new BigDecimal("10000");
+    private static final BigDecimal BUDGET_WEIGHT = new BigDecimal("100");
 
+    /**
+     * 计算单个房源的综合得分。
+     * 这里把租住方式匹配、预算贴近度、距离目标地点的远近三部分合成一个总分，供最终排序使用。
+     */
     public SmartGuideScoreResult calculate(House house,
-                                           SmartGuideReqDTO reqDTO,
-                                           int budgetCent,
-                                           String rentKeyword) {
-        BigDecimal matchScore = calculateMatchScore(house, reqDTO, rentKeyword);
-        BigDecimal rentCloseScore = calculateRentCloseScore(house, budgetCent);
-        LocationScore locationScore = calculateLocationScore(house, reqDTO);
+                                           SmartGuideQueryContext queryContext) {
+        BigDecimal rentModeScore = calculateRentModeScore(house, queryContext.rentKeyword());
+        BigDecimal budgetCloseScore = calculateBudgetCloseScore(house, queryContext);
+        LocationScore locationScore = calculateLocationScore(house, queryContext);
 
-        BigDecimal totalScore = matchScore.multiply(MATCH_WEIGHT)
-                .add(rentCloseScore.multiply(RENT_WEIGHT))
+        BigDecimal totalScore = rentModeScore.multiply(RENT_MODE_WEIGHT)
+                .add(budgetCloseScore.multiply(BUDGET_WEIGHT))
                 .add(locationScore.getLocationScore())
                 .setScale(3, RoundingMode.HALF_UP);
 
-        List<String> reasons = buildReasons(matchScore, rentCloseScore, locationScore.getDistanceKm());
-
-        return new SmartGuideScoreResult(totalScore,
-                locationScore.getDistanceKm(),
-                locationScore.getCommuteMinutes(),
-                reasons);
+        List<String> reasons = buildReasons(queryContext, rentModeScore, budgetCloseScore, locationScore.getDistanceKm());
+        return new SmartGuideScoreResult(totalScore, locationScore.getDistanceKm(), locationScore.getCommuteMinutes(), reasons);
     }
 
-    private BigDecimal calculateMatchScore(House house, SmartGuideReqDTO reqDTO, String rentKeyword) {
+    /**
+     * 计算租住方式匹配分。
+     * 当前版本还没有结构化的整租/合租字段，因此先用标题中是否包含对应关键词做临时判断。
+     */
+    private BigDecimal calculateRentModeScore(House house, String rentKeyword) {
         String title = safeLower(house == null ? null : house.getTitle());
-        String station = safeLower(reqDTO == null ? null : reqDTO.getCommuteMetroStation());
-        String rent = safeLower(rentKeyword);
-
-        BigDecimal rentModeHit = contains(title, rent) ? new BigDecimal("100") : BigDecimal.ZERO;
-        BigDecimal stationHit;
-        if (!StringUtils.hasText(station)) {
-            stationHit = new BigDecimal("100");
-        } else if (contains(title, station)) {
-            stationHit = new BigDecimal("100");
-        } else {
-            stationHit = BigDecimal.ZERO;
-        }
-
-        return rentModeHit.multiply(new BigDecimal("0.7"))
-                .add(stationHit.multiply(new BigDecimal("0.3")))
-                .setScale(3, RoundingMode.HALF_UP);
+        String keyword = safeLower(rentKeyword);
+        return contains(title, keyword) ? new BigDecimal("100.000") : BigDecimal.ZERO;
     }
 
-    private BigDecimal calculateRentCloseScore(House house, int budgetCent) {
-        if (house == null || house.getPrice() == null || budgetCent <= 0) {
+    /**
+     * 计算预算贴近度得分。
+     * RENT_ONLY 按月租比较，TOTAL 按首月总成本（月租+押金）比较，越接近预算得分越高。
+     */
+    private BigDecimal calculateBudgetCloseScore(House house, SmartGuideQueryContext queryContext) {
+        int comparableCostCent = resolveComparableCostCent(house, queryContext.totalCostScope());
+        if (comparableCostCent <= 0 || queryContext.budgetCent() <= 0) {
             return BigDecimal.ZERO;
         }
-        BigDecimal diff = new BigDecimal(Math.abs((long) house.getPrice() - budgetCent));
-        BigDecimal ratio = diff.divide(new BigDecimal(budgetCent), 6, RoundingMode.HALF_UP);
+
+        BigDecimal diff = new BigDecimal(Math.abs((long) comparableCostCent - queryContext.budgetCent()));
+        BigDecimal ratio = diff.divide(new BigDecimal(queryContext.budgetCent()), 6, RoundingMode.HALF_UP);
         if (ratio.compareTo(BigDecimal.ONE) > 0) {
             ratio = BigDecimal.ONE;
         }
         return new BigDecimal("100").multiply(BigDecimal.ONE.subtract(ratio)).setScale(3, RoundingMode.HALF_UP);
     }
 
-    private LocationScore calculateLocationScore(House house, SmartGuideReqDTO reqDTO) {
+    /**
+     * 计算位置相关信息。
+     * 包括位置分、房源到目标地点的距离，以及一个简单估算出的通勤分钟数。
+     */
+    private LocationScore calculateLocationScore(House house, SmartGuideQueryContext queryContext) {
         if (house == null
                 || house.getLatitude() == null
-                || house.getLongitude() == null
-                || reqDTO == null
-                || reqDTO.getStationLatitude() == null
-                || reqDTO.getStationLongitude() == null) {
+                || house.getLongitude() == null) {
             return new LocationScore(new BigDecimal("50.000"), null, null);
         }
 
         double distanceKm = haversine(house.getLatitude().doubleValue(),
                 house.getLongitude().doubleValue(),
-                reqDTO.getStationLatitude(),
-                reqDTO.getStationLongitude());
+                queryContext.targetLatitude(),
+                queryContext.targetLongitude());
 
         BigDecimal distance = BigDecimal.valueOf(distanceKm).setScale(3, RoundingMode.HALF_UP);
         BigDecimal ratio = BigDecimal.valueOf(distanceKm)
@@ -99,18 +94,44 @@ public class SmartGuideScoreCalculator {
         return new LocationScore(locationScore, distance, commuteMinutes);
     }
 
-    private List<String> buildReasons(BigDecimal matchScore, BigDecimal rentCloseScore, BigDecimal distanceKm) {
+    /**
+     * 组装前端展示的推荐理由。
+     * 这里不直接暴露内部权重，只展示用户能理解的几个维度。
+     */
+    private List<String> buildReasons(SmartGuideQueryContext queryContext,
+                                      BigDecimal rentModeScore,
+                                      BigDecimal budgetCloseScore,
+                                      BigDecimal distanceKm) {
         List<String> reasons = new ArrayList<>(3);
-        reasons.add("匹配度评分: " + normalizeScore(matchScore));
-        reasons.add("租金贴近度评分: " + normalizeScore(rentCloseScore));
+        reasons.add("租住方式匹配度 " + normalizeScore(rentModeScore));
+        reasons.add((queryContext.totalCostScope() ? "首月总成本贴近度 " : "月租贴近度 ") + normalizeScore(budgetCloseScore));
         if (distanceKm == null) {
-            reasons.add("位置评分: 缺少坐标，使用中性分");
+            reasons.add("位置评分使用中性分，房源坐标缺失");
         } else {
-            reasons.add("距离通勤点约 " + distanceKm.stripTrailingZeros().toPlainString() + "km");
+            reasons.add("距目标地点约 " + distanceKm.stripTrailingZeros().toPlainString() + "km");
         }
         return reasons;
     }
 
+    /**
+     * 按预算口径计算房源的可比较成本。
+     * 只看月租时返回 price，看首月总成本时返回 price + depositAmount。
+     */
+    private int resolveComparableCostCent(House house, boolean totalCostScope) {
+        if (house == null || house.getPrice() == null) {
+            return 0;
+        }
+        int price = Math.max(house.getPrice(), 0);
+        if (!totalCostScope) {
+            return price;
+        }
+        int deposit = house.getDepositAmount() == null ? 0 : Math.max(house.getDepositAmount(), 0);
+        return price + deposit;
+    }
+
+    /**
+     * 把分数转成更适合展示的字符串，去掉无意义的小数尾零。
+     */
     private String normalizeScore(BigDecimal score) {
         if (score == null) {
             return "0";
@@ -118,14 +139,23 @@ public class SmartGuideScoreCalculator {
         return score.stripTrailingZeros().toPlainString();
     }
 
+    /**
+     * 判断文本里是否包含指定关键词。
+     */
     private boolean contains(String text, String keyword) {
         return StringUtils.hasText(text) && StringUtils.hasText(keyword) && text.contains(keyword);
     }
 
+    /**
+     * 对字符串做空值保护并转成小写，便于做不区分大小写的包含判断。
+     */
     private String safeLower(String value) {
         return value == null ? "" : value.trim().toLowerCase();
     }
 
+    /**
+     * 使用 Haversine 公式计算两组经纬度之间的球面距离，单位为公里。
+     */
     private double haversine(double lat1, double lon1, double lat2, double lon2) {
         final double radiusKm = 6371.0d;
         double dLat = Math.toRadians(lat2 - lat1);
@@ -144,6 +174,9 @@ public class SmartGuideScoreCalculator {
         private final Integer estimatedCommuteMinutes;
         private final List<String> reasons;
 
+        /**
+         * 封装单个房源打分后的结果对象。
+         */
         public SmartGuideScoreResult(BigDecimal score,
                                      BigDecimal distanceToMetroKm,
                                      Integer estimatedCommuteMinutes,
@@ -161,6 +194,9 @@ public class SmartGuideScoreCalculator {
         private final BigDecimal distanceKm;
         private final Integer commuteMinutes;
 
+        /**
+         * 封装位置维度的中间计算结果，避免在主流程里传很多零散值。
+         */
         private LocationScore(BigDecimal locationScore, BigDecimal distanceKm, Integer commuteMinutes) {
             this.locationScore = locationScore;
             this.distanceKm = distanceKm;

@@ -1,7 +1,7 @@
 <template>
   <div class="page detail-page">
     <div class="card head">
-      <button class="ghost-btn" @click="goBack">返回</button>
+      <button class="ghost-btn" @click="goBack()">返回</button>
       <h2 class="section-title">房源详情</h2>
     </div>
 
@@ -144,7 +144,8 @@ function goConsult() {
     path: `/chat/${targetSessionId}`,
     query: {
       peerId: String(house.value.publisherUserId),
-      peerName: publisher.value?.name || ''
+      peerName: publisher.value?.name || '',
+      houseId: String(house.value.id)
     }
   })
 }
