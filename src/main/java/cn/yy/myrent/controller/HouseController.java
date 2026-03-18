@@ -13,8 +13,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,30 +29,31 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/house")
 @Tag(name = "房源管理")
 @Slf4j
+@RequiredArgsConstructor
 public class HouseController {
 
-    @Autowired
-    private IHouseService houseService;
-
-    @Autowired
-    private IHouseCommandService houseCommandService;
+    private final IHouseService houseService;
+    private final IHouseCommandService houseCommandService;
 
     @PostMapping("/nearby")
-    @Operation(summary = "附近房源搜索", description = "优先ES，失败自动降级")
+    @Operation(summary = "附近房源搜索", description = "优先走 ES，失败后自动降级")
     public Result<HouseSearchResultVO> searchHouse(@RequestBody SearchHouseReqDTO reqDTO) {
         HouseSearchResultVO result = houseService.searchNearbyHouse(reqDTO);
         return Result.success(result);
     }
 
+    /**
+     * 控制层只负责参数校验、调用业务服务以及统一包装返回结果。
+     */
     @PostMapping("/smart-guide")
-    @Operation(summary = "智能找房引导V2", description = "先ES预筛选候选ID，再由DB按状态/价格做二次过滤")
+    @Operation(summary = "智能找房引导", description = "先做 ES 预筛选，再由 DB 完成最终过滤和排序")
     public Result<SmartGuideResultVO> smartGuide(@Valid @RequestBody SmartGuideReqDTO reqDTO) {
         SmartGuideResultVO result = houseService.smartGuide(reqDTO);
         return Result.success(result);
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "按ID查询房源")
+    @Operation(summary = "按 ID 查询房源")
     public Result<House> getById(@PathVariable("id") Long id) {
         House house = houseService.getById(id);
         if (house == null) {

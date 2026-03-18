@@ -59,7 +59,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 
     public OrderServiceImpl() {
         lockHouseScript = new DefaultRedisScript<>();
-        lockHouseScript.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/Stock.lua")));
+        lockHouseScript.setScriptSource(new ResourceScriptSource(new ClassPathResource("Lua/Stock.lua")));
         lockHouseScript.setResultType(Long.class);
     }
 

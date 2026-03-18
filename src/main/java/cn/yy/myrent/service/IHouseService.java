@@ -8,17 +8,14 @@ import cn.yy.myrent.vo.SmartGuideResultVO;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 /**
- * <p>
- * 房源信息表 服务类
- * </p>
- *
- * @author yy
- * @since 2026-02-26
+ * 房源查询服务接口。
  */
 public interface IHouseService extends IService<House> {
 
-
     HouseSearchResultVO searchNearbyHouse(SearchHouseReqDTO reqDTO);
 
+    /**
+     * 根据预算、租住方式和通勤偏好返回排序后的房源推荐结果。
+     */
     SmartGuideResultVO smartGuide(SmartGuideReqDTO reqDTO);
 }
