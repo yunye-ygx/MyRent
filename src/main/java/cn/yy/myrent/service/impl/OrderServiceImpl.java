@@ -76,7 +76,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             throw new RuntimeException("房源不存在");
         }
         if (currentUserId.equals(house.getPublisherUserId())) {
-            throw new RuntimeException("不能租自己发布的房源");
+            throw new RuntimeException("这是你自己发布的房源，不能给自己的房源下单");
         }
 
         log.info("下单请求开始，houseId={}, userId={}", lockHouse.getHouseId(), currentUserId);

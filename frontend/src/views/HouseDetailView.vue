@@ -153,6 +153,15 @@ async function submitDeposit() {
   if (!house.value || house.value.status !== 1 || lockLoading.value) {
     return
   }
+  const currentUserId = authStore.userId
+  if (!currentUserId) {
+    router.push('/login')
+    return
+  }
+  if (String(currentUserId) === String(house.value.publisherUserId)) {
+    window.alert('这是你自己发布的房源，不能给自己的房源下单。')
+    return
+  }
   lockLoading.value = true
   try {
     await createOrder({

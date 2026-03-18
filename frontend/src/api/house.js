@@ -11,3 +11,7 @@ export function fetchHouseById(id) {
 export function searchNearbyHouse(payload) {
   return http.post('/house/nearby', payload)
 }
+
+export function smartGuideHouse(payload) {
+  return http.post('/house/smart-guide', payload)
+}
