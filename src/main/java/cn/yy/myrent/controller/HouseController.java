@@ -7,6 +7,7 @@ import cn.yy.myrent.dto.SmartGuideReqDTO;
 import cn.yy.myrent.entity.House;
 import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IHouseService;
+import cn.yy.myrent.sync.house.service.HouseEsSyncService;
 import cn.yy.myrent.vo.HouseSearchResultVO;
 import cn.yy.myrent.vo.SmartGuideResultVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -34,6 +35,7 @@ public class HouseController {
 
     private final IHouseService houseService;
     private final IHouseCommandService houseCommandService;
+    private final HouseEsSyncService houseEsSyncService;
 
     @PostMapping("/nearby")
     @Operation(summary = "附近房源搜索", description = "优先走 ES，失败后自动降级")
@@ -73,6 +75,13 @@ public class HouseController {
                 .orderByDesc(House::getId)
                 .page(new Page<>(safeCurrent, safeSize));
         return Result.success(page);
+    }
+
+    @PostMapping("/es/rebuild-all")
+    @Operation(summary = "全量重建房源 ES 文档", description = "从 MySQL 全量扫描 house 表并重新写入 Elasticsearch")
+    public Result<Integer> rebuildHouseEs() {
+        int rebuildCount = houseEsSyncService.rebuildAllFromDb();
+        return Result.success("房源 ES 全量重建完成", rebuildCount);
     }
 
     @PostMapping

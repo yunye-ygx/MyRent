@@ -1,0 +1,1 @@
+import{h as t}from"./user-PdflILpG.js";function u(e={}){return t.get("/house/page",{params:e})}function o(e){return t.get(`/house/${e}`)}function r(e){return t.post("/house/smart-guide",e)}export{o as a,u as f,r as s};

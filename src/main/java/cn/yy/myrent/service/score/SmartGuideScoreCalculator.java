@@ -16,6 +16,10 @@ public class SmartGuideScoreCalculator {
 
     private static final BigDecimal RENT_MODE_WEIGHT = new BigDecimal("10000");
     private static final BigDecimal BUDGET_WEIGHT = new BigDecimal("100");
+    private static final String RENT_MODE_WHOLE = "WHOLE";
+    private static final String RENT_MODE_SHARED = "SHARED";
+    private static final int RENT_TYPE_WHOLE = 1;
+    private static final int RENT_TYPE_SHARED = 2;
 
     /**
      * 计算单个房源的综合得分。
@@ -23,7 +27,7 @@ public class SmartGuideScoreCalculator {
      */
     public SmartGuideScoreResult calculate(House house,
                                            SmartGuideQueryContext queryContext) {
-        BigDecimal rentModeScore = calculateRentModeScore(house, queryContext.rentKeyword());
+        BigDecimal rentModeScore = calculateRentModeScore(house, queryContext.rentMode(), queryContext.rentKeyword());
         BigDecimal budgetCloseScore = calculateBudgetCloseScore(house, queryContext);
         LocationScore locationScore = calculateLocationScore(house, queryContext);
 
@@ -40,7 +44,16 @@ public class SmartGuideScoreCalculator {
      * 计算租住方式匹配分。
      * 当前版本还没有结构化的整租/合租字段，因此先用标题中是否包含对应关键词做临时判断。
      */
-    private BigDecimal calculateRentModeScore(House house, String rentKeyword) {
+    private BigDecimal calculateRentModeScore(House house, String rentMode, String rentKeyword) {
+        Integer rentType = house == null ? null : house.getRentType();
+        if (rentType != null) {
+            if (RENT_MODE_WHOLE.equalsIgnoreCase(rentMode)) {
+                return rentType == RENT_TYPE_WHOLE ? new BigDecimal("100.000") : BigDecimal.ZERO;
+            }
+            if (RENT_MODE_SHARED.equalsIgnoreCase(rentMode)) {
+                return rentType == RENT_TYPE_SHARED ? new BigDecimal("100.000") : BigDecimal.ZERO;
+            }
+        }
         String title = safeLower(house == null ? null : house.getTitle());
         String keyword = safeLower(rentKeyword);
         return contains(title, keyword) ? new BigDecimal("100.000") : BigDecimal.ZERO;
@@ -124,6 +137,9 @@ public class SmartGuideScoreCalculator {
         int price = Math.max(house.getPrice(), 0);
         if (!totalCostScope) {
             return price;
+        }
+        if (house.getTotalCost() != null) {
+            return Math.max(house.getTotalCost(), 0);
         }
         int deposit = house.getDepositAmount() == null ? 0 : Math.max(house.getDepositAmount(), 0);
         return price + deposit;

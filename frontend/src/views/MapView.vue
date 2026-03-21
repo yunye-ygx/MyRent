@@ -111,8 +111,8 @@
             </div>
             <div class="recommend-side">
               <span class="status" :class="statusClass(item.status)">{{ getStatusText(item.status) }}</span>
-              <span class="budget-gap-badge" :class="{ warning: isBudgetGapLarge(item.price) }">
-                {{ budgetGapText(item.price) }}
+              <span class="budget-gap-badge" :class="{ warning: isBudgetGapLarge(item) }">
+                {{ budgetGapText(item) }}
               </span>
             </div>
           </div>
@@ -174,8 +174,8 @@
             </div>
             <div class="recommend-side">
               <span class="status" :class="statusClass(item.status)">{{ getStatusText(item.status) }}</span>
-              <span class="budget-gap-badge" :class="{ warning: isBudgetGapLarge(item.price) }">
-                {{ budgetGapText(item.price) }}
+              <span class="budget-gap-badge" :class="{ warning: isBudgetGapLarge(item) }">
+                {{ budgetGapText(item) }}
               </span>
             </div>
           </div>
@@ -398,9 +398,19 @@ function formatMinutes(value) {
   return `${minutes} 分钟`
 }
 
-function budgetGapText(price) {
+function resolveComparableBudgetAmount(item) {
+  if (!item) {
+    return Number.NaN
+  }
+  if (submittedGuide.value?.budgetScope === 'TOTAL') {
+    return Number(item.totalCost)
+  }
+  return Number(item.price)
+}
+
+function budgetGapText(item) {
   const budget = Number(submittedGuide.value?.budgetYuan)
-  const amount = Number(price)
+  const amount = resolveComparableBudgetAmount(item)
   if (!Number.isFinite(budget) || !Number.isFinite(amount)) {
     return '预算参考'
   }
@@ -415,9 +425,9 @@ function budgetGapText(price) {
   return `超预算 ${formatMoney(Math.abs(diff))}`
 }
 
-function isBudgetGapLarge(price) {
+function isBudgetGapLarge(item) {
   const budget = Number(submittedGuide.value?.budgetYuan)
-  const amount = Number(price)
+  const amount = resolveComparableBudgetAmount(item)
   if (!Number.isFinite(budget) || !Number.isFinite(amount) || budget <= 0) {
     return false
   }

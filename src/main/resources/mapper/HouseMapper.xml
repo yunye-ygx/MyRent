@@ -5,4 +5,50 @@
     <select id="selectForUpdateById" resultType="cn.yy.myrent.entity.House" parameterType="java.lang.Long">
         select * from house where id = #{id} for update
     </select>
+
+    <select id="selectSmartGuideCandidateIds" resultType="java.lang.Long">
+        select id
+        from house
+        where status = #{availableStatus}
+          and latitude is not null
+          and longitude is not null
+          <if test="candidateIds != null and candidateIds.size() > 0">
+              and id in
+              <foreach collection="candidateIds" item="candidateId" open="(" separator="," close=")">
+                  #{candidateId}
+              </foreach>
+          </if>
+          <if test="rentType != null">
+              and rent_type = #{rentType}
+          </if>
+          <choose>
+              <when test="totalCostScope">
+                  and total_cost &lt;= #{maxComparableCostCent}
+              </when>
+              <otherwise>
+                  and price &lt;= #{maxComparableCostCent}
+              </otherwise>
+          </choose>
+          and latitude between #{minLatitude} and #{maxLatitude}
+          and longitude between #{minLongitude} and #{maxLongitude}
+          and 6371.0 * 2 * asin(
+                sqrt(
+                    power(sin(radians(latitude - #{targetLatitude}) / 2), 2)
+                    + cos(radians(#{targetLatitude}))
+                    * cos(radians(latitude))
+                    * power(sin(radians(longitude - #{targetLongitude}) / 2), 2)
+                )
+              ) &lt;= #{radiusKm}
+        <if test="candidateIds == null or candidateIds.size() == 0">
+            <choose>
+                <when test="totalCostScope">
+                    order by total_cost asc, id desc
+                </when>
+                <otherwise>
+                    order by price asc, id desc
+                </otherwise>
+            </choose>
+        </if>
+        limit #{limit}
+    </select>
 </mapper>
