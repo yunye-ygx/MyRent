@@ -99,8 +99,15 @@ const authStore = useAuthStore()
 const sessionId = computed(() => String(route.params.sessionId || ''))
 const peerId = computed(() => Number(route.query.peerId || 0))
 const peerName = computed(() => String(route.query.peerName || ''))
-const consultHouseId = computed(() => Number(route.query.houseId || 0))
+const consultHouseId = computed(() => {
+  const fromQuery = Number(route.query.houseId || 0)
+  if (Number.isFinite(fromQuery) && fromQuery > 0) {
+    return fromQuery
+  }
+  return parseHouseIdFromSessionId(sessionId.value)
+})
 const currentUserId = computed(() => Number(authStore.userId || 0))
+
 const messageContainer = ref(null)
 const messages = ref([])
 const historyLoading = ref(false)
@@ -117,6 +124,7 @@ const consultHouse = ref(null)
 const consultCardDismissed = ref(false)
 const quickActionsVisible = ref(false)
 const quickActionsTriggered = ref(false)
+
 let pageActive = true
 
 const consultHouseCover = computed(() => {
@@ -127,6 +135,15 @@ const consultHouseCover = computed(() => {
 })
 
 const showConsultCard = computed(() => Boolean(consultHouse.value) && !consultCardDismissed.value)
+
+function parseHouseIdFromSessionId(value) {
+  const parts = String(value || '').split('_')
+  if (parts.length < 3) {
+    return 0
+  }
+  const parsed = Number(parts[2])
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
 
 function toNumericId(id) {
   const value = Number(id)
@@ -263,7 +280,6 @@ async function loadInitialHistory() {
     if (err?.code === 403) {
       historyCursor.value = null
       hasMoreHistory.value = false
-      return
     }
   } finally {
     historyLoading.value = false
@@ -447,10 +463,15 @@ async function sendMessage(messageContent) {
   if (!messageContent || sending.value || !peerId.value) {
     return
   }
+  if (!consultHouseId.value) {
+    window.alert('当前会话缺少房源信息，无法发送消息')
+    return
+  }
   sending.value = true
   try {
     const sentMessage = await sendChatMessage({
       receiverId: peerId.value,
+      houseId: consultHouseId.value,
       content: messageContent
     })
     content.value = ''

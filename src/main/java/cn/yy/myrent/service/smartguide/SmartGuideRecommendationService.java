@@ -3,9 +3,8 @@ package cn.yy.myrent.service.smartguide;
 import cn.yy.myrent.document.HouseDoc;
 import cn.yy.myrent.dto.SmartGuideReqDTO;
 import cn.yy.myrent.entity.House;
-import cn.yy.myrent.entity.LocationDict;
 import cn.yy.myrent.mapper.HouseMapper;
-import cn.yy.myrent.mapper.LocationDictMapper;
+import cn.yy.myrent.service.location.LocationResolveService;
 import cn.yy.myrent.service.score.SmartGuideScoreCalculator;
 import cn.yy.myrent.vo.SmartGuideItemVO;
 import cn.yy.myrent.vo.SmartGuideResultVO;
@@ -13,7 +12,6 @@ import co.elastic.clients.elasticsearch._types.DistanceUnit;
 import co.elastic.clients.elasticsearch._types.SortOptions;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -76,7 +74,7 @@ public class SmartGuideRecommendationService {
 
     private final ElasticsearchOperations elasticsearchOperations;
     private final HouseMapper houseMapper;
-    private final LocationDictMapper locationDictMapper;
+    private final LocationResolveService locationResolveService;
     private final SmartGuideScoreCalculator smartGuideScoreCalculator;
 
     /**
@@ -104,7 +102,7 @@ public class SmartGuideRecommendationService {
         String rentMode = normalizeEnumValue(reqDTO.getRentMode());
         String rentKeyword = resolveRentKeyword(rentMode);
         String requestedLocationName = resolveRequestedLocationName(reqDTO);
-        ResolvedLocation resolvedLocation = resolveLocation(requestedLocationName);
+        LocationResolveService.ResolvedLocation resolvedLocation = locationResolveService.resolveRequired(requestedLocationName);
         return new SmartGuideQueryContext(
                 page,
                 size,
@@ -542,48 +540,6 @@ public class SmartGuideRecommendationService {
     }
 
     /**
-     * 根据地点名从 location_dict 中解析出坐标。
-     * 先做统一标准化，再按“完全匹配优先、包含匹配次之”的规则选出最合适的点位。
-     */
-    private ResolvedLocation resolveLocation(String requestedLocationName) {
-        List<LocationDict> locations = locationDictMapper.selectList(Wrappers.emptyWrapper());
-        if (locations == null || locations.isEmpty()) {
-            throw new IllegalArgumentException("location_dict has no test data");
-        }
-
-        //用户输入的地址名称
-        String normalizedInput = normalizeText(requestedLocationName);
-        return locations.stream()
-                .map(location -> new ResolvedLocation(
-                        //数据库的地址名称
-                        location.getName(),
-                        location.getLatitude() == null ? null : location.getLatitude().doubleValue(),
-                        location.getLongitude() == null ? null : location.getLongitude().doubleValue(),
-                        calculateLocationMatchScore(normalizedInput, normalizeText(location.getName()))
-                ))
-                .filter(location -> location.latitude() != null && location.longitude() != null && location.matchScore() > 0)
-                .max(Comparator.comparingInt(ResolvedLocation::matchScore))
-                .orElseThrow(() -> new IllegalArgumentException("locationName is not found in location_dict"));
-    }
-
-    /**
-     * 计算地点名匹配分。
-     * 完全匹配最高，其次是包含匹配；当前实现足够支撑测试环境下的小字典表。
-     */
-    private int calculateLocationMatchScore(String input, String candidate) {
-        if (!StringUtils.hasText(input) || !StringUtils.hasText(candidate)) {
-            return 0;
-        }
-        if (candidate.equals(input)) {
-            return 1000;
-        }
-        if (candidate.contains(input) || input.contains(candidate)) {
-            return 800 - Math.abs(candidate.length() - input.length());
-        }
-        return 0;
-    }
-
-    /**
      * 兼容新老前端字段。
      * V2 优先使用 locationName，旧版仍然可以继续传 commuteMetroStation。
      */
@@ -606,13 +562,6 @@ public class SmartGuideRecommendationService {
      */
     private String normalizeEnumValue(String value) {
         return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
-    }
-
-    /**
-     * 统一标准化普通文本输入，便于做地点名匹配。
-     */
-    private String normalizeText(String value) {
-        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     /**
@@ -669,9 +618,6 @@ public class SmartGuideRecommendationService {
             return null;
         }
         return new BigDecimal(cent).divide(new BigDecimal(100), 2, RoundingMode.HALF_UP);
-    }
-
-    private record ResolvedLocation(String name, Double latitude, Double longitude, int matchScore) {
     }
 
     private record BoundingBox(double minLatitude, double maxLatitude, double minLongitude, double maxLongitude) {

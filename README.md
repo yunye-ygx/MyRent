@@ -171,7 +171,7 @@ CREATE TABLE IF NOT EXISTS order_timeout (
 -- 聊天会话表
 CREATE TABLE IF NOT EXISTS chat_session (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  session_id VARCHAR(64) NOT NULL COMMENT '规则:小userId_大userId',
+  session_id VARCHAR(64) NOT NULL COMMENT '规则:小userId_大userId_houseId',
   user_id1 BIGINT NOT NULL,
   user_id2 BIGINT NOT NULL,
   house_id BIGINT NULL,
@@ -261,6 +261,7 @@ curl -X POST "http://localhost:8081/chat-session/send" \
   -d '{
     "senderId": 1,
     "receiverId": 2,
+    "houseId": 1,
     "content": "你好，我想咨询这套房子还在吗？"
   }'
 ```
@@ -368,4 +369,3 @@ src/main/java/cn/yy/myrent
 
 - 当前是学习型项目，仍有可优化空间（鉴权、异常体系、统一日志、测试覆盖等）。
 - 欢迎提交 Issue / PR，一起完善。
-

@@ -4,8 +4,10 @@ import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.elasticsearch.annotations.Document;
 import org.springframework.data.elasticsearch.annotations.Field;
+import org.springframework.data.elasticsearch.annotations.DateFormat;
 import org.springframework.data.elasticsearch.annotations.FieldType;
 import org.springframework.data.elasticsearch.annotations.GeoPointField;
+import org.springframework.data.elasticsearch.annotations.ValueConverter;
 import org.springframework.data.elasticsearch.core.geo.GeoPoint;
 
 import java.time.LocalDateTime;
@@ -38,7 +40,8 @@ public class HouseDoc {
     @Field(type = FieldType.Integer)
     private Integer status;
 
-    @Field(type = FieldType.Date)
+    @ValueConverter(HouseCreateTimeValueConverter.class)
+    @Field(type = FieldType.Date, format = {DateFormat.strict_date_optional_time, DateFormat.strict_date})
     private LocalDateTime createTime;
 
     @GeoPointField

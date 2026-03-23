@@ -6,6 +6,8 @@ import cn.yy.myrent.dto.SmartGuideReqDTO;
 import cn.yy.myrent.entity.House;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.service.IHouseService;
+import cn.yy.myrent.service.hot.HouseHotService;
+import cn.yy.myrent.service.location.LocationResolveService;
 import cn.yy.myrent.service.smartguide.SmartGuideRecommendationService;
 import cn.yy.myrent.vo.HouseSearchResultVO;
 import cn.yy.myrent.vo.HouseVO;
@@ -26,7 +28,6 @@ import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -35,6 +36,8 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+
+import org.springframework.util.StringUtils;
 
 @Service
 @RequiredArgsConstructor
@@ -47,19 +50,22 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
 
     private static final String FALLBACK_SOURCE_ES = "ES";
     private static final String FALLBACK_SOURCE_REDIS_HOT = "REDIS_HOT";
-    private static final String FALLBACK_SOURCE_DB_CITY_HOT = "DB_CITY_HOT";
+    private static final String FALLBACK_SOURCE_DB_HOT = "DB_HOT";
 
-    private static final String TIP_ES_DOWN = "附近房源加载异常，已为你展示推荐房源";
-    private static final String TIP_OUT_OF_RANGE = "当前房源不在搜索范围内";
+    private static final String TIP_ES_DOWN = "附近房源加载异常，已为你展示热门房源";
+    private static final String TIP_OUT_OF_RANGE = "当前范围内暂无可租房源";
 
     private final ElasticsearchOperations elasticsearchOperations;
     private final StringRedisTemplate stringRedisTemplate;
     private final SmartGuideRecommendationService smartGuideRecommendationService;
+    private final HouseHotService houseHotService;
+    private final LocationResolveService locationResolveService;
 
     @Override
     public HouseSearchResultVO searchNearbyHouse(SearchHouseReqDTO reqDTO) {
-        double lat = reqDTO.getLatitude();
-        double lon = reqDTO.getLongitude();
+        SearchPoint searchPoint = resolveSearchPoint(reqDTO);
+        double lat = searchPoint.latitude();
+        double lon = searchPoint.longitude();
         double radiusMeters = parseRadiusMeters(reqDTO.getRadius());
         String distanceStr = ((int) radiusMeters) + "m";
         String city = reqDTO.getCity();
@@ -89,12 +95,35 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         return searchWhenEsUnavailable(city, pageIndex, pageSize);
     }
 
+    private SearchPoint resolveSearchPoint(SearchHouseReqDTO reqDTO) {
+        if (reqDTO.getLatitude() != null && reqDTO.getLongitude() != null) {
+            return new SearchPoint(reqDTO.getLatitude(), reqDTO.getLongitude());
+        }
+        if (StringUtils.hasText(reqDTO.getLocationName())) {
+            LocationResolveService.ResolvedLocation resolvedLocation =
+                    locationResolveService.resolveRequired(reqDTO.getLocationName());
+            return new SearchPoint(resolvedLocation.latitude(), resolvedLocation.longitude());
+        }
+        throw new IllegalArgumentException("latitude/longitude or locationName is required");
+    }
+
+    @Override
+    public HouseSearchResultVO hotHouses(Integer page, Integer size) {
+        int pageIndex = (page != null ? page : 1) - 1;
+        int pageSize = size != null ? size : 10;
+        try {
+            List<HouseVO> hotHouses = searchHotFromRedis(null, pageIndex, pageSize);
+            return buildSearchResult(hotHouses, false, FALLBACK_SOURCE_REDIS_HOT, null);
+        } catch (Exception e) {
+            log.error("hot-house query via Redis failed, fallback to DB, pageIndex={}, pageSize={}", pageIndex, pageSize, e);
+            return buildSearchResult(searchHotFromDb(pageIndex, pageSize), false, FALLBACK_SOURCE_DB_HOT, null);
+        }
+    }
+
     @Override
     public SmartGuideResultVO smartGuide(SmartGuideReqDTO reqDTO) {
         return smartGuideRecommendationService.recommend(reqDTO);
     }
-
-
 
     private HouseSearchResultVO searchWhenEsUnavailable(String city, int pageIndex, int pageSize) {
         try {
@@ -111,8 +140,8 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
                     city, pageIndex, pageSize, e);
         }
 
-        List<HouseVO> dbRecommended = searchHotFromDbByCity(city, pageIndex, pageSize);
-        return buildSearchResult(dbRecommended, true, FALLBACK_SOURCE_DB_CITY_HOT, TIP_ES_DOWN);
+        List<HouseVO> dbRecommended = searchHotFromDb(pageIndex, pageSize);
+        return buildSearchResult(dbRecommended, true, FALLBACK_SOURCE_DB_HOT, TIP_ES_DOWN);
     }
 
     private HouseSearchResultVO buildSearchResult(List<HouseVO> houses,
@@ -162,30 +191,32 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
             voList.add(vo);
         }
 
-        log.info("ES nearby search success, count={}, pageIndex={}, pageSize={}",
-                voList.size(), pageIndex, pageSize);
+        log.info("ES nearby search success, count={}, pageIndex={}, pageSize={}", voList.size(), pageIndex, pageSize);
         return voList;
     }
 
     private List<HouseVO> searchHotFromRedis(String city, int pageIndex, int pageSize) {
-        String cityKey = StringUtils.hasText(city) ? city.trim() : "DEFAULT_CITY";
-        String cacheKey = "house:hot:" + cityKey;
-
-        // Redis 热门房源能力尚未完成，这里先保留清晰的兜底入口。
-        log.warn("Redis hot-house query is not implemented yet, cacheKey={}, pageIndex={}, pageSize={}",
-                cacheKey, pageIndex, pageSize);
-
         if (stringRedisTemplate.getConnectionFactory() == null) {
             throw new IllegalStateException("Redis connection factory is not configured");
         }
-        return new ArrayList<>();
+
+        if (!houseHotService.hasHotRankingCache()) {
+            log.info("hot ranking cache is empty, trigger rebuild, city={}, pageIndex={}, pageSize={}",
+                    city, pageIndex, pageSize);
+            houseHotService.rebuildHotRanking();
+        }
+
+        List<HouseVO> hotHouses = houseHotService.queryHotHouses(pageIndex, pageSize);
+        log.info("Redis hot-house query finished, city={}, pageIndex={}, pageSize={}, count={}",
+                city, pageIndex, pageSize, hotHouses.size());
+        return hotHouses;
     }
 
-    private List<HouseVO> searchHotFromDbByCity(String city, int pageIndex, int pageSize) {
+    private List<HouseVO> searchHotFromDb(int pageIndex, int pageSize) {
         Page<House> page = new Page<>(pageIndex + 1L, pageSize);
         Page<House> housePage = this.lambdaQuery()
                 .eq(House::getStatus, HOUSE_STATUS_AVAILABLE)
-                .like(StringUtils.hasText(city), House::getTitle, city)
+                .orderByDesc(House::getCreateTime)
                 .orderByDesc(House::getId)
                 .page(page);
 
@@ -194,8 +225,8 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
             voList.add(convertHouseToVo(house));
         }
 
-        log.info("DB city hot fallback finished, city={}, pageIndex={}, pageSize={}, count={}",
-                city, pageIndex, pageSize, voList.size());
+        log.info("DB hot fallback finished, pageIndex={}, pageSize={}, count={}",
+                pageIndex, pageSize, voList.size());
         return voList;
     }
 
@@ -206,13 +237,13 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         vo.setTitle(doc.getTitle());
         vo.setStatus(doc.getStatus());
         if (doc.getPrice() != null) {
-            BigDecimal priceYuan = new BigDecimal(doc.getPrice())
-                    .divide(new BigDecimal(100), 2, RoundingMode.HALF_UP);
+            BigDecimal priceYuan = BigDecimal.valueOf(doc.getPrice())
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
             vo.setPrice(priceYuan);
         }
         if (doc.getDepositAmount() != null) {
-            BigDecimal depositYuan = new BigDecimal(doc.getDepositAmount())
-                    .divide(new BigDecimal(100), 2, RoundingMode.HALF_UP);
+            BigDecimal depositYuan = BigDecimal.valueOf(doc.getDepositAmount())
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
             vo.setDepositAmount(depositYuan);
         }
         return vo;
@@ -225,13 +256,13 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         vo.setTitle(house.getTitle());
         vo.setStatus(house.getStatus());
         if (house.getPrice() != null) {
-            BigDecimal priceYuan = new BigDecimal(house.getPrice())
-                    .divide(new BigDecimal(100), 2, RoundingMode.HALF_UP);
+            BigDecimal priceYuan = BigDecimal.valueOf(house.getPrice())
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
             vo.setPrice(priceYuan);
         }
         if (house.getDepositAmount() != null) {
-            BigDecimal depositYuan = new BigDecimal(house.getDepositAmount())
-                    .divide(new BigDecimal(100), 2, RoundingMode.HALF_UP);
+            BigDecimal depositYuan = BigDecimal.valueOf(house.getDepositAmount())
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
             vo.setDepositAmount(depositYuan);
         }
         return vo;
@@ -239,7 +270,7 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
 
     private double parseRadiusMeters(String radiusStr) {
         if (radiusStr == null || radiusStr.isEmpty()) {
-            return 5000d;
+            return 5000D;
         }
         String lower = radiusStr.toLowerCase().trim();
         if (lower.endsWith("km")) {
@@ -253,7 +284,10 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         if (meters < 1000) {
             return (int) meters + "m";
         }
-        BigDecimal km = new BigDecimal(meters).divide(new BigDecimal(1000), 1, RoundingMode.HALF_UP);
-        return km.toString() + "km";
+        BigDecimal km = BigDecimal.valueOf(meters).divide(BigDecimal.valueOf(1000), 1, RoundingMode.HALF_UP);
+        return km + "km";
+    }
+
+    private record SearchPoint(double latitude, double longitude) {
     }
 }

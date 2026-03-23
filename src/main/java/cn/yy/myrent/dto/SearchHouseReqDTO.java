@@ -2,18 +2,17 @@ package cn.yy.myrent.dto;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 
 @Data
 public class SearchHouseReqDTO {
 
-    @NotNull(message = "纬度不能为空")
     private Double latitude;
 
-    @NotNull(message = "经度不能为空")
     private Double longitude;
+
+    private String locationName;
 
     private String city;
 

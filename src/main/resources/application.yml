@@ -11,6 +11,10 @@ spring:
     username: admin
     password: 123456
     virtual-host: /
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
 
   data:
     redis:

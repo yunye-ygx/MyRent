@@ -4,6 +4,10 @@ export function fetchSessionPage(params = {}) {
   return http.get('/chat-session/page', { params })
 }
 
+export function fetchMyConsultPage(params = {}) {
+  return http.get('/chat-session/mine', { params })
+}
+
 export function sendChatMessage(payload) {
   return http.post('/chat-session/send', payload)
 }

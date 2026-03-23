@@ -1,1 +1,0 @@
-import{h as e}from"./user-PdflILpG.js";function a(s={}){return e.get("/chat-session/page",{params:s})}function n(s){return e.post("/chat-session/send",s)}function r(s={}){return e.get("/chat-message/pull",{params:s})}function o(s={}){return e.get("/chat-message/history",{params:s})}function u(s){return e.post("/chat-message/read",s)}export{r as a,a as f,u as m,o as p,n as s};

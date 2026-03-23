@@ -31,7 +31,7 @@ DROP TABLE IF EXISTS `chat_session`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `chat_session` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `session_id` varchar(64) NOT NULL COMMENT '会话业务ID (建议生成规则：较小的userId_较大的userId)',
+  `session_id` varchar(64) NOT NULL COMMENT '会话业务ID (建议生成规则：较小的userId_较大的userId_houseId)',
   `user_id_1` bigint NOT NULL COMMENT '参与者A的ID (强制规定：存较小的ID)',
   `user_id_2` bigint NOT NULL COMMENT '参与者B的ID (强制规定：存较大的ID)',
   `house_id` bigint DEFAULT NULL COMMENT '关联房源ID (租房业务特色：标记他们是在聊哪套房)',

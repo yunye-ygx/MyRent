@@ -9,6 +9,8 @@
       <p class="price">{{ formatPrice(house.price) }}/月</p>
       <p class="meta">押金：{{ formatPrice(house.depositAmount) }}</p>
       <p class="meta">发布人：{{ publisherText }}</p>
+      <p v-if="distanceText" class="meta distance-meta">距离：{{ distanceText }}</p>
+      <p v-if="hotText" class="meta hot-meta">{{ hotText }}</p>
     </div>
   </div>
 </template>
@@ -34,6 +36,19 @@ const publisherText = computed(() => {
   }
   return '未知发布人'
 })
+
+const hotText = computed(() => {
+  if (props.house.hotScore === null || props.house.hotScore === undefined) {
+    return ''
+  }
+  const parts = [`热度 ${Number(props.house.hotScore).toFixed(2)}`]
+  if (props.house.favoriteCount !== null && props.house.favoriteCount !== undefined) {
+    parts.push(`收藏 ${props.house.favoriteCount}`)
+  }
+  return parts.join(' · ')
+})
+
+const distanceText = computed(() => props.house.distance || '')
 
 const statusClass = computed(() => {
   if (props.house.status === 1) {
@@ -116,5 +131,13 @@ const cover = computed(() => `https://picsum.photos/seed/house-${props.house.id 
   margin: 0;
   color: #6b7280;
   font-size: 12px;
+}
+
+.hot-meta {
+  color: #b45309;
+}
+
+.distance-meta {
+  color: #2563eb;
 }
 </style>

@@ -1,6 +1,7 @@
 package cn.yy.myrent.controller;
 
 import cn.yy.myrent.common.Result;
+import cn.yy.myrent.common.UserContext;
 import cn.yy.myrent.dto.LockHouseReqDTO;
 import cn.yy.myrent.entity.Order;
 import cn.yy.myrent.service.IOrderService;
@@ -71,6 +72,26 @@ public class OrderController {
         long safeCurrent = Math.max(current, 1L);
         long safeSize = Math.min(Math.max(size, 1L), 100L);
         Page<Order> page = orderService.lambdaQuery()
+                .orderByDesc(Order::getId)
+                .page(new Page<>(safeCurrent, safeSize));
+        return Result.success(page);
+    }
+
+    @GetMapping("/mine")
+    @Operation(summary = "查询当前用户订单")
+    public Result<Page<Order>> mine(
+            @RequestParam(value = "current", defaultValue = "1") Long current,
+            @RequestParam(value = "size", defaultValue = "10") Long size) {
+        Long userId = UserContext.getCurrentUserId();
+        if (userId == null) {
+            return Result.error(401, "请先登录");
+        }
+
+        long safeCurrent = Math.max(current, 1L);
+        long safeSize = Math.min(Math.max(size, 1L), 100L);
+        Page<Order> page = orderService.lambdaQuery()
+                .eq(Order::getUserId, userId)
+                .orderByDesc(Order::getCreateTime)
                 .orderByDesc(Order::getId)
                 .page(new Page<>(safeCurrent, safeSize));
         return Result.success(page);

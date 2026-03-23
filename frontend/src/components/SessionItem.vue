@@ -6,6 +6,7 @@
         <h3 class="name">{{ session.peerName || `用户${session.peerId}` }}</h3>
         <span class="time">{{ formatRelativeTime(session.updateTime) }}</span>
       </div>
+      <p v-if="session.houseLabel" class="house">{{ session.houseLabel }}</p>
       <div class="bottom">
         <p class="last-msg">{{ session.lastMsgContent || '暂无消息' }}</p>
         <span v-if="session.unreadCount > 0" class="badge">{{ session.unreadCount }}</span>
@@ -75,6 +76,15 @@ const avatarText = computed(() => {
 .time {
   color: #9ca3af;
   font-size: 12px;
+}
+
+.house {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #2563eb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .last-msg {
