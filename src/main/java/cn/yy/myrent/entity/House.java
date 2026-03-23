@@ -38,6 +38,9 @@ public class House implements Serializable {
      */
     private String title;
 
+    @TableField("rent_type")
+    private Integer rentType;
+
     /**
      * 月租金(分)
      */
@@ -47,6 +50,9 @@ public class House implements Serializable {
      * 锁定定金金额(分) - 【新增：锁房核心】
      */
     private Integer depositAmount;
+
+    @TableField("total_cost")
+    private Integer totalCost;
 
     /**
      * 经度 - 【核心：供ES做LBS附近搜索】

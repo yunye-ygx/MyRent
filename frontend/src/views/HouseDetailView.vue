@@ -1,7 +1,7 @@
 <template>
   <div class="page detail-page">
     <div class="card head">
-      <button class="ghost-btn" @click="goBack">返回</button>
+      <button class="ghost-btn" @click="goBack()">返回</button>
       <h2 class="section-title">房源详情</h2>
     </div>
 
@@ -16,15 +16,19 @@
         <p class="base">押金：{{ formatPrice(house.depositAmount) }}</p>
         <p class="base">状态：{{ statusText }}</p>
         <p class="base">发布人：{{ publisherName }}</p>
+        <p class="base">收藏数：{{ favoriteCountText }}</p>
       </div>
 
       <div class="card actions">
-        <button class="ghost-btn" @click="mockCollect">收藏</button>
+        <button class="ghost-btn" :disabled="favoriteLoading" @click="toggleFavorite">
+          {{ favoriteButtonText }}
+        </button>
         <button class="ghost-btn" @click="goConsult">咨询</button>
         <button class="primary-btn" :disabled="lockLoading || house.status !== 1" @click="submitDeposit">
           {{ lockLoading ? '提交中...' : '提交定金' }}
         </button>
       </div>
+
       <p class="tips">说明：锁房超时释放由后端自动处理，前端只负责提交与状态刷新。</p>
     </template>
 
@@ -41,7 +45,12 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { fetchHouseById } from '@/api/house'
+import {
+  favoriteHouse,
+  fetchHouseById,
+  fetchHouseFavoriteStatus,
+  unfavoriteHouse
+} from '@/api/house'
 import { fetchUserById } from '@/api/user'
 import { createOrder } from '@/api/order'
 import EmptyState from '@/components/EmptyState.vue'
@@ -55,24 +64,34 @@ const authStore = useAuthStore()
 
 const loading = ref(false)
 const lockLoading = ref(false)
+const favoriteLoading = ref(false)
 const error = ref('')
 const house = ref(null)
 const publisher = ref(null)
+const favoriteStatus = ref({
+  favorited: false,
+  favoriteCount: 0
+})
 
 const statusText = computed(() => getHouseStatusText(house.value?.status))
 const cover = computed(() => `https://picsum.photos/seed/house-detail-${route.params.id}/640/320`)
-const publisherName = computed(() => {
-  if (publisher.value?.name) {
-    return publisher.value.name
+const publisherName = computed(() => publisher.value?.name || '未知发布人')
+const favoriteButtonText = computed(() => {
+  if (favoriteLoading.value) {
+    return '处理中...'
   }
-  return '未知发布人'
+  return favoriteStatus.value?.favorited ? '取消收藏' : '收藏'
 })
+const favoriteCountText = computed(() => favoriteStatus.value?.favoriteCount ?? 0)
 
-function buildSessionId(firstUserId, secondUserId) {
+function buildSessionId(firstUserId, secondUserId, houseId) {
   try {
     const first = BigInt(String(firstUserId))
     const second = BigInt(String(secondUserId))
-    return first <= second ? `${first}_${second}` : `${second}_${first}`
+    const house = BigInt(String(houseId))
+    const minUserId = first <= second ? first : second
+    const maxUserId = first <= second ? second : first
+    return `${minUserId}_${maxUserId}_${house}`
   } catch {
     return ''
   }
@@ -91,16 +110,39 @@ async function loadPublisher() {
   }
 }
 
+async function loadFavoriteStatus() {
+  favoriteStatus.value = {
+    favorited: false,
+    favoriteCount: 0
+  }
+  if (!route.params.id || !authStore.userId) {
+    return
+  }
+  try {
+    favoriteStatus.value = await fetchHouseFavoriteStatus(route.params.id)
+  } catch {
+    favoriteStatus.value = {
+      favorited: false,
+      favoriteCount: 0
+    }
+  }
+}
+
 async function loadHouse() {
   loading.value = true
   error.value = ''
   try {
     house.value = await fetchHouseById(route.params.id)
     await loadPublisher()
+    await loadFavoriteStatus()
   } catch (err) {
     error.value = err?.message || '获取房源详情失败'
     house.value = null
     publisher.value = null
+    favoriteStatus.value = {
+      favorited: false,
+      favoriteCount: 0
+    }
   } finally {
     loading.value = false
   }
@@ -110,8 +152,25 @@ function goBack() {
   router.back()
 }
 
-function mockCollect() {
-  window.alert('收藏功能后续可接真实接口，本阶段先保留入口')
+async function toggleFavorite() {
+  if (!house.value || favoriteLoading.value) {
+    return
+  }
+  const currentUserId = authStore.userId
+  if (!currentUserId) {
+    router.push('/login')
+    return
+  }
+  favoriteLoading.value = true
+  try {
+    favoriteStatus.value = favoriteStatus.value?.favorited
+      ? await unfavoriteHouse(house.value.id)
+      : await favoriteHouse(house.value.id)
+  } catch (err) {
+    window.alert(err?.message || '收藏操作失败')
+  } finally {
+    favoriteLoading.value = false
+  }
 }
 
 function goConsult() {
@@ -134,7 +193,7 @@ function goConsult() {
     return
   }
 
-  const targetSessionId = buildSessionId(currentUserId, house.value.publisherUserId)
+  const targetSessionId = buildSessionId(currentUserId, house.value.publisherUserId, house.value.id)
   if (!targetSessionId) {
     window.alert('会话参数异常，请稍后重试')
     return
@@ -144,13 +203,23 @@ function goConsult() {
     path: `/chat/${targetSessionId}`,
     query: {
       peerId: String(house.value.publisherUserId),
-      peerName: publisher.value?.name || ''
+      peerName: publisher.value?.name || '',
+      houseId: String(house.value.id)
     }
   })
 }
 
 async function submitDeposit() {
   if (!house.value || house.value.status !== 1 || lockLoading.value) {
+    return
+  }
+  const currentUserId = authStore.userId
+  if (!currentUserId) {
+    router.push('/login')
+    return
+  }
+  if (String(currentUserId) === String(house.value.publisherUserId)) {
+    window.alert('这是你自己发布的房源，不能给自己的房源下单')
     return
   }
   lockLoading.value = true
@@ -169,7 +238,7 @@ async function submitDeposit() {
 }
 
 watch(
-  () => route.params.id,
+  () => [route.params.id, authStore.userId],
   () => {
     loadHouse()
   },

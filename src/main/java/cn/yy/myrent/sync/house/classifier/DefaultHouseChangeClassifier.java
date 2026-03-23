@@ -22,6 +22,7 @@ public class DefaultHouseChangeClassifier implements HouseChangeClassifier {
         }
 
         applyTitleChange(oldHouse, newHouse, patch, result);
+        applyRentTypeChange(oldHouse, newHouse, patch, result);
         applyPriceChange(oldHouse, newHouse, patch, result);
         applyDepositAmountChange(oldHouse, newHouse, patch, result);
         applyLatitudeChange(oldHouse, newHouse, patch, result);
@@ -53,6 +54,18 @@ public class DefaultHouseChangeClassifier implements HouseChangeClassifier {
         }
         patch.setPrice(newHouse.getPrice());
         result.getChangedFields().add("price");
+        result.setCoreChanged(true);
+    }
+
+    private void applyRentTypeChange(House oldHouse,
+                                     House newHouse,
+                                     House patch,
+                                     HouseChangeClassificationResult result) {
+        if (newHouse.getRentType() == null || Objects.equals(newHouse.getRentType(), oldHouse.getRentType())) {
+            return;
+        }
+        patch.setRentType(newHouse.getRentType());
+        result.getChangedFields().add("rentType");
         result.setCoreChanged(true);
     }
 

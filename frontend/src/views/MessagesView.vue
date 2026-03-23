@@ -29,6 +29,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchSessionPage } from '@/api/chat'
+import { fetchHouseById } from '@/api/house'
 import { fetchUserById } from '@/api/user'
 import EmptyState from '@/components/EmptyState.vue'
 import LoadingState from '@/components/LoadingState.vue'
@@ -41,7 +42,9 @@ const router = useRouter()
 const loading = ref(false)
 const error = ref('')
 const sessions = ref([])
+
 const userCache = new Map()
+const houseCache = new Map()
 
 async function fetchUserName(userId) {
   if (!userId) {
@@ -62,6 +65,25 @@ async function fetchUserName(userId) {
   }
 }
 
+async function fetchHouseLabel(houseId) {
+  if (!houseId) {
+    return ''
+  }
+  if (houseCache.has(houseId)) {
+    return houseCache.get(houseId)
+  }
+  try {
+    const house = await fetchHouseById(houseId)
+    const label = house?.title || `房源${houseId}`
+    houseCache.set(houseId, label)
+    return label
+  } catch {
+    const fallback = `房源${houseId}`
+    houseCache.set(houseId, fallback)
+    return fallback
+  }
+}
+
 async function loadSessions() {
   loading.value = true
   error.value = ''
@@ -72,11 +94,15 @@ async function loadSessions() {
     const enriched = await Promise.all(
       records.map(async (session) => {
         const peerId = String(session.userId1) === String(currentUserId) ? session.userId2 : session.userId1
-        const peerName = await fetchUserName(peerId)
+        const [peerName, houseLabel] = await Promise.all([
+          fetchUserName(peerId),
+          fetchHouseLabel(session.houseId)
+        ])
         return {
           ...session,
           peerId,
           peerName,
+          houseLabel,
           unreadCount: 0
         }
       })
@@ -95,7 +121,8 @@ function goChat(session) {
     path: `/chat/${session.sessionId}`,
     query: {
       peerId: String(session.peerId),
-      peerName: session.peerName || ''
+      peerName: session.peerName || '',
+      houseId: session.houseId ? String(session.houseId) : ''
     }
   })
 }

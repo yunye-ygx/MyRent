@@ -2,7 +2,6 @@ package cn.yy.myrent.dto;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
@@ -14,15 +13,16 @@ public class SmartGuideReqDTO {
     @Max(value = 50000, message = "预算最高为50000元")
     private Integer budgetYuan;
 
-    @NotBlank(message = "预算口径不能为空")
     private String budgetScope;
 
-    @NotBlank(message = "租住方式不能为空")
     private String rentMode;
 
-    @NotBlank(message = "通勤地铁站不能为空")
+    private String locationName;
+
+    // Compatibility fallback for older callers.
     private String commuteMetroStation;
 
+    // Retained for compatibility; V2 no longer depends on caller-provided coordinates.
     private Double stationLatitude;
 
     private Double stationLongitude;

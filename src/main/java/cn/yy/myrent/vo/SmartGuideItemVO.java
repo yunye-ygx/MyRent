@@ -28,7 +28,13 @@ public class SmartGuideItemVO {
     @Schema(description = "月租价格（元）")
     private BigDecimal price;
 
-    @Schema(description = "到通勤地铁站距离（公里）")
+    @Schema(description = "押金（元）")
+    private BigDecimal depositAmount;
+
+    @Schema(description = "首月总成本（月租+押金，元）")
+    private BigDecimal totalCost;
+
+    @Schema(description = "到目标地点距离（公里）")
     private BigDecimal distanceToMetroKm;
 
     @Schema(description = "预估通勤时长（分钟）")

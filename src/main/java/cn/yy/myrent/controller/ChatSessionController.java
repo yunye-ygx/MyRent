@@ -3,6 +3,7 @@ package cn.yy.myrent.controller;
 import cn.yy.myrent.common.Result;
 import cn.yy.myrent.common.UserContext;
 import cn.yy.myrent.dto.MessageDTO;
+import cn.yy.myrent.entity.ChatMessage;
 import cn.yy.myrent.entity.ChatSession;
 import cn.yy.myrent.service.IChatSessionService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -28,20 +29,22 @@ public class ChatSessionController {
 
     @PostMapping("/send")
     @Operation(description = "发送消息")
-    public Result<Void> send(@RequestBody MessageDTO messageDTO) {
+    public Result<ChatMessage> send(@RequestBody MessageDTO messageDTO) {
         Long senderId = UserContext.getCurrentUserId();
         if (senderId == null) {
             return Result.error(401, "请先登录");
         }
         if (messageDTO == null
                 || messageDTO.getReceiverId() == null
+                || messageDTO.getHouseId() == null
+                || messageDTO.getHouseId() <= 0L
                 || !StringUtils.hasText(messageDTO.getContent())) {
             return Result.error("参数不能为空");
         }
         try {
             messageDTO.setSenderId(senderId);
-            chatSessionService.sendMessage(messageDTO);
-            return Result.success();
+            ChatMessage chatMessage = chatSessionService.sendMessage(messageDTO);
+            return Result.success(chatMessage);
         } catch (Exception e) {
             return Result.error(e.getMessage() == null ? "发送失败" : e.getMessage());
         }
@@ -75,15 +78,20 @@ public class ChatSessionController {
             return Result.error(401, "请先登录");
         }
 
-        long safeCurrent = Math.max(current, 1L);
-        long safeSize = Math.min(Math.max(size, 1L), 100L);
-        Page<ChatSession> page = chatSessionService.lambdaQuery()
-                .and(wrapper -> wrapper.eq(ChatSession::getUserId1, userId)
-                        .or()
-                        .eq(ChatSession::getUserId2, userId))
-                .orderByDesc(ChatSession::getUpdateTime)
-                .page(new Page<>(safeCurrent, safeSize));
-        return Result.success(page);
+        return Result.success(queryCurrentUserSessions(userId, current, size));
+    }
+
+    @GetMapping("/mine")
+    @Operation(summary = "查询当前用户会话")
+    public Result<Page<ChatSession>> mine(
+            @RequestParam(value = "current", defaultValue = "1") Long current,
+            @RequestParam(value = "size", defaultValue = "10") Long size) {
+        Long userId = UserContext.getCurrentUserId();
+        if (userId == null) {
+            return Result.error(401, "请先登录");
+        }
+
+        return Result.success(queryCurrentUserSessions(userId, current, size));
     }
 
     @PostMapping
@@ -122,5 +130,16 @@ public class ChatSessionController {
         return session != null
                 && userId != null
                 && (userId.equals(session.getUserId1()) || userId.equals(session.getUserId2()));
+    }
+
+    private Page<ChatSession> queryCurrentUserSessions(Long userId, Long current, Long size) {
+        long safeCurrent = Math.max(current, 1L);
+        long safeSize = Math.min(Math.max(size, 1L), 100L);
+        return chatSessionService.lambdaQuery()
+                .and(wrapper -> wrapper.eq(ChatSession::getUserId1, userId)
+                        .or()
+                        .eq(ChatSession::getUserId2, userId))
+                .orderByDesc(ChatSession::getUpdateTime)
+                .page(new Page<>(safeCurrent, safeSize));
     }
 }

@@ -6,10 +6,11 @@ import cn.yy.myrent.dto.SmartGuideReqDTO;
 import cn.yy.myrent.entity.House;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.service.IHouseService;
-import cn.yy.myrent.service.score.SmartGuideScoreCalculator;
+import cn.yy.myrent.service.hot.HouseHotService;
+import cn.yy.myrent.service.location.LocationResolveService;
+import cn.yy.myrent.service.smartguide.SmartGuideRecommendationService;
 import cn.yy.myrent.vo.HouseSearchResultVO;
 import cn.yy.myrent.vo.HouseVO;
-import cn.yy.myrent.vo.SmartGuideItemVO;
 import cn.yy.myrent.vo.SmartGuideResultVO;
 import co.elastic.clients.elasticsearch._types.DistanceUnit;
 import co.elastic.clients.elasticsearch._types.SortOptions;
@@ -17,9 +18,9 @@ import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
@@ -27,59 +28,44 @@ import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.stream.Collectors;
+
+import org.springframework.util.StringUtils;
 
 @Service
+@RequiredArgsConstructor
 public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements IHouseService {
 
     private static final Logger log = LoggerFactory.getLogger(HouseServiceImpl.class);
 
     private static final long ES_QUERY_TIMEOUT_MS = 1200;
+    private static final int HOUSE_STATUS_AVAILABLE = 1;
 
     private static final String FALLBACK_SOURCE_ES = "ES";
     private static final String FALLBACK_SOURCE_REDIS_HOT = "REDIS_HOT";
-    private static final String FALLBACK_SOURCE_DB_CITY_HOT = "DB_CITY_HOT";
+    private static final String FALLBACK_SOURCE_DB_HOT = "DB_HOT";
 
-    private static final String BUDGET_SCOPE_RENT_ONLY = "RENT_ONLY";
-    private static final String BUDGET_SCOPE_TOTAL = "TOTAL";
-    private static final String RENT_MODE_WHOLE = "WHOLE";
-    private static final String RENT_MODE_SHARED = "SHARED";
-    private static final int HOUSE_STATUS_AVAILABLE = 1;
-    private static final int HOUSE_STATUS_LOCKED = 2;
-    private static final int SMART_GUIDE_MAX_CANDIDATES = 200;
-    private static final int SMART_GUIDE_ES_PREFILTER_SIZE = 300;
-    private static final int RELAXED_BUDGET_DELTA_YUAN = 500;
+    private static final String TIP_ES_DOWN = "附近房源加载异常，已为你展示热门房源";
+    private static final String TIP_OUT_OF_RANGE = "当前范围内暂无可租房源";
 
-    private static final String TIP_ES_DOWN = "附近房源加载异常，已为你展示推荐房源";
-    private static final String TIP_OUT_OF_RANGE = "当前房源不在搜索范围内";
-    private static final String TIP_SMART_GUIDE_ES_DEGRADED = "ES预筛选暂不可用，已降级到DB方案，状态和价格均以DB为准";
-
-    @Autowired
-    private ElasticsearchOperations elasticsearchOperations;
-
-    @Autowired
-    private StringRedisTemplate stringRedisTemplate;
-
-    @Autowired
-    private SmartGuideScoreCalculator smartGuideScoreCalculator;
+    private final ElasticsearchOperations elasticsearchOperations;
+    private final StringRedisTemplate stringRedisTemplate;
+    private final SmartGuideRecommendationService smartGuideRecommendationService;
+    private final HouseHotService houseHotService;
+    private final LocationResolveService locationResolveService;
 
     @Override
     public HouseSearchResultVO searchNearbyHouse(SearchHouseReqDTO reqDTO) {
-        double lat = reqDTO.getLatitude();
-        double lon = reqDTO.getLongitude();
+        SearchPoint searchPoint = resolveSearchPoint(reqDTO);
+        double lat = searchPoint.latitude();
+        double lon = searchPoint.longitude();
         double radiusMeters = parseRadiusMeters(reqDTO.getRadius());
         String distanceStr = ((int) radiusMeters) + "m";
         String city = reqDTO.getCity();
@@ -88,105 +74,80 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         int pageSize = reqDTO.getSize() != null ? reqDTO.getSize() : 10;
 
         try {
-            List<HouseVO> esResult = CompletableFuture.supplyAsync(() -> searchInEs(lat, lon, distanceStr, pageIndex, pageSize))
+            List<HouseVO> esResult = CompletableFuture
+                    .supplyAsync(() -> searchInEs(lat, lon, distanceStr, pageIndex, pageSize))
                     .get(ES_QUERY_TIMEOUT_MS, TimeUnit.MILLISECONDS);
 
             if (esResult.isEmpty()) {
-                log.info("ES搜索成功但范围内无房源，lat={}, lon={}, radius={}m, pageIndex={}, pageSize={}",
-                        lat,
-                        lon,
-                        radiusMeters,
-                        pageIndex,
-                        pageSize);
+                log.info("ES nearby search finished but no house matched, lat={}, lon={}, radius={}m, pageIndex={}, pageSize={}",
+                        lat, lon, radiusMeters, pageIndex, pageSize);
                 return buildSearchResult(esResult, false, FALLBACK_SOURCE_ES, TIP_OUT_OF_RANGE);
             }
             return buildSearchResult(esResult, false, FALLBACK_SOURCE_ES, null);
         } catch (TimeoutException te) {
-            log.warn("ES搜索超时({}ms)，进入兜底策略，lat={}, lon={}, radius={}m", ES_QUERY_TIMEOUT_MS, lat, lon, radiusMeters);
+            log.warn("ES nearby search timed out ({}ms), fallback strategy enabled, lat={}, lon={}, radius={}m",
+                    ES_QUERY_TIMEOUT_MS, lat, lon, radiusMeters);
         } catch (Exception e) {
-            log.error("ES搜索异常，进入兜底策略，lat={}, lon={}, radius={}m", lat, lon, radiusMeters, e);
+            log.error("ES nearby search failed, fallback strategy enabled, lat={}, lon={}, radius={}m",
+                    lat, lon, radiusMeters, e);
         }
 
         return searchWhenEsUnavailable(city, pageIndex, pageSize);
     }
 
+    private SearchPoint resolveSearchPoint(SearchHouseReqDTO reqDTO) {
+        if (reqDTO.getLatitude() != null && reqDTO.getLongitude() != null) {
+            return new SearchPoint(reqDTO.getLatitude(), reqDTO.getLongitude());
+        }
+        if (StringUtils.hasText(reqDTO.getLocationName())) {
+            LocationResolveService.ResolvedLocation resolvedLocation =
+                    locationResolveService.resolveRequired(reqDTO.getLocationName());
+            return new SearchPoint(resolvedLocation.latitude(), resolvedLocation.longitude());
+        }
+        throw new IllegalArgumentException("latitude/longitude or locationName is required");
+    }
+
+    @Override
+    public HouseSearchResultVO hotHouses(Integer page, Integer size) {
+        int pageIndex = (page != null ? page : 1) - 1;
+        int pageSize = size != null ? size : 10;
+        try {
+            List<HouseVO> hotHouses = searchHotFromRedis(null, pageIndex, pageSize);
+            return buildSearchResult(hotHouses, false, FALLBACK_SOURCE_REDIS_HOT, null);
+        } catch (Exception e) {
+            log.error("hot-house query via Redis failed, fallback to DB, pageIndex={}, pageSize={}", pageIndex, pageSize, e);
+            return buildSearchResult(searchHotFromDb(pageIndex, pageSize), false, FALLBACK_SOURCE_DB_HOT, null);
+        }
+    }
+
     @Override
     public SmartGuideResultVO smartGuide(SmartGuideReqDTO reqDTO) {
-        validateSmartGuideReq(reqDTO);
-
-        int page = reqDTO.getPage() == null ? 1 : reqDTO.getPage();
-        int size = reqDTO.getSize() == null ? 10 : reqDTO.getSize();
-        int budgetCent = reqDTO.getBudgetYuan() * 100;
-        SmartGuidePrefilterResult prefilterResult = querySmartGuideCandidateIdsFromEs(reqDTO);
-
-        List<House> exactCandidates = querySmartGuideCandidatesFromDb(reqDTO, budgetCent, prefilterResult.getCandidateIds());
-        if (!prefilterResult.isEsAvailable()) {
-            exactCandidates = querySmartGuideCandidatesFallback(reqDTO, budgetCent);
-        }
-
-        SmartGuideResultVO result = new SmartGuideResultVO();
-        result.setOriginalBudgetYuan(reqDTO.getBudgetYuan());
-
-        List<House> candidates = exactCandidates;
-        int scoredBudgetYuan = reqDTO.getBudgetYuan();
-        if (exactCandidates.isEmpty()) {
-            int relaxedBudgetYuan = reqDTO.getBudgetYuan() + RELAXED_BUDGET_DELTA_YUAN;
-            candidates = querySmartGuideCandidatesFromDb(reqDTO, relaxedBudgetYuan * 100, prefilterResult.getCandidateIds());
-            if (!prefilterResult.isEsAvailable()) {
-                candidates = querySmartGuideCandidatesFallback(reqDTO, relaxedBudgetYuan * 100);
-            }
-            scoredBudgetYuan = relaxedBudgetYuan;
-            result.setRelaxedBudget(Boolean.TRUE);
-            result.setRelaxedBudgetYuan(relaxedBudgetYuan);
-            result.setTipMessage("No exact result, budget +500 recommendations are shown.");
-        } else {
-            result.setRelaxedBudget(Boolean.FALSE);
-            result.setTipMessage(prefilterResult.isEsAvailable()
-                    ? "Matched listings found and ranked by score."
-                    : TIP_SMART_GUIDE_ES_DEGRADED);
-        }
-
-        final int finalScoredBudgetYuan = scoredBudgetYuan;
-        final String rentKeyword = RENT_MODE_WHOLE.equals(normalizeEnumValue(reqDTO.getRentMode())) ? "整租" : "合租";
-        List<SmartGuideItemVO> ranked = candidates.stream()
-                .map(house -> buildSmartGuideItem(house, reqDTO, finalScoredBudgetYuan, rentKeyword))
-                .sorted(Comparator.comparing(SmartGuideItemVO::getScore).reversed())
-                .collect(Collectors.toList());
-
-        int start = Math.max((page - 1) * size, 0);
-        if (start >= ranked.size()) {
-            result.setRecommendations(new ArrayList<>());
-            return result;
-        }
-        int end = Math.min(start + size, ranked.size());
-        result.setRecommendations(ranked.subList(start, end));
-        if (!prefilterResult.isEsAvailable()) {
-            result.setTipMessage(TIP_SMART_GUIDE_ES_DEGRADED);
-        }
-        return result;
+        return smartGuideRecommendationService.recommend(reqDTO);
     }
 
     private HouseSearchResultVO searchWhenEsUnavailable(String city, int pageIndex, int pageSize) {
         try {
             List<HouseVO> redisRecommended = searchHotFromRedis(city, pageIndex, pageSize);
             if (!redisRecommended.isEmpty()) {
-                log.info("ES异常时Redis热门推荐成功，city={}, pageIndex={}, pageSize={}, count={}",
-                        city,
-                        pageIndex,
-                        pageSize,
-                        redisRecommended.size());
+                log.info("ES unavailable, Redis hot fallback hit, city={}, pageIndex={}, pageSize={}, count={}",
+                        city, pageIndex, pageSize, redisRecommended.size());
                 return buildSearchResult(redisRecommended, true, FALLBACK_SOURCE_REDIS_HOT, TIP_ES_DOWN);
             }
-            log.warn("ES异常时Redis热门推荐为空，city={}, pageIndex={}, pageSize={}", city, pageIndex, pageSize);
+            log.warn("ES unavailable, Redis hot fallback returned empty, city={}, pageIndex={}, pageSize={}",
+                    city, pageIndex, pageSize);
         } catch (Exception e) {
-            log.error("ES异常时Redis热门推荐失败，city={}, pageIndex={}, pageSize={}", city, pageIndex, pageSize, e);
+            log.error("ES unavailable, Redis hot fallback failed, city={}, pageIndex={}, pageSize={}",
+                    city, pageIndex, pageSize, e);
         }
 
-        List<HouseVO> dbRecommended = searchHotFromDbByCity(city, pageIndex, pageSize);
-        return buildSearchResult(dbRecommended, true, FALLBACK_SOURCE_DB_CITY_HOT, TIP_ES_DOWN);
+        List<HouseVO> dbRecommended = searchHotFromDb(pageIndex, pageSize);
+        return buildSearchResult(dbRecommended, true, FALLBACK_SOURCE_DB_HOT, TIP_ES_DOWN);
     }
 
-    private HouseSearchResultVO buildSearchResult(List<HouseVO> houses, boolean esDown, String fallbackSource, String tipMessage) {
+    private HouseSearchResultVO buildSearchResult(List<HouseVO> houses,
+                                                  boolean esDown,
+                                                  String fallbackSource,
+                                                  String tipMessage) {
         HouseSearchResultVO result = new HouseSearchResultVO();
         result.setHouses(houses);
         result.setEsDown(esDown);
@@ -197,7 +158,7 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
 
     private List<HouseVO> searchInEs(double lat, double lon, String distanceStr, int pageIndex, int pageSize) {
         Query boolQuery = Query.of(q -> q.bool(b -> b
-                .must(m -> m.term(t -> t.field("status").value(1)))
+                .must(m -> m.term(t -> t.field("status").value(HOUSE_STATUS_AVAILABLE)))
                 .filter(f -> f.geoDistance(g -> g
                         .field("location")
                         .distance(distanceStr)
@@ -210,12 +171,14 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
                 .order(SortOrder.Asc)
                 .unit(DistanceUnit.Meters)
         ));
+
         NativeQuery nativeQuery = NativeQuery.builder()
                 .withQuery(boolQuery)
                 .withSort(geoSort)
                 .withPageable(PageRequest.of(pageIndex, pageSize))
                 .build();
         SearchHits<HouseDoc> hits = elasticsearchOperations.search(nativeQuery, HouseDoc.class);
+
         List<HouseVO> voList = new ArrayList<>();
         for (SearchHit<HouseDoc> hit : hits) {
             HouseDoc doc = hit.getContent();
@@ -227,28 +190,33 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
             }
             voList.add(vo);
         }
-        log.info("ES搜索成功，返回{}条，pageIndex={}, pageSize={}", voList.size(), pageIndex, pageSize);
+
+        log.info("ES nearby search success, count={}, pageIndex={}, pageSize={}", voList.size(), pageIndex, pageSize);
         return voList;
     }
 
     private List<HouseVO> searchHotFromRedis(String city, int pageIndex, int pageSize) {
-        String cityKey = StringUtils.hasText(city) ? city.trim() : "DEFAULT_CITY";
-        String cacheKey = "house:hot:" + cityKey;
-
-        // TODO 热门房源计算能力完成后，从Redis中按热度读取城市热门房源并组装 HouseVO。
-        log.warn("Redis热门房源查询逻辑待实现，cacheKey={}, pageIndex={}, pageSize={}", cacheKey, pageIndex, pageSize);
-
         if (stringRedisTemplate.getConnectionFactory() == null) {
-            throw new IllegalStateException("Redis连接工厂不存在");
+            throw new IllegalStateException("Redis connection factory is not configured");
         }
-        return new ArrayList<>();
+
+        if (!houseHotService.hasHotRankingCache()) {
+            log.info("hot ranking cache is empty, trigger rebuild, city={}, pageIndex={}, pageSize={}",
+                    city, pageIndex, pageSize);
+            houseHotService.rebuildHotRanking();
+        }
+
+        List<HouseVO> hotHouses = houseHotService.queryHotHouses(pageIndex, pageSize);
+        log.info("Redis hot-house query finished, city={}, pageIndex={}, pageSize={}, count={}",
+                city, pageIndex, pageSize, hotHouses.size());
+        return hotHouses;
     }
 
-    private List<HouseVO> searchHotFromDbByCity(String city, int pageIndex, int pageSize) {
+    private List<HouseVO> searchHotFromDb(int pageIndex, int pageSize) {
         Page<House> page = new Page<>(pageIndex + 1L, pageSize);
         Page<House> housePage = this.lambdaQuery()
-                .eq(House::getStatus, 1)
-                .like(StringUtils.hasText(city), House::getTitle, city)
+                .eq(House::getStatus, HOUSE_STATUS_AVAILABLE)
+                .orderByDesc(House::getCreateTime)
                 .orderByDesc(House::getId)
                 .page(page);
 
@@ -257,155 +225,9 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
             voList.add(convertHouseToVo(house));
         }
 
-        log.info("DB城市热门推荐完成，city={}, pageIndex={}, pageSize={}, count={}",
-                city,
-                pageIndex,
-                pageSize,
-                voList.size());
+        log.info("DB hot fallback finished, pageIndex={}, pageSize={}, count={}",
+                pageIndex, pageSize, voList.size());
         return voList;
-    }
-
-    //校验传递的参数是否为空或者非法
-    private void validateSmartGuideReq(SmartGuideReqDTO reqDTO) {
-        String budgetScope = normalizeEnumValue(reqDTO.getBudgetScope());
-        if (!BUDGET_SCOPE_RENT_ONLY.equals(budgetScope) && !BUDGET_SCOPE_TOTAL.equals(budgetScope)) {
-            throw new IllegalArgumentException("budgetScope only supports RENT_ONLY or TOTAL");
-        }
-
-        String rentMode = normalizeEnumValue(reqDTO.getRentMode());
-        if (!RENT_MODE_WHOLE.equals(rentMode) && !RENT_MODE_SHARED.equals(rentMode)) {
-            throw new IllegalArgumentException("rentMode only supports WHOLE or SHARED");
-        }
-
-        boolean hasStationLat = reqDTO.getStationLatitude() != null;
-        boolean hasStationLon = reqDTO.getStationLongitude() != null;
-        if (hasStationLat != hasStationLon) {
-            throw new IllegalArgumentException("stationLatitude and stationLongitude must be sent together");
-        }
-    }
-
-    private SmartGuidePrefilterResult querySmartGuideCandidateIdsFromEs(SmartGuideReqDTO reqDTO) {
-        String rentKeyword = RENT_MODE_WHOLE.equals(normalizeEnumValue(reqDTO.getRentMode())) ? "整租" : "合租";
-        try {
-            List<Long> candidateIds = CompletableFuture.supplyAsync(() -> {
-                        Query boolQuery = Query.of(q -> q.bool(b -> b
-                                .must(m -> m.match(mm -> mm.field("title").query(reqDTO.getCommuteMetroStation())))
-                                .must(m -> m.match(mm -> mm.field("title").query(rentKeyword)))
-                        ));
-
-                        NativeQuery nativeQuery = NativeQuery.builder()
-                                .withQuery(boolQuery)
-                                .withPageable(PageRequest.of(0, SMART_GUIDE_ES_PREFILTER_SIZE))
-                                .build();
-                        SearchHits<HouseDoc> hits = elasticsearchOperations.search(nativeQuery, HouseDoc.class);
-                        LinkedHashSet<Long> idSet = new LinkedHashSet<>();
-                        for (SearchHit<HouseDoc> hit : hits) {
-                            HouseDoc doc = hit.getContent();
-                            if (doc != null && doc.getId() != null) {
-                                idSet.add(doc.getId());
-                            }
-                        }
-                        return new ArrayList<>(idSet);
-                    })
-                    .get(ES_QUERY_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-
-            log.info("smartGuide ES预筛选完成，candidateCount={}", candidateIds.size());
-            return SmartGuidePrefilterResult.esAvailable(candidateIds);
-        } catch (TimeoutException te) {
-            log.warn("smartGuide ES预筛选超时({}ms)，降级DB", ES_QUERY_TIMEOUT_MS);
-        } catch (Exception e) {
-            log.error("smartGuide ES预筛选异常，降级DB", e);
-        }
-        return SmartGuidePrefilterResult.esUnavailable();
-    }
-
-    //先找出合适的房源
-    private List<House> querySmartGuideCandidatesFromDb(SmartGuideReqDTO reqDTO, int budgetCent, List<Long> esCandidateIds) {
-        if (esCandidateIds == null || esCandidateIds.isEmpty()) {
-            return Collections.emptyList();
-        }
-        String rentKeyword = RENT_MODE_WHOLE.equals(normalizeEnumValue(reqDTO.getRentMode())) ? "整租" : "合租";
-        return this.lambdaQuery()
-                .in(House::getId, esCandidateIds)
-                .in(House::getStatus, HOUSE_STATUS_AVAILABLE, HOUSE_STATUS_LOCKED)
-                .le(House::getPrice, budgetCent)
-                .like(StringUtils.hasText(reqDTO.getCommuteMetroStation()), House::getTitle, reqDTO.getCommuteMetroStation())
-                .like(House::getTitle, rentKeyword)
-                .orderByAsc(House::getPrice)
-                .last("limit " + SMART_GUIDE_MAX_CANDIDATES)
-                .list();
-    }
-
-    private List<House> querySmartGuideCandidatesFallback(SmartGuideReqDTO reqDTO, int budgetCent) {
-        String rentKeyword = RENT_MODE_WHOLE.equals(normalizeEnumValue(reqDTO.getRentMode())) ? "整租" : "合租";
-        return this.lambdaQuery()
-                .in(House::getStatus, HOUSE_STATUS_AVAILABLE, HOUSE_STATUS_LOCKED)
-                .le(House::getPrice, budgetCent)
-                .like(StringUtils.hasText(reqDTO.getCommuteMetroStation()), House::getTitle, reqDTO.getCommuteMetroStation())
-                .like(House::getTitle, rentKeyword)
-                .orderByAsc(House::getPrice)
-                .last("limit " + SMART_GUIDE_MAX_CANDIDATES)
-                .list();
-    }
-
-    private static class SmartGuidePrefilterResult {
-
-        private final boolean esAvailable;
-
-        private final List<Long> candidateIds;
-
-        private SmartGuidePrefilterResult(boolean esAvailable, List<Long> candidateIds) {
-            this.esAvailable = esAvailable;
-            this.candidateIds = candidateIds;
-        }
-
-        static SmartGuidePrefilterResult esAvailable(List<Long> candidateIds) {
-            return new SmartGuidePrefilterResult(true, candidateIds == null ? Collections.emptyList() : candidateIds);
-        }
-
-        static SmartGuidePrefilterResult esUnavailable() {
-            return new SmartGuidePrefilterResult(false, Collections.emptyList());
-        }
-
-        boolean isEsAvailable() {
-            return esAvailable;
-        }
-
-        List<Long> getCandidateIds() {
-            return candidateIds;
-        }
-    }
-
-    private SmartGuideItemVO buildSmartGuideItem(House house,
-                                                 SmartGuideReqDTO reqDTO,
-                                                 int scoredBudgetYuan,
-                                                 String rentKeyword) {
-        SmartGuideItemVO item = new SmartGuideItemVO();
-        item.setHouseId(house.getId());
-        item.setPublisherUserId(house.getPublisherUserId());
-        item.setTitle(house.getTitle());
-        item.setStatus(house.getStatus());
-        item.setPrice(convertCentToYuan(house.getPrice()));
-
-        SmartGuideScoreCalculator.SmartGuideScoreResult scoreResult =
-                smartGuideScoreCalculator.calculate(house, reqDTO, scoredBudgetYuan * 100, rentKeyword);
-
-        item.setDistanceToMetroKm(scoreResult.getDistanceToMetroKm());
-        item.setEstimatedCommuteMinutes(scoreResult.getEstimatedCommuteMinutes());
-        item.setReasons(scoreResult.getReasons());
-        item.setScore(scoreResult.getScore());
-        return item;
-    }
-
-    private String normalizeEnumValue(String value) {
-        return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
-    }
-
-    private BigDecimal convertCentToYuan(Integer cent) {
-        if (cent == null) {
-            return null;
-        }
-        return new BigDecimal(cent).divide(new BigDecimal(100), 2, RoundingMode.HALF_UP);
     }
 
     private HouseVO convertDocToVo(HouseDoc doc) {
@@ -415,13 +237,13 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         vo.setTitle(doc.getTitle());
         vo.setStatus(doc.getStatus());
         if (doc.getPrice() != null) {
-            BigDecimal priceYuan = new BigDecimal(doc.getPrice())
-                    .divide(new BigDecimal(100), 2, RoundingMode.HALF_UP);
+            BigDecimal priceYuan = BigDecimal.valueOf(doc.getPrice())
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
             vo.setPrice(priceYuan);
         }
         if (doc.getDepositAmount() != null) {
-            BigDecimal depositYuan = new BigDecimal(doc.getDepositAmount())
-                    .divide(new BigDecimal(100), 2, RoundingMode.HALF_UP);
+            BigDecimal depositYuan = BigDecimal.valueOf(doc.getDepositAmount())
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
             vo.setDepositAmount(depositYuan);
         }
         return vo;
@@ -434,13 +256,13 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         vo.setTitle(house.getTitle());
         vo.setStatus(house.getStatus());
         if (house.getPrice() != null) {
-            BigDecimal priceYuan = new BigDecimal(house.getPrice())
-                    .divide(new BigDecimal(100), 2, RoundingMode.HALF_UP);
+            BigDecimal priceYuan = BigDecimal.valueOf(house.getPrice())
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
             vo.setPrice(priceYuan);
         }
         if (house.getDepositAmount() != null) {
-            BigDecimal depositYuan = new BigDecimal(house.getDepositAmount())
-                    .divide(new BigDecimal(100), 2, RoundingMode.HALF_UP);
+            BigDecimal depositYuan = BigDecimal.valueOf(house.getDepositAmount())
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
             vo.setDepositAmount(depositYuan);
         }
         return vo;
@@ -448,7 +270,7 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
 
     private double parseRadiusMeters(String radiusStr) {
         if (radiusStr == null || radiusStr.isEmpty()) {
-            return 5000d;
+            return 5000D;
         }
         String lower = radiusStr.toLowerCase().trim();
         if (lower.endsWith("km")) {
@@ -462,8 +284,10 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         if (meters < 1000) {
             return (int) meters + "m";
         }
-        BigDecimal km = new BigDecimal(meters).divide(new BigDecimal(1000), 1, RoundingMode.HALF_UP);
-        return km.toString() + "km";
+        BigDecimal km = BigDecimal.valueOf(meters).divide(BigDecimal.valueOf(1000), 1, RoundingMode.HALF_UP);
+        return km + "km";
+    }
+
+    private record SearchPoint(double latitude, double longitude) {
     }
 }
-

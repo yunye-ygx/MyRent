@@ -20,6 +20,16 @@ public class RabbitMQConfig {
     public static final String ORDER_QUEUE = "order.queue";
     public static final String ORDER_ROUTING_KEY = "order.routing.key";
 
+    // 2.1 超时关单消费失败后的重试链路
+    public static final String ORDER_RETRY_EXCHANGE = "order.retry.exchange";
+    public static final String ORDER_RETRY_QUEUE = "order.retry.queue";
+    public static final String ORDER_RETRY_ROUTING_KEY = "order.retry.routing.key";
+
+    // 2.2 超过最大重试次数后的失败落盘队列
+    public static final String ORDER_FAIL_EXCHANGE = "order.fail.exchange";
+    public static final String ORDER_FAIL_QUEUE = "order.fail.queue";
+    public static final String ORDER_FAIL_ROUTING_KEY = "order.fail.routing.key";
+
     // 3. 房源DB->ES同步专用交换机与队列
     public static final String HOUSE_SYNC_EXCHANGE = "house.sync.exchange";
     public static final String HOUSE_SYNC_QUEUE = "house.sync.queue";
@@ -62,6 +72,41 @@ public class RabbitMQConfig {
     public Binding orderBinding(@Qualifier("orderQueue") Queue orderQueue,
                                 @Qualifier("orderExchange") DirectExchange orderExchange) {
         return BindingBuilder.bind(orderQueue).to(orderExchange).with(ORDER_ROUTING_KEY);
+    }
+
+    @Bean
+    public DirectExchange orderRetryExchange() {
+        return new DirectExchange(ORDER_RETRY_EXCHANGE);
+    }
+
+    @Bean
+    public Queue orderRetryQueue() {
+        Map<String, Object> args = new HashMap<>(2);
+        args.put("x-dead-letter-exchange", ORDER_DL_EXCHANGE);
+        args.put("x-dead-letter-routing-key", ORDER_DL_ROUTING_KEY);
+        return QueueBuilder.durable(ORDER_RETRY_QUEUE).withArguments(args).build();
+    }
+
+    @Bean
+    public Binding orderRetryBinding(@Qualifier("orderRetryQueue") Queue orderRetryQueue,
+                                     @Qualifier("orderRetryExchange") DirectExchange orderRetryExchange) {
+        return BindingBuilder.bind(orderRetryQueue).to(orderRetryExchange).with(ORDER_RETRY_ROUTING_KEY);
+    }
+
+    @Bean
+    public DirectExchange orderFailExchange() {
+        return new DirectExchange(ORDER_FAIL_EXCHANGE);
+    }
+
+    @Bean
+    public Queue orderFailQueue() {
+        return QueueBuilder.durable(ORDER_FAIL_QUEUE).build();
+    }
+
+    @Bean
+    public Binding orderFailBinding(@Qualifier("orderFailQueue") Queue orderFailQueue,
+                                    @Qualifier("orderFailExchange") DirectExchange orderFailExchange) {
+        return BindingBuilder.bind(orderFailQueue).to(orderFailExchange).with(ORDER_FAIL_ROUTING_KEY);
     }
 
     @Bean

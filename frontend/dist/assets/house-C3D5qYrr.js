@@ -1,1 +1,0 @@
-import{h as t}from"./http-CzLChBKh.js";function s(e={}){return t.get("/house/page",{params:e})}function r(e){return t.get(`/house/${e}`)}function u(e){return t.post("/house/nearby",e)}export{r as a,s as f,u as s};

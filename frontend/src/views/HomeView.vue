@@ -3,22 +3,36 @@
     <section class="home-header card">
       <div>
         <p class="city">广州</p>
-        <h2 class="brand">MyRent 租房</h2>
+        <h2 class="brand">{{ pageTitle }}</h2>
       </div>
       <button class="ghost-btn" @click="reload">刷新</button>
     </section>
 
     <section class="card search-wrap">
-      <input v-model.trim="keyword" class="input" placeholder="搜索房源标题（本地过滤）" />
+      <div class="search-row">
+        <input
+          v-model.trim="keyword"
+          class="input"
+          placeholder="输入地点名称，如珠江新城、体育西路"
+          @keyup.enter="handleSearch"
+        />
+        <button class="primary-btn search-btn" :disabled="loading || !keyword" @click="handleSearch">
+          搜索
+        </button>
+      </div>
+      <div v-if="isNearbyMode" class="search-actions">
+        <button class="ghost-btn" :disabled="loading" @click="resetToHot">返回热门</button>
+      </div>
+      <p class="search-tip" :class="{ warning: isNearbyMode }">{{ searchTip }}</p>
     </section>
 
     <LoadingState v-if="loading && !houses.length" text="正在加载房源..." />
 
     <p v-if="error" class="error-text">{{ error }}</p>
 
-    <template v-if="displayHouses.length">
+    <template v-if="houses.length">
       <HouseCard
-        v-for="house in displayHouses"
+        v-for="house in houses"
         :key="house.id"
         :house="house"
         @click="toDetail(house.id)"
@@ -26,10 +40,10 @@
     </template>
     <EmptyState
       v-else-if="!loading"
-      title="暂无房源"
-      description="可点击刷新按钮重试或稍后再看"
-      action-text="刷新"
-      @action="reload"
+      :title="emptyTitle"
+      :description="emptyDescription"
+      :action-text="isNearbyMode ? '返回热门' : '刷新'"
+      @action="handleEmptyAction"
     />
 
     <div class="load-more">
@@ -43,13 +57,14 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchHousePage } from '@/api/house'
+import { fetchHotHousePage, searchNearbyHouse } from '@/api/house'
 import { fetchUserById } from '@/api/user'
 import EmptyState from '@/components/EmptyState.vue'
 import HouseCard from '@/components/HouseCard.vue'
 import LoadingState from '@/components/LoadingState.vue'
 
 const router = useRouter()
+const DEFAULT_CITY = '广州'
 
 const houses = ref([])
 const loading = ref(false)
@@ -58,34 +73,38 @@ const current = ref(1)
 const size = ref(10)
 const hasMore = ref(true)
 const keyword = ref('')
+const mode = ref('hot')
+const activeLocation = ref('')
+const resultTip = ref('')
 const userNameCache = new Map()
 
-const displayHouses = computed(() => {
-  if (!keyword.value) {
-    return houses.value
+const isNearbyMode = computed(() => mode.value === 'nearby')
+
+const pageTitle = computed(() => {
+  if (!isNearbyMode.value) {
+    return 'MyRent 热门房源'
   }
-  return houses.value.filter((item) => String(item.title || '').includes(keyword.value))
+  return `${activeLocation.value || '附近'}周边房源`
 })
 
-async function loadNext() {
-  if (loading.value || !hasMore.value) {
-    return
+const searchTip = computed(() => {
+  if (resultTip.value) {
+    return resultTip.value
   }
-  loading.value = true
-  error.value = ''
-  try {
-    const pageData = await fetchHousePage({ current: current.value, size: size.value })
-    const records = pageData?.records || []
-    const enrichedRecords = await enrichPublisherName(records)
-    houses.value = [...houses.value, ...enrichedRecords]
-    hasMore.value = current.value < (pageData?.pages || 0)
-    current.value += 1
-  } catch (err) {
-    error.value = err?.message || '房源加载失败'
-  } finally {
-    loading.value = false
+  if (isNearbyMode.value) {
+    return '输入地点后会自动解析坐标，再调用附近房源接口。'
   }
-}
+  return '首页默认展示热门缓存内容，输入地点后可切换为附近搜索。'
+})
+
+const emptyTitle = computed(() => (isNearbyMode.value ? '附近暂无房源' : '暂无房源'))
+
+const emptyDescription = computed(() => {
+  if (isNearbyMode.value) {
+    return '可以换个地点名称搜索，或返回热门房源查看推荐结果。'
+  }
+  return '可点击刷新按钮重试或稍后再看'
+})
 
 async function enrichPublisherName(records) {
   if (!Array.isArray(records) || !records.length) {
@@ -130,11 +149,83 @@ async function enrichPublisherName(records) {
   )
 }
 
-function reload() {
+async function loadHotPage() {
+  return fetchHotHousePage({ page: current.value, size: size.value })
+}
+
+async function loadNearbyPage() {
+  return searchNearbyHouse({
+    locationName: activeLocation.value,
+    city: DEFAULT_CITY,
+    page: current.value,
+    size: size.value
+  })
+}
+
+async function loadNext() {
+  if (loading.value || !hasMore.value) {
+    return
+  }
+  loading.value = true
+  error.value = ''
+  try {
+    const result = isNearbyMode.value ? await loadNearbyPage() : await loadHotPage()
+    const records = result?.houses || []
+    const enrichedRecords = await enrichPublisherName(records)
+    houses.value = [...houses.value, ...enrichedRecords]
+    hasMore.value = records.length >= size.value
+    current.value += 1
+    resultTip.value = result?.tipMessage || ''
+  } catch (err) {
+    error.value = err?.message || '房源加载失败'
+  } finally {
+    loading.value = false
+  }
+}
+
+function resetPaging() {
   houses.value = []
   current.value = 1
   hasMore.value = true
+  error.value = ''
+}
+
+function reload() {
+  if (isNearbyMode.value && !activeLocation.value) {
+    resetToHot()
+    return
+  }
+  resetPaging()
   loadNext()
+}
+
+function resetToHot() {
+  mode.value = 'hot'
+  keyword.value = ''
+  activeLocation.value = ''
+  resultTip.value = ''
+  resetPaging()
+  loadNext()
+}
+
+function handleSearch() {
+  if (!keyword.value) {
+    resetToHot()
+    return
+  }
+  mode.value = 'nearby'
+  activeLocation.value = keyword.value
+  resultTip.value = ''
+  resetPaging()
+  loadNext()
+}
+
+function handleEmptyAction() {
+  if (isNearbyMode.value) {
+    resetToHot()
+    return
+  }
+  reload()
 }
 
 function toDetail(id) {
@@ -172,6 +263,29 @@ onMounted(() => {
 
 .search-wrap {
   padding: 10px;
+}
+
+.search-row {
+  display: flex;
+  gap: 8px;
+}
+
+.search-btn {
+  flex: 0 0 auto;
+}
+
+.search-actions {
+  margin-top: 8px;
+}
+
+.search-tip {
+  margin: 8px 0 0;
+  color: #92400e;
+  font-size: 12px;
+}
+
+.search-tip.warning {
+  color: #1d4ed8;
 }
 
 .load-more {

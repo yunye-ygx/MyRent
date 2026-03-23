@@ -7,14 +7,15 @@ import cn.yy.myrent.dto.SmartGuideReqDTO;
 import cn.yy.myrent.entity.House;
 import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IHouseService;
+import cn.yy.myrent.sync.house.service.HouseEsSyncService;
 import cn.yy.myrent.vo.HouseSearchResultVO;
 import cn.yy.myrent.vo.SmartGuideResultVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,30 +30,39 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/house")
 @Tag(name = "房源管理")
 @Slf4j
+@RequiredArgsConstructor
 public class HouseController {
 
-    @Autowired
-    private IHouseService houseService;
-
-    @Autowired
-    private IHouseCommandService houseCommandService;
+    private final IHouseService houseService;
+    private final IHouseCommandService houseCommandService;
+    private final HouseEsSyncService houseEsSyncService;
 
     @PostMapping("/nearby")
-    @Operation(summary = "附近房源搜索", description = "优先ES，失败自动降级")
+    @Operation(summary = "附近房源搜索", description = "优先走 ES，失败后自动降级")
     public Result<HouseSearchResultVO> searchHouse(@RequestBody SearchHouseReqDTO reqDTO) {
-        HouseSearchResultVO result = houseService.searchNearbyHouse(reqDTO);
-        return Result.success(result);
+        try {
+            return Result.success(houseService.searchNearbyHouse(reqDTO));
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage() == null ? "附近房源搜索失败" : e.getMessage());
+        }
+    }
+
+    @GetMapping("/hot")
+    @Operation(summary = "热门房源", description = "返回按热度分排序的可租房源")
+    public Result<HouseSearchResultVO> hotHouses(
+            @RequestParam(value = "page", defaultValue = "1") Integer page,
+            @RequestParam(value = "size", defaultValue = "10") Integer size) {
+        return Result.success(houseService.hotHouses(page, size));
     }
 
     @PostMapping("/smart-guide")
-    @Operation(summary = "智能找房引导V2", description = "先ES预筛选候选ID，再由DB按状态/价格做二次过滤")
+    @Operation(summary = "智能找房引导", description = "先做 ES 预筛选，再由 DB 完成最终过滤和排序")
     public Result<SmartGuideResultVO> smartGuide(@Valid @RequestBody SmartGuideReqDTO reqDTO) {
-        SmartGuideResultVO result = houseService.smartGuide(reqDTO);
-        return Result.success(result);
+        return Result.success(houseService.smartGuide(reqDTO));
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "按ID查询房源")
+    @Operation(summary = "按 ID 查询房源")
     public Result<House> getById(@PathVariable("id") Long id) {
         House house = houseService.getById(id);
         if (house == null) {
@@ -72,6 +82,13 @@ public class HouseController {
                 .orderByDesc(House::getId)
                 .page(new Page<>(safeCurrent, safeSize));
         return Result.success(page);
+    }
+
+    @PostMapping("/es/rebuild-all")
+    @Operation(summary = "全量重建房源 ES 文档", description = "从 MySQL 全量扫描 house 表并重新写入 Elasticsearch")
+    public Result<Integer> rebuildHouseEs() {
+        int rebuildCount = houseEsSyncService.rebuildAllFromDb();
+        return Result.success("房源 ES 全量重建完成", rebuildCount);
     }
 
     @PostMapping

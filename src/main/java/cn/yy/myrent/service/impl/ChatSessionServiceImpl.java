@@ -9,6 +9,7 @@ import cn.yy.myrent.mapper.ChatMessageMapper;
 import cn.yy.myrent.mapper.ChatSessionMapper;
 import cn.yy.myrent.mapper.UserMapper;
 import cn.yy.myrent.service.IChatSessionService;
+import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.websocket.ChatWebSocketSessionManager;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
@@ -21,14 +22,6 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 
-/**
- * <p>
- * 聊天会话列表 服务实现类
- * </p>
- *
- * @author yy
- * @since 2026-03-12
- */
 @Service
 @Slf4j
 public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatSession> implements IChatSessionService {
@@ -42,27 +35,27 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
     @Autowired
     private UserMapper userMapper;
 
+    @Autowired
+    private HouseHotService houseHotService;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void sendMessage(MessageDTO messageDTO) {
+    public ChatMessage sendMessage(MessageDTO messageDTO) {
         Long senderId = messageDTO.getSenderId();
         Long receiverId = messageDTO.getReceiverId();
+        Long houseId = messageDTO.getHouseId();
         String content = messageDTO.getContent();
 
-        log.info("开始发送消息，senderId={}, receiverId={}, contentLength={}",
-                senderId,
-                receiverId,
-                content == null ? 0 : content.length());
+        log.info("start send chat message, senderId={}, receiverId={}, houseId={}, contentLength={}",
+                senderId, receiverId, houseId, content == null ? 0 : content.length());
 
-        if (senderId == null || receiverId == null || !StringUtils.hasText(content)) {
-            log.warn("发送消息参数非法，senderId={}, receiverId={}, hasContent={}",
-                    senderId,
-                    receiverId,
-                    StringUtils.hasText(content));
+        if (senderId == null || receiverId == null || houseId == null || houseId <= 0L || !StringUtils.hasText(content)) {
+            log.warn("invalid send chat params, senderId={}, receiverId={}, houseId={}, hasContent={}",
+                    senderId, receiverId, houseId, StringUtils.hasText(content));
             throw new RuntimeException("消息参数不能为空");
         }
 
-        String sessionId = buildSessionId(senderId, receiverId);
+        String sessionId = buildSessionId(senderId, receiverId, houseId);
         LocalDateTime now = LocalDateTime.now();
 
         ChatSession chatSession = this.lambdaQuery()
@@ -77,27 +70,32 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
             newSession.setSessionId(sessionId);
             newSession.setUserId1(userId1);
             newSession.setUserId2(userId2);
+            newSession.setHouseId(houseId);
             newSession.setLastMsgContent(content);
             newSession.setCreateTime(now);
             newSession.setUpdateTime(now);
 
             boolean savedSession = this.save(newSession);
             if (!savedSession) {
-                log.error("创建会话失败，sessionId={}, senderId={}, receiverId={}", sessionId, senderId, receiverId);
+                log.error("create chat session failed, sessionId={}, senderId={}, receiverId={}, houseId={}",
+                        sessionId, senderId, receiverId, houseId);
                 throw new RuntimeException("创建会话失败");
             }
-            log.info("创建新会话成功，sessionId={}, userId1={}, userId2={}", sessionId, userId1, userId2);
+            log.info("create chat session success, sessionId={}, userId1={}, userId2={}, houseId={}",
+                    sessionId, userId1, userId2, houseId);
         } else {
             boolean updatedSession = this.lambdaUpdate()
+                    .set(ChatSession::getHouseId, houseId)
                     .set(ChatSession::getLastMsgContent, content)
                     .set(ChatSession::getUpdateTime, now)
                     .eq(ChatSession::getSessionId, sessionId)
                     .update();
             if (!updatedSession) {
-                log.error("更新会话失败，sessionId={}, senderId={}, receiverId={}", sessionId, senderId, receiverId);
+                log.error("update chat session failed, sessionId={}, senderId={}, receiverId={}, houseId={}",
+                        sessionId, senderId, receiverId, houseId);
                 throw new RuntimeException("更新会话失败");
             }
-            log.debug("更新会话成功，sessionId={}", sessionId);
+            log.debug("update chat session success, sessionId={}, houseId={}", sessionId, houseId);
         }
 
         ChatMessage chatMessage = new ChatMessage()
@@ -112,10 +110,12 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
 
         int rows = chatMessageMapper.insert(chatMessage);
         if (rows != 1) {
-            log.error("消息入库失败，sessionId={}, senderId={}, receiverId={}, rows={}", sessionId, senderId, receiverId, rows);
+            log.error("insert chat message failed, sessionId={}, senderId={}, receiverId={}, houseId={}, rows={}",
+                    sessionId, senderId, receiverId, houseId, rows);
             throw new RuntimeException("发送消息失败");
         }
-        log.info("消息入库成功，messageId={}, sessionId={}", chatMessage.getId(), sessionId);
+        log.info("insert chat message success, messageId={}, sessionId={}, houseId={}",
+                chatMessage.getId(), sessionId, houseId);
 
         User sender = userMapper.selectById(senderId);
         User receiver = userMapper.selectById(receiverId);
@@ -126,18 +126,29 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
             @Override
             public void afterCommit() {
                 try {
-                    sessionManager.sendToUser(receiverId, chatMessage);
-                    log.info("事务提交后已推送消息，messageId={}, receiverId={}", chatMessage.getId(), receiverId);
+                    houseHotService.recordChatInteraction(houseId, senderId, receiverId);
                 } catch (Exception e) {
-                    log.error("事务提交后推送消息失败，messageId={}, receiverId={}", chatMessage.getId(), receiverId, e);
+                    log.error("record chat interaction for hot rank failed, messageId={}, houseId={}",
+                            chatMessage.getId(), houseId, e);
+                }
+
+                try {
+                    sessionManager.sendToUser(receiverId, chatMessage);
+                    log.info("push chat message after commit success, messageId={}, receiverId={}",
+                            chatMessage.getId(), receiverId);
+                } catch (Exception e) {
+                    log.error("push chat message after commit failed, messageId={}, receiverId={}",
+                            chatMessage.getId(), receiverId, e);
                 }
             }
         });
+
+        return chatMessage;
     }
 
-    private String buildSessionId(Long userId1, Long userId2) {
+    private String buildSessionId(Long userId1, Long userId2, Long houseId) {
         long minUserId = Math.min(userId1, userId2);
         long maxUserId = Math.max(userId1, userId2);
-        return minUserId + "_" + maxUserId;
+        return minUserId + "_" + maxUserId + "_" + houseId;
     }
 }

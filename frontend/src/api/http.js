@@ -28,9 +28,25 @@ http.interceptors.response.use(
     throw error
   },
   (error) => {
-    if (error?.response?.status === 401) {
+    const responseStatus = error?.response?.status
+    const responsePayload = error?.response?.data
+
+    if (responseStatus === 401) {
       clearSession()
     }
+
+    if (responsePayload && typeof responsePayload === 'object') {
+      const wrappedError = new Error(responsePayload.message || error?.message || '请求失败')
+      wrappedError.code = responsePayload.code || responseStatus
+      return Promise.reject(wrappedError)
+    }
+
+    if (responseStatus) {
+      const wrappedError = new Error(error?.message || `请求失败（${responseStatus}）`)
+      wrappedError.code = responseStatus
+      return Promise.reject(wrappedError)
+    }
+
     return Promise.reject(error)
   }
 )

@@ -53,6 +53,18 @@ const avatarText = computed(() => {
 })
 
 function openModule(item) {
+  if (item.key === 'favorite') {
+    router.push('/mine/favorites')
+    return
+  }
+  if (item.key === 'consult') {
+    router.push('/mine/consults')
+    return
+  }
+  if (item.key === 'contract') {
+    router.push('/mine/orders')
+    return
+  }
   router.push(`/placeholder/${item.key}?title=${encodeURIComponent(item.label)}`)
 }
 

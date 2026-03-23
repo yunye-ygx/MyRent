@@ -4,12 +4,12 @@ export function fetchSessionPage(params = {}) {
   return http.get('/chat-session/page', { params })
 }
 
-export function sendChatMessage(payload) {
-  return http.post('/chat-session/send', payload)
+export function fetchMyConsultPage(params = {}) {
+  return http.get('/chat-session/mine', { params })
 }
 
-export function fetchMessagePage(params = {}) {
-  return http.get('/chat-message/page', { params })
+export function sendChatMessage(payload) {
+  return http.post('/chat-session/send', payload)
 }
 
 export function pullNewMessages(params = {}) {

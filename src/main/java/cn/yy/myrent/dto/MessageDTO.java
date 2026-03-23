@@ -9,5 +9,7 @@ public class MessageDTO {
 
     private Long receiverId;
 
+    private Long houseId;
+
     private String content;
 }

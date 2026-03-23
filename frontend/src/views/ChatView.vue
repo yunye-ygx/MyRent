@@ -27,11 +27,48 @@
       />
     </div>
 
+    <section v-if="showConsultCard" class="consult-context card">
+      <div class="consult-cover">
+        <img :src="consultHouseCover" :alt="consultHouse.title || 'house'" />
+      </div>
+      <div class="consult-main">
+        <p class="consult-tag">当前咨询房源</p>
+        <h3 class="consult-title">{{ consultHouse.title }}</h3>
+        <p class="consult-meta">
+          {{ formatPrice(consultHouse.price) }}/月 · {{ getHouseStatusText(consultHouse.status) }}
+        </p>
+        <button
+          class="primary-btn consult-action"
+          :disabled="sending"
+          @click="sendAppointmentMessage"
+        >
+          {{ sending ? '发送中...' : '一键预约看房' }}
+        </button>
+      </div>
+    </section>
+
+    <section v-if="quickActionsVisible" class="quick-actions card">
+      <p class="quick-actions-title">快捷咨询</p>
+      <div class="quick-actions-list">
+        <button
+          v-for="action in quickActions"
+          :key="action"
+          type="button"
+          class="quick-action"
+          :disabled="sending"
+          @click="sendQuickAction(action)"
+        >
+          {{ action }}
+        </button>
+      </div>
+    </section>
+
     <footer class="chat-input card">
       <input
         v-model.trim="content"
         class="input"
         placeholder="输入消息内容..."
+        @focus="handleInputFocus"
         @keyup.enter="send"
       />
       <button class="primary-btn" :disabled="sending || !content" @click="send">
@@ -44,12 +81,16 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { fetchMessagePage, markMessagesRead, pullHistoryMessages, pullNewMessages, sendChatMessage } from '@/api/chat'
+import { fetchHouseById } from '@/api/house'
+import { markMessagesRead, pullHistoryMessages, pullNewMessages, sendChatMessage } from '@/api/chat'
 import ChatBubble from '@/components/ChatBubble.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import { useAuthStore } from '@/stores/auth'
+import { formatPrice, getHouseStatusText } from '@/utils/format'
 import { getToken } from '@/utils/storage'
+
+const quickActions = ['还在吗', '能否周末看房', '押几付几', '是否可养宠物']
 
 const route = useRoute()
 const router = useRouter()
@@ -58,6 +99,13 @@ const authStore = useAuthStore()
 const sessionId = computed(() => String(route.params.sessionId || ''))
 const peerId = computed(() => Number(route.query.peerId || 0))
 const peerName = computed(() => String(route.query.peerName || ''))
+const consultHouseId = computed(() => {
+  const fromQuery = Number(route.query.houseId || 0)
+  if (Number.isFinite(fromQuery) && fromQuery > 0) {
+    return fromQuery
+  }
+  return parseHouseIdFromSessionId(sessionId.value)
+})
 const currentUserId = computed(() => Number(authStore.userId || 0))
 
 const messageContainer = ref(null)
@@ -72,6 +120,30 @@ const wsRef = ref(null)
 const reconnectTimer = ref(null)
 const pullTimer = ref(null)
 const lastReadUpToId = ref(0)
+const consultHouse = ref(null)
+const consultCardDismissed = ref(false)
+const quickActionsVisible = ref(false)
+const quickActionsTriggered = ref(false)
+
+let pageActive = true
+
+const consultHouseCover = computed(() => {
+  if (!consultHouse.value?.id) {
+    return ''
+  }
+  return `https://picsum.photos/seed/chat-house-${consultHouse.value.id}/160/120`
+})
+
+const showConsultCard = computed(() => Boolean(consultHouse.value) && !consultCardDismissed.value)
+
+function parseHouseIdFromSessionId(value) {
+  const parts = String(value || '').split('_')
+  if (parts.length < 3) {
+    return 0
+  }
+  const parsed = Number(parts[2])
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
 
 function toNumericId(id) {
   const value = Number(id)
@@ -142,7 +214,7 @@ async function syncReadState() {
     })
     lastReadUpToId.value = upToMessageId
   } catch {
-    // 忽略已读回执失败，不影响主流程
+    // Ignore read receipt failures to keep the chat flow responsive.
   }
 }
 
@@ -155,6 +227,40 @@ function scrollToBottom(smooth = false) {
     top: container.scrollHeight,
     behavior: smooth ? 'smooth' : 'auto'
   })
+}
+
+async function loadConsultHouse() {
+  consultHouse.value = null
+  if (!consultHouseId.value) {
+    return
+  }
+  try {
+    consultHouse.value = await fetchHouseById(consultHouseId.value)
+  } catch {
+    consultHouse.value = null
+  }
+}
+
+function dismissConsultCard() {
+  consultCardDismissed.value = true
+}
+
+function loadQuickActionState() {
+  quickActionsTriggered.value = false
+  quickActionsVisible.value = false
+}
+
+function markQuickActionsAsSeen() {
+  quickActionsTriggered.value = true
+  quickActionsVisible.value = false
+}
+
+function handleInputFocus() {
+  if (quickActionsTriggered.value) {
+    return
+  }
+  quickActionsVisible.value = true
+  quickActionsTriggered.value = true
 }
 
 async function loadInitialHistory() {
@@ -174,7 +280,6 @@ async function loadInitialHistory() {
     if (err?.code === 403) {
       historyCursor.value = null
       hasMoreHistory.value = false
-      return
     }
   } finally {
     historyLoading.value = false
@@ -214,21 +319,6 @@ async function loadMoreHistory() {
   }
 }
 
-async function refreshLatestMessages() {
-  try {
-    const page = await fetchMessagePage({
-      current: 1,
-      size: 40,
-      sessionId: sessionId.value
-    })
-    const records = [...(page?.records || [])].reverse()
-    mergeMessages(records)
-    await syncReadState()
-  } catch {
-    // 忽略拉新失败，依赖 websocket/pull 继续补偿
-  }
-}
-
 async function pullMissedMessages() {
   try {
     const result = await pullNewMessages({
@@ -253,7 +343,7 @@ async function pullMissedMessages() {
       scrollToBottom(true)
     }
   } catch {
-    // 忽略补拉失败，等待下次定时任务或重连
+    // Ignore fallback polling failures and retry on the next cycle.
   }
 }
 
@@ -264,16 +354,30 @@ function buildWsUrl() {
 }
 
 function connectWs() {
+  if (!pageActive) {
+    return
+  }
+  if (reconnectTimer.value) {
+    clearTimeout(reconnectTimer.value)
+    reconnectTimer.value = null
+  }
   closeWs()
   const ws = new WebSocket(buildWsUrl())
   wsRef.value = ws
 
   ws.onopen = async () => {
+    if (!pageActive || wsRef.value !== ws) {
+      return
+    }
     wsConnected.value = true
+    stopPullTimer()
     await pullMissedMessages()
   }
 
   ws.onmessage = async (event) => {
+    if (!pageActive || wsRef.value !== ws) {
+      return
+    }
     try {
       const data = JSON.parse(event.data)
       if (String(data.sessionId) !== sessionId.value) {
@@ -284,21 +388,35 @@ function connectWs() {
       await nextTick()
       scrollToBottom(true)
     } catch {
-      // 忽略无法解析的消息
+      // Ignore malformed websocket payloads.
     }
   }
 
   ws.onclose = () => {
+    if (!pageActive) {
+      return
+    }
+    if (wsRef.value === ws) {
+      wsRef.value = null
+    }
     wsConnected.value = false
+    startPullTimer()
     reconnectLater()
   }
 
   ws.onerror = () => {
+    if (!pageActive || wsRef.value !== ws) {
+      return
+    }
     wsConnected.value = false
+    startPullTimer()
   }
 }
 
 function reconnectLater() {
+  if (!pageActive) {
+    return
+  }
   if (reconnectTimer.value) {
     clearTimeout(reconnectTimer.value)
   }
@@ -315,6 +433,9 @@ function closeWs() {
 }
 
 function startPullTimer() {
+  if (!pageActive) {
+    return
+  }
   stopPullTimer()
   pullTimer.value = setInterval(() => {
     pullMissedMessages()
@@ -338,18 +459,26 @@ function handleScroll() {
   }
 }
 
-async function send() {
-  if (!content.value || sending.value || !peerId.value) {
+async function sendMessage(messageContent) {
+  if (!messageContent || sending.value || !peerId.value) {
+    return
+  }
+  if (!consultHouseId.value) {
+    window.alert('当前会话缺少房源信息，无法发送消息')
     return
   }
   sending.value = true
   try {
-    await sendChatMessage({
+    const sentMessage = await sendChatMessage({
       receiverId: peerId.value,
-      content: content.value
+      houseId: consultHouseId.value,
+      content: messageContent
     })
     content.value = ''
-    await refreshLatestMessages()
+    mergeMessages(sentMessage ? [sentMessage] : [])
+    dismissConsultCard()
+    markQuickActionsAsSeen()
+    await syncReadState()
     await nextTick()
     scrollToBottom(true)
   } catch (err) {
@@ -359,14 +488,31 @@ async function send() {
   }
 }
 
+async function send() {
+  await sendMessage(content.value)
+}
+
+async function sendQuickAction(action) {
+  await sendMessage(action)
+}
+
+async function sendAppointmentMessage() {
+  if (!consultHouse.value) {
+    return
+  }
+  const appointmentMessage = `你好，我想预约看房，房源“${consultHouse.value.title}”，如果方便的话想约个周末时间。`
+  await sendMessage(appointmentMessage)
+}
+
 onMounted(async () => {
-  await loadInitialHistory()
-  await refreshLatestMessages()
+  pageActive = true
+  loadQuickActionState()
+  await Promise.all([loadInitialHistory(), loadConsultHouse()])
   connectWs()
-  startPullTimer()
 })
 
 onUnmounted(() => {
+  pageActive = false
   stopPullTimer()
   closeWs()
   if (reconnectTimer.value) {
@@ -378,8 +524,8 @@ onUnmounted(() => {
 <style scoped>
 .chat-page {
   height: 100%;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
   gap: 8px;
   padding: 10px;
 }
@@ -410,7 +556,6 @@ onUnmounted(() => {
 }
 
 .message-list {
-  flex: 1;
   min-height: 0;
   overflow: auto;
   border-radius: 12px;
@@ -429,9 +574,93 @@ onUnmounted(() => {
   color: #9ca3af;
 }
 
+.consult-context {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.consult-cover img {
+  width: 88px;
+  height: 88px;
+  object-fit: cover;
+  border-radius: 12px;
+  background: #e5e7eb;
+}
+
+.consult-main {
+  min-width: 0;
+}
+
+.consult-tag {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: #2563eb;
+}
+
+.consult-title {
+  margin: 0;
+  font-size: 15px;
+  color: #111827;
+}
+
+.consult-meta {
+  margin: 6px 0 10px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.consult-action {
+  width: 100%;
+}
+
+.quick-actions {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.quick-actions-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.quick-actions-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.quick-action {
+  border: none;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 8px 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.quick-action:disabled {
+  opacity: 0.6;
+}
+
 .chat-input {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .consult-context {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .consult-cover img {
+    width: 72px;
+    height: 72px;
+  }
 }
 </style>

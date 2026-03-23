@@ -57,3 +57,7 @@ build/
 hs_err_pid*
 replay_pid*
 
+# SkyWalking agent runtime files
+tools/skywalking-agent/
+tools/_tmp/
+runtime-logs/skywalking-agent/

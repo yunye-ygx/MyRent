@@ -2,7 +2,9 @@ package cn.yy.myrent.mapper;
 
 import cn.yy.myrent.entity.House;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import jakarta.validation.constraints.NotNull;
+import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
 
 /**
  * <p>
@@ -14,5 +16,19 @@ import jakarta.validation.constraints.NotNull;
  */
 public interface HouseMapper extends BaseMapper<House> {
 
-    House selectForUpdateById( Long id);
+    House selectForUpdateById(Long id);
+
+    List<Long> selectSmartGuideCandidateIds(@Param("candidateIds") List<Long> candidateIds,
+                                            @Param("availableStatus") Integer availableStatus,
+                                            @Param("rentType") Integer rentType,
+                                            @Param("totalCostScope") boolean totalCostScope,
+                                            @Param("maxComparableCostCent") Integer maxComparableCostCent,
+                                            @Param("targetLatitude") double targetLatitude,
+                                            @Param("targetLongitude") double targetLongitude,
+                                            @Param("minLatitude") double minLatitude,
+                                            @Param("maxLatitude") double maxLatitude,
+                                            @Param("minLongitude") double minLongitude,
+                                            @Param("maxLongitude") double maxLongitude,
+                                            @Param("radiusKm") double radiusKm,
+                                            @Param("limit") Integer limit);
 }
