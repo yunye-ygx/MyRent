@@ -60,6 +60,7 @@ replay_pid*
 # SkyWalking agent runtime files
 tools/skywalking-agent/
 tools/_tmp/
+runtime-logs/
 runtime-logs/skywalking-agent/
 
 # Frontend dependency and build outputs
