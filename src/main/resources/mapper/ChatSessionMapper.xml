@@ -2,4 +2,45 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="cn.yy.myrent.mapper.ChatSessionMapper">
 
+    <select id="countSessionSummaries" resultType="long">
+        SELECT COUNT(1)
+        FROM chat_session s
+        WHERE s.user_id_1 = #{userId}
+           OR s.user_id_2 = #{userId}
+    </select>
+
+    <select id="selectSessionSummaries" resultType="cn.yy.myrent.vo.ChatSessionSummaryVO">
+        SELECT
+            s.session_id AS sessionId,
+            CASE
+                WHEN s.user_id_1 = #{userId} THEN s.user_id_2
+                ELSE s.user_id_1
+            END AS peerId,
+            u.name AS peerName,
+            s.house_id AS houseId,
+            h.title AS houseTitle,
+            s.last_msg_content AS lastMsgContent,
+            s.update_time AS updateTime,
+            COALESCE(unread.unread_count, 0) AS unreadCount
+        FROM chat_session s
+        LEFT JOIN `user` u
+            ON u.id = CASE
+                WHEN s.user_id_1 = #{userId} THEN s.user_id_2
+                ELSE s.user_id_1
+            END
+        LEFT JOIN house h
+            ON h.id = s.house_id
+        LEFT JOIN (
+            SELECT session_id, COUNT(1) AS unread_count
+            FROM chat_message
+            WHERE receiver_id = #{userId}
+              AND status = 0
+            GROUP BY session_id
+        ) unread
+            ON unread.session_id = s.session_id
+        WHERE s.user_id_1 = #{userId}
+           OR s.user_id_2 = #{userId}
+        ORDER BY s.update_time DESC
+        LIMIT #{offset}, #{size}
+    </select>
 </mapper>

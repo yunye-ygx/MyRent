@@ -1,16 +1,17 @@
 package cn.yy.myrent.mapper;
 
 import cn.yy.myrent.entity.ChatSession;
+import cn.yy.myrent.vo.ChatSessionSummaryVO;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import org.apache.ibatis.annotations.Param;
 
-/**
- * <p>
- * 聊天会话列表 Mapper 接口
- * </p>
- *
- * @author yy
- * @since 2026-03-12
- */
+import java.util.List;
+
 public interface ChatSessionMapper extends BaseMapper<ChatSession> {
 
+    long countSessionSummaries(@Param("userId") Long userId);
+
+    List<ChatSessionSummaryVO> selectSessionSummaries(@Param("userId") Long userId,
+                                                      @Param("offset") long offset,
+                                                      @Param("size") long size);
 }

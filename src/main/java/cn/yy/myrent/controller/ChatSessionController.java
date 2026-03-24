@@ -6,15 +6,14 @@ import cn.yy.myrent.dto.MessageDTO;
 import cn.yy.myrent.entity.ChatMessage;
 import cn.yy.myrent.entity.ChatSession;
 import cn.yy.myrent.service.IChatSessionService;
+import cn.yy.myrent.vo.ChatSessionSummaryVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.StringUtils;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -69,8 +68,8 @@ public class ChatSessionController {
     }
 
     @GetMapping("/page")
-    @Operation(summary = "分页查询会话")
-    public Result<Page<ChatSession>> page(
+    @Operation(summary = "分页查询会话摘要")
+    public Result<Page<ChatSessionSummaryVO>> page(
             @RequestParam(value = "current", defaultValue = "1") Long current,
             @RequestParam(value = "size", defaultValue = "10") Long size) {
         Long userId = UserContext.getCurrentUserId();
@@ -78,12 +77,12 @@ public class ChatSessionController {
             return Result.error(401, "请先登录");
         }
 
-        return Result.success(queryCurrentUserSessions(userId, current, size));
+        return Result.success(chatSessionService.querySessionSummaries(userId, current, size));
     }
 
     @GetMapping("/mine")
-    @Operation(summary = "查询当前用户会话")
-    public Result<Page<ChatSession>> mine(
+    @Operation(summary = "查询当前用户会话摘要")
+    public Result<Page<ChatSessionSummaryVO>> mine(
             @RequestParam(value = "current", defaultValue = "1") Long current,
             @RequestParam(value = "size", defaultValue = "10") Long size) {
         Long userId = UserContext.getCurrentUserId();
@@ -91,55 +90,12 @@ public class ChatSessionController {
             return Result.error(401, "请先登录");
         }
 
-        return Result.success(queryCurrentUserSessions(userId, current, size));
-    }
-
-    @PostMapping
-    @Operation(summary = "新增会话")
-    public Result<Long> create(@RequestBody ChatSession chatSession) {
-        chatSession.setId(null);
-        boolean saved = chatSessionService.save(chatSession);
-        if (!saved) {
-            return Result.error("新增会话失败");
-        }
-        return Result.success("新增会话成功", chatSession.getId());
-    }
-
-    @PutMapping("/{id}")
-    @Operation(summary = "更新会话")
-    public Result<Void> update(@PathVariable("id") Long id, @RequestBody ChatSession chatSession) {
-        chatSession.setId(id);
-        boolean updated = chatSessionService.updateById(chatSession);
-        if (!updated) {
-            return Result.error("更新会话失败或会话不存在");
-        }
-        return Result.success();
-    }
-
-    @DeleteMapping("/{id}")
-    @Operation(summary = "删除会话")
-    public Result<Void> delete(@PathVariable("id") Long id) {
-        boolean removed = chatSessionService.removeById(id);
-        if (!removed) {
-            return Result.error("删除会话失败或会话不存在");
-        }
-        return Result.success();
+        return Result.success(chatSessionService.querySessionSummaries(userId, current, size));
     }
 
     private boolean isSessionParticipant(ChatSession session, Long userId) {
         return session != null
                 && userId != null
                 && (userId.equals(session.getUserId1()) || userId.equals(session.getUserId2()));
-    }
-
-    private Page<ChatSession> queryCurrentUserSessions(Long userId, Long current, Long size) {
-        long safeCurrent = Math.max(current, 1L);
-        long safeSize = Math.min(Math.max(size, 1L), 100L);
-        return chatSessionService.lambdaQuery()
-                .and(wrapper -> wrapper.eq(ChatSession::getUserId1, userId)
-                        .or()
-                        .eq(ChatSession::getUserId2, userId))
-                .orderByDesc(ChatSession::getUpdateTime)
-                .page(new Page<>(safeCurrent, safeSize));
     }
 }

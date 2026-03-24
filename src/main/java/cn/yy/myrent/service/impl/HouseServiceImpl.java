@@ -4,8 +4,10 @@ import cn.yy.myrent.document.HouseDoc;
 import cn.yy.myrent.dto.SearchHouseReqDTO;
 import cn.yy.myrent.dto.SmartGuideReqDTO;
 import cn.yy.myrent.entity.House;
+import cn.yy.myrent.entity.User;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.service.IHouseService;
+import cn.yy.myrent.service.IUserService;
 import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.service.location.LocationResolveService;
 import cn.yy.myrent.service.smartguide.SmartGuideRecommendationService;
@@ -33,9 +35,12 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 
 import org.springframework.util.StringUtils;
 
@@ -60,6 +65,7 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
     private final SmartGuideRecommendationService smartGuideRecommendationService;
     private final HouseHotService houseHotService;
     private final LocationResolveService locationResolveService;
+    private final IUserService userService;
 
     @Override
     public HouseSearchResultVO searchNearbyHouse(SearchHouseReqDTO reqDTO) {
@@ -149,11 +155,67 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
                                                   String fallbackSource,
                                                   String tipMessage) {
         HouseSearchResultVO result = new HouseSearchResultVO();
-        result.setHouses(houses);
+        result.setHouses(enrichPublisherNamesSafely(houses));
         result.setEsDown(esDown);
         result.setFallbackSource(fallbackSource);
         result.setTipMessage(tipMessage);
         return result;
+    }
+
+    private List<HouseVO> enrichPublisherNamesSafely(List<HouseVO> houses) {
+        if (houses == null || houses.isEmpty()) {
+            return houses;
+        }
+
+        try {
+            return enrichPublisherNames(houses);
+        } catch (Exception e) {
+            log.error("batch enrich publisher names failed, houseCount={}", houses.size(), e);
+            fillUnknownPublisherNames(houses);
+            return houses;
+        }
+    }
+
+    private List<HouseVO> enrichPublisherNames(List<HouseVO> houses) {
+        List<Long> publisherUserIds = houses.stream()
+                .map(HouseVO::getPublisherUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (publisherUserIds.isEmpty()) {
+            fillUnknownPublisherNames(houses);
+            return houses;
+        }
+
+        Map<Long, String> userNameMap = userService.listByIds(publisherUserIds).stream()
+                .filter(Objects::nonNull)
+                .filter(user -> user.getId() != null)
+                .collect(Collectors.toMap(
+                        User::getId,
+                        user -> StringUtils.hasText(user.getName()) ? user.getName() : "未知发布人",
+                        (left, right) -> left
+                ));
+
+        for (HouseVO house : houses) {
+            if (house == null) {
+                continue;
+            }
+            Long publisherUserId = house.getPublisherUserId();
+            if (publisherUserId == null) {
+                house.setPublisherName("未知发布人");
+                continue;
+            }
+            house.setPublisherName(userNameMap.getOrDefault(publisherUserId, "未知发布人"));
+        }
+        return houses;
+    }
+
+    private void fillUnknownPublisherNames(List<HouseVO> houses) {
+        for (HouseVO house : houses) {
+            if (house != null && !StringUtils.hasText(house.getPublisherName())) {
+                house.setPublisherName("未知发布人");
+            }
+        }
     }
 
     private List<HouseVO> searchInEs(double lat, double lon, String distanceStr, int pageIndex, int pageSize) {

@@ -1,1 +1,0 @@
-import{h as e}from"./http-C26_gH0W.js";function n(r){return e.post("/user/register",r)}function o(r){return e.post("/user/login",r)}function s(r){return e.get(`/user/${r}`)}export{s as f,o as l,n as r};

@@ -23,7 +23,9 @@ CREATE TABLE `chat_message` (
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '消息发送时间 (聊天气泡按此字段正序排列)',
   PRIMARY KEY (`id`),
   KEY `idx_session_id` (`session_id`),
-  KEY `idx_receiver_status` (`receiver_id`,`status`) COMMENT '用于快速统计某人的未读消息总数'
+  KEY `idx_receiver_status` (`receiver_id`,`status`) COMMENT '用于快速统计某人的未读消息总数',
+  KEY `idx_session_message` (`session_id`,`id`),
+  KEY `idx_receiver_session_status` (`receiver_id`,`session_id`,`status`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='聊天消息明细记录';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
