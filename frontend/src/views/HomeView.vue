@@ -58,7 +58,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchHotHousePage, searchNearbyHouse } from '@/api/house'
-import { fetchUserById } from '@/api/user'
 import EmptyState from '@/components/EmptyState.vue'
 import HouseCard from '@/components/HouseCard.vue'
 import LoadingState from '@/components/LoadingState.vue'
@@ -76,7 +75,6 @@ const keyword = ref('')
 const mode = ref('hot')
 const activeLocation = ref('')
 const resultTip = ref('')
-const userNameCache = new Map()
 
 const isNearbyMode = computed(() => mode.value === 'nearby')
 
@@ -106,49 +104,6 @@ const emptyDescription = computed(() => {
   return '可点击刷新按钮重试或稍后再看'
 })
 
-async function enrichPublisherName(records) {
-  if (!Array.isArray(records) || !records.length) {
-    return []
-  }
-
-  return Promise.all(
-    records.map(async (item) => {
-      const publisherUserId = item?.publisherUserId
-      if (!publisherUserId) {
-        return {
-          ...item,
-          publisherName: '未知发布人'
-        }
-      }
-
-      const key = String(publisherUserId)
-      if (userNameCache.has(key)) {
-        return {
-          ...item,
-          publisherName: userNameCache.get(key)
-        }
-      }
-
-      try {
-        const user = await fetchUserById(publisherUserId)
-        const name = user?.name || '未知发布人'
-        userNameCache.set(key, name)
-        return {
-          ...item,
-          publisherName: name
-        }
-      } catch {
-        const fallbackName = '未知发布人'
-        userNameCache.set(key, fallbackName)
-        return {
-          ...item,
-          publisherName: fallbackName
-        }
-      }
-    })
-  )
-}
-
 async function loadHotPage() {
   return fetchHotHousePage({ page: current.value, size: size.value })
 }
@@ -171,8 +126,7 @@ async function loadNext() {
   try {
     const result = isNearbyMode.value ? await loadNearbyPage() : await loadHotPage()
     const records = result?.houses || []
-    const enrichedRecords = await enrichPublisherName(records)
-    houses.value = [...houses.value, ...enrichedRecords]
+    houses.value = [...houses.value, ...records]
     hasMore.value = records.length >= size.value
     current.value += 1
     resultTip.value = result?.tipMessage || ''

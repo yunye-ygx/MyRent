@@ -14,6 +14,8 @@ public class HouseVO {
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Long publisherUserId;
 
+    private String publisherName;
+
     private String title;
 
     private BigDecimal price;

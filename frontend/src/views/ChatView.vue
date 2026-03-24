@@ -19,12 +19,15 @@
 
       <EmptyState v-if="!messages.length && !historyLoading" title="暂无聊天记录" />
 
-      <ChatBubble
+      <div
         v-for="item in messages"
         :key="String(item.id)"
-        :message="item"
-        :current-user-id="currentUserId"
-      />
+        class="message-observer-item"
+        :data-message-id="String(item.id)"
+        :data-receiver-id="String(item.receiverId)"
+      >
+        <ChatBubble :message="item" :current-user-id="currentUserId" />
+      </div>
     </div>
 
     <section v-if="showConsultCard" class="consult-context card">
@@ -90,7 +93,7 @@ import { useAuthStore } from '@/stores/auth'
 import { formatPrice, getHouseStatusText } from '@/utils/format'
 import { getToken } from '@/utils/storage'
 
-const quickActions = ['还在吗', '能否周末看房', '押几付几', '是否可养宠物']
+const quickActions = ['还在吗？', '能否周末看房', '押几付几', '是否可养宠物']
 
 const route = useRoute()
 const router = useRouter()
@@ -126,6 +129,9 @@ const quickActionsVisible = ref(false)
 const quickActionsTriggered = ref(false)
 
 let pageActive = true
+let messageVisibilityObserver = null
+let readSyncTimer = null
+const visibleInboundMessageIds = new Set()
 
 const consultHouseCover = computed(() => {
   if (!consultHouse.value?.id) {
@@ -152,18 +158,18 @@ function toNumericId(id) {
 
 function sortMessages(list) {
   return [...list].sort((a, b) => {
-    const ida = toNumericId(a.id)
-    const idb = toNumericId(b.id)
-    if (ida === null && idb === null) {
+    const leftId = toNumericId(a.id)
+    const rightId = toNumericId(b.id)
+    if (leftId === null && rightId === null) {
       return 0
     }
-    if (ida === null) {
+    if (leftId === null) {
       return 1
     }
-    if (idb === null) {
+    if (rightId === null) {
       return -1
     }
-    return ida - idb
+    return leftId - rightId
   })
 }
 
@@ -188,22 +194,37 @@ function getLastMessageId() {
   return null
 }
 
-function getMaxReadableMessageId() {
+function scheduleVisibleReadSync() {
+  if (readSyncTimer) {
+    clearTimeout(readSyncTimer)
+  }
+  readSyncTimer = setTimeout(() => {
+    syncVisibleReadState()
+  }, 120)
+}
+
+function clearReadSyncTimer() {
+  if (readSyncTimer) {
+    clearTimeout(readSyncTimer)
+    readSyncTimer = null
+  }
+}
+
+function getMaxVisibleReadableMessageId() {
   let maxId = 0
-  messages.value.forEach((item) => {
-    if (String(item.receiverId) !== String(currentUserId.value)) {
-      return
-    }
-    const id = toNumericId(item.id)
-    if (id && id > maxId) {
-      maxId = id
+  visibleInboundMessageIds.forEach((item) => {
+    if (item > maxId) {
+      maxId = item
     }
   })
   return maxId
 }
 
-async function syncReadState() {
-  const upToMessageId = getMaxReadableMessageId()
+async function syncVisibleReadState() {
+  if (!pageActive || document.visibilityState !== 'visible') {
+    return
+  }
+  const upToMessageId = getMaxVisibleReadableMessageId()
   if (!upToMessageId || upToMessageId <= lastReadUpToId.value) {
     return
   }
@@ -218,6 +239,52 @@ async function syncReadState() {
   }
 }
 
+function disconnectMessageObserver() {
+  visibleInboundMessageIds.clear()
+  if (messageVisibilityObserver) {
+    messageVisibilityObserver.disconnect()
+    messageVisibilityObserver = null
+  }
+}
+
+function handleMessageVisibility(entries) {
+  const currentUser = String(currentUserId.value || '')
+  entries.forEach((entry) => {
+    const messageId = Number(entry.target.dataset.messageId || 0)
+    const receiverId = String(entry.target.dataset.receiverId || '')
+    if (!messageId || receiverId !== currentUser) {
+      return
+    }
+    if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+      visibleInboundMessageIds.add(messageId)
+    } else {
+      visibleInboundMessageIds.delete(messageId)
+    }
+  })
+  scheduleVisibleReadSync()
+}
+
+function refreshMessageObserver() {
+  disconnectMessageObserver()
+  const container = messageContainer.value
+  if (!container) {
+    return
+  }
+  messageVisibilityObserver = new IntersectionObserver(handleMessageVisibility, {
+    root: container,
+    threshold: [0.6]
+  })
+  container.querySelectorAll('.message-observer-item').forEach((element) => {
+    messageVisibilityObserver.observe(element)
+  })
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible') {
+    scheduleVisibleReadSync()
+  }
+}
+
 function scrollToBottom(smooth = false) {
   const container = messageContainer.value
   if (!container) {
@@ -227,6 +294,12 @@ function scrollToBottom(smooth = false) {
     top: container.scrollHeight,
     behavior: smooth ? 'smooth' : 'auto'
   })
+}
+
+async function updateObserverAfterRender() {
+  await nextTick()
+  refreshMessageObserver()
+  scheduleVisibleReadSync()
 }
 
 async function loadConsultHouse() {
@@ -273,9 +346,10 @@ async function loadInitialHistory() {
     mergeMessages(result?.messages || [])
     historyCursor.value = result?.nextCursor || null
     hasMoreHistory.value = Boolean(result?.hasMore)
-    await syncReadState()
     await nextTick()
     scrollToBottom()
+    refreshMessageObserver()
+    scheduleVisibleReadSync()
   } catch (err) {
     if (err?.code === 403) {
       historyCursor.value = null
@@ -303,12 +377,13 @@ async function loadMoreHistory() {
     mergeMessages(result?.messages || [])
     historyCursor.value = result?.nextCursor || historyCursor.value
     hasMoreHistory.value = Boolean(result?.hasMore)
-    await syncReadState()
     await nextTick()
     if (container) {
       const afterHeight = container.scrollHeight
       container.scrollTop = afterHeight - beforeHeight + container.scrollTop
     }
+    refreshMessageObserver()
+    scheduleVisibleReadSync()
   } catch (err) {
     if (err?.code === 403) {
       historyCursor.value = null
@@ -337,11 +412,12 @@ async function pullMissedMessages() {
       : true
 
     mergeMessages(incoming)
-    await syncReadState()
     await nextTick()
     if (nearBottom) {
       scrollToBottom(true)
     }
+    refreshMessageObserver()
+    scheduleVisibleReadSync()
   } catch {
     // Ignore fallback polling failures and retry on the next cycle.
   }
@@ -384,9 +460,10 @@ function connectWs() {
         return
       }
       mergeMessages([data])
-      await syncReadState()
       await nextTick()
       scrollToBottom(true)
+      refreshMessageObserver()
+      scheduleVisibleReadSync()
     } catch {
       // Ignore malformed websocket payloads.
     }
@@ -478,9 +555,9 @@ async function sendMessage(messageContent) {
     mergeMessages(sentMessage ? [sentMessage] : [])
     dismissConsultCard()
     markQuickActionsAsSeen()
-    await syncReadState()
     await nextTick()
     scrollToBottom(true)
+    await updateObserverAfterRender()
   } catch (err) {
     window.alert(err?.message || '发送失败，请稍后重试')
   } finally {
@@ -507,12 +584,16 @@ async function sendAppointmentMessage() {
 onMounted(async () => {
   pageActive = true
   loadQuickActionState()
+  document.addEventListener('visibilitychange', handleVisibilityChange)
   await Promise.all([loadInitialHistory(), loadConsultHouse()])
   connectWs()
 })
 
 onUnmounted(() => {
   pageActive = false
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  disconnectMessageObserver()
+  clearReadSyncTimer()
   stopPullTimer()
   closeWs()
   if (reconnectTimer.value) {
@@ -572,6 +653,10 @@ onUnmounted(() => {
 .history-end {
   font-size: 12px;
   color: #9ca3af;
+}
+
+.message-observer-item {
+  min-width: 0;
 }
 
 .consult-context {
