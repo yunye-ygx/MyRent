@@ -1,1 +1,0 @@
-import{_ as s,o,c as n,a,t as c}from"./index-B8yNiV5_.js";const r={class:"loading-wrap"},l={__name:"LoadingState",props:{text:{type:String,default:"加载中..."}},setup(e){return(p,t)=>(o(),n("div",r,[t[0]||(t[0]=a("div",{class:"dot"},null,-1)),a("span",null,c(e.text),1)]))}},i=s(l,[["__scopeId","data-v-aff2ac3c"]]);export{i as L};
