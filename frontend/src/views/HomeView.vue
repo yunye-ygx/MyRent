@@ -1,185 +1,83 @@
 <template>
-  <div class="page home-page">
-    <section class="home-header card">
-      <div>
-        <p class="city">广州</p>
-        <h2 class="brand">{{ pageTitle }}</h2>
-      </div>
-      <button class="ghost-btn" @click="reload">刷新</button>
-    </section>
-
-    <section class="card search-wrap">
-      <div class="search-row">
-        <input
-          v-model.trim="keyword"
-          class="input"
-          placeholder="输入地点名称，如珠江新城、体育西路"
-          @keyup.enter="handleSearch"
-        />
-        <button class="primary-btn search-btn" :disabled="loading || !keyword" @click="handleSearch">
-          搜索
-        </button>
-      </div>
-      <div v-if="isNearbyMode" class="search-actions">
-        <button class="ghost-btn" :disabled="loading" @click="resetToHot">返回热门</button>
-      </div>
-      <p class="search-tip" :class="{ warning: isNearbyMode }">{{ searchTip }}</p>
-    </section>
-
-    <LoadingState v-if="loading && !houses.length" text="正在加载房源..." />
-
-    <p v-if="error" class="error-text">{{ error }}</p>
-
-    <template v-if="houses.length">
-      <HouseCard
-        v-for="house in houses"
-        :key="house.id"
-        :house="house"
-        @click="toDetail(house.id)"
-      />
-    </template>
-    <EmptyState
-      v-else-if="!loading"
-      :title="emptyTitle"
-      :description="emptyDescription"
-      :action-text="isNearbyMode ? '返回热门' : '刷新'"
-      @action="handleEmptyAction"
+  <div class="home-view">
+    <HomeHero
+      :result-tip="feed.resultTip.value"
+      :is-nearby-mode="feed.mode.value === 'nearby'"
+      @search="handleSearch"
     />
 
-    <div class="load-more">
-      <button v-if="hasMore && !loading" class="ghost-btn" @click="loadNext">加载更多</button>
-      <LoadingState v-else-if="loading && houses.length" text="加载中..." />
-      <span v-else-if="!hasMore && houses.length" class="no-more">没有更多了</span>
-    </div>
+    <HomeQuickLinks />
+
+    <section class="content-grid">
+      <div class="featured app-surface">
+        <div class="section-head">
+          <div>
+            <p class="section-eyebrow">Featured Listings</p>
+            <h2 class="section-title">先看值得点开的房源</h2>
+          </div>
+          <RouterLink class="section-link" to="/houses">查看全部房源</RouterLink>
+        </div>
+
+        <div v-if="feed.houses.value.length" class="listing-grid">
+          <HouseCard
+            v-for="house in feed.houses.value"
+            :key="house.id"
+            :house="house"
+            @click="toDetail(house.id)"
+          />
+        </div>
+        <LoadingState v-else-if="feed.loading.value" text="正在加载精选房源..." />
+        <EmptyState
+          v-else
+          title="精选房源暂时不可用"
+          :description="feed.error.value || '可以先从地图找房，或者重新输入地点开始搜索。'"
+        />
+      </div>
+
+      <aside class="aside">
+        <section class="mini-panel app-surface">
+          <p class="section-eyebrow">Today</p>
+          <h3 class="mini-title">今日新上</h3>
+          <p class="mini-copy">优先查看刚刚进入列表的房源，减少错过热门房的概率。</p>
+        </section>
+
+        <section class="mini-panel app-surface">
+          <p class="section-eyebrow">Budget</p>
+          <h3 class="mini-title">低总价优先</h3>
+          <p class="mini-copy">先从总价更友好的房源开始浏览，再决定是否交换空间和位置。</p>
+        </section>
+      </aside>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchHotHousePage, searchNearbyHouse } from '@/api/house'
 import EmptyState from '@/components/EmptyState.vue'
 import HouseCard from '@/components/HouseCard.vue'
 import LoadingState from '@/components/LoadingState.vue'
+import HomeHero from '@/components/home/HomeHero.vue'
+import HomeQuickLinks from '@/components/home/HomeQuickLinks.vue'
+import { useHouseFeed } from '@/composables/useHouseFeed'
 
 const router = useRouter()
-const DEFAULT_CITY = '广州'
-
-const houses = ref([])
-const loading = ref(false)
-const error = ref('')
-const current = ref(1)
-const size = ref(10)
-const hasMore = ref(true)
-const keyword = ref('')
-const mode = ref('hot')
-const activeLocation = ref('')
-const resultTip = ref('')
-
-const isNearbyMode = computed(() => mode.value === 'nearby')
-
-const pageTitle = computed(() => {
-  if (!isNearbyMode.value) {
-    return 'MyRent 热门房源'
-  }
-  return `${activeLocation.value || '附近'}周边房源`
+const feed = useHouseFeed({
+  hotLoader: fetchHotHousePage,
+  nearbyLoader: searchNearbyHouse,
+  defaultCity: '广州'
 })
 
-const searchTip = computed(() => {
-  if (resultTip.value) {
-    return resultTip.value
-  }
-  if (isNearbyMode.value) {
-    return '输入地点后会自动解析坐标，再调用附近房源接口。'
-  }
-  return '首页默认展示热门缓存内容，输入地点后可切换为附近搜索。'
-})
-
-const emptyTitle = computed(() => (isNearbyMode.value ? '附近暂无房源' : '暂无房源'))
-
-const emptyDescription = computed(() => {
-  if (isNearbyMode.value) {
-    return '可以换个地点名称搜索，或返回热门房源查看推荐结果。'
-  }
-  return '可点击刷新按钮重试或稍后再看'
-})
-
-async function loadHotPage() {
-  return fetchHotHousePage({ page: current.value, size: size.value })
-}
-
-async function loadNearbyPage() {
-  return searchNearbyHouse({
-    locationName: activeLocation.value,
-    city: DEFAULT_CITY,
-    page: current.value,
-    size: size.value
-  })
-}
-
-async function loadNext() {
-  if (loading.value || !hasMore.value) {
+async function handleSearch(keyword) {
+  if (!keyword) {
+    feed.activateHot()
+    await feed.loadNext()
     return
   }
-  loading.value = true
-  error.value = ''
-  try {
-    const result = isNearbyMode.value ? await loadNearbyPage() : await loadHotPage()
-    const records = result?.houses || []
-    houses.value = [...houses.value, ...records]
-    hasMore.value = records.length >= size.value
-    current.value += 1
-    resultTip.value = result?.tipMessage || ''
-  } catch (err) {
-    error.value = err?.message || '房源加载失败'
-  } finally {
-    loading.value = false
-  }
-}
 
-function resetPaging() {
-  houses.value = []
-  current.value = 1
-  hasMore.value = true
-  error.value = ''
-}
-
-function reload() {
-  if (isNearbyMode.value && !activeLocation.value) {
-    resetToHot()
-    return
-  }
-  resetPaging()
-  loadNext()
-}
-
-function resetToHot() {
-  mode.value = 'hot'
-  keyword.value = ''
-  activeLocation.value = ''
-  resultTip.value = ''
-  resetPaging()
-  loadNext()
-}
-
-function handleSearch() {
-  if (!keyword.value) {
-    resetToHot()
-    return
-  }
-  mode.value = 'nearby'
-  activeLocation.value = keyword.value
-  resultTip.value = ''
-  resetPaging()
-  loadNext()
-}
-
-function handleEmptyAction() {
-  if (isNearbyMode.value) {
-    resetToHot()
-    return
-  }
-  reload()
+  feed.activateNearby(keyword)
+  await feed.loadNext()
 }
 
 function toDetail(id) {
@@ -187,69 +85,80 @@ function toDetail(id) {
 }
 
 onMounted(() => {
-  loadNext()
+  feed.loadNext()
 })
 </script>
 
 <style scoped>
-.home-page {
+.home-view {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 24px;
 }
 
-.home-header {
+.content-grid {
+  display: grid;
+  gap: 24px;
+}
+
+.featured,
+.mini-panel {
+  padding: 24px;
+}
+
+.section-head {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: end;
   justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
 }
 
-.city {
-  margin: 0;
-  color: #6b7280;
-  font-size: 13px;
-}
-
-.brand {
-  margin: 0;
-  font-size: 20px;
-}
-
-.search-wrap {
-  padding: 10px;
-}
-
-.search-row {
-  display: flex;
-  gap: 8px;
-}
-
-.search-btn {
-  flex: 0 0 auto;
-}
-
-.search-actions {
-  margin-top: 8px;
-}
-
-.search-tip {
-  margin: 8px 0 0;
-  color: #92400e;
+.section-eyebrow {
+  margin: 0 0 10px;
   font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
 }
 
-.search-tip.warning {
-  color: #1d4ed8;
+.section-title,
+.mini-title {
+  margin: 0;
+  color: var(--color-text);
 }
 
-.load-more {
-  display: flex;
-  justify-content: center;
-  padding: 10px 0 18px;
+.section-title {
+  font-size: 28px;
 }
 
-.no-more {
-  color: #9ca3af;
-  font-size: 12px;
+.section-link {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.listing-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.aside {
+  display: grid;
+  gap: 16px;
+}
+
+.mini-copy {
+  margin: 14px 0 0;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-text-muted);
+}
+
+@media (min-width: 1024px) {
+  .content-grid {
+    grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+    align-items: start;
+  }
 }
 </style>

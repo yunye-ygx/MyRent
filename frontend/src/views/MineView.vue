@@ -1,27 +1,30 @@
 <template>
-  <div class="page mine-page">
-    <section class="card profile">
+  <div class="mine-view">
+    <section class="profile app-surface">
       <div class="avatar">{{ avatarText }}</div>
-      <div class="info">
+      <div>
+        <p class="eyebrow">Profile</p>
         <h2 class="name">{{ authStore.profile?.name || '未命名用户' }}</h2>
         <p class="phone">{{ authStore.profile?.phone || '--' }}</p>
       </div>
-      <button class="ghost-btn" @click="logout">退出</button>
+      <button class="primary-btn" @click="logout">退出登录</button>
     </section>
 
-    <section class="card">
+    <section class="menu-section app-surface">
       <h3 class="section-title">功能入口</h3>
       <ul class="menu">
         <li v-for="item in menus" :key="item.key" class="menu-item" @click="openModule(item)">
           <span>{{ item.label }}</span>
-          <span class="arrow">›</span>
+          <span class="arrow">→</span>
         </li>
       </ul>
     </section>
 
-    <section class="card mock">
-      <h3 class="section-title">本期 mock 模块说明</h3>
-      <p>学生认证、预约、收藏、浏览记录、合同订单等模块已预留入口，可逐步替换成真实接口。</p>
+    <section class="mock-note app-surface">
+      <p class="eyebrow">Phase 1 Note</p>
+      <p class="copy">
+        学生认证、预约、收藏、浏览记录和订单模块都保留入口，后续可以继续替换成真实接口和更完整的状态流转。
+      </p>
     </section>
   </div>
 </template>
@@ -41,7 +44,7 @@ const menus = [
   { key: 'favorite', label: '我的收藏' },
   { key: 'history', label: '浏览记录' },
   { key: 'consult', label: '我的咨询' },
-  { key: 'contract', label: '我的合同/订单' },
+  { key: 'contract', label: '我的合同 / 订单' },
   { key: 'setting', label: '设置' },
   { key: 'support', label: '客服与帮助' },
   { key: 'feedback', label: '意见反馈' }
@@ -65,6 +68,7 @@ function openModule(item) {
     router.push('/mine/orders')
     return
   }
+
   router.push(`/placeholder/${item.key}?title=${encodeURIComponent(item.label)}`)
 }
 
@@ -75,44 +79,53 @@ function logout() {
 </script>
 
 <style scoped>
-.mine-page {
+.mine-view {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 20px;
 }
 
 .profile {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  display: grid;
+  gap: 16px;
+  padding: 24px;
 }
 
 .avatar {
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  background: #dbeafe;
-  color: #1d4ed8;
+  width: 68px;
+  height: 68px;
+  border-radius: 999px;
+  background: var(--color-surface-strong);
+  color: var(--color-accent);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 28px;
   font-weight: 600;
 }
 
-.info {
-  flex: 1;
+.eyebrow {
+  margin: 0 0 10px;
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
 }
 
 .name {
   margin: 0;
-  font-size: 18px;
+  font-size: 30px;
 }
 
 .phone {
-  margin: 4px 0 0;
-  color: #6b7280;
-  font-size: 13px;
+  margin: 10px 0 0;
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
+.menu-section,
+.mock-note {
+  padding: 24px;
 }
 
 .menu {
@@ -125,8 +138,9 @@ function logout() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 4px;
-  border-bottom: 1px solid #f3f4f6;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--color-border);
   cursor: pointer;
 }
 
@@ -135,12 +149,20 @@ function logout() {
 }
 
 .arrow {
-  color: #9ca3af;
+  color: var(--color-text-muted);
 }
 
-.mock p {
+.copy {
   margin: 0;
-  color: #6b7280;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--color-text-muted);
+}
+
+@media (min-width: 1024px) {
+  .profile {
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+  }
 }
 </style>

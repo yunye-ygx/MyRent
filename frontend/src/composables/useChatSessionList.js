@@ -1,11 +1,12 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { getToken } from '@/utils/storage'
+import { formatRequestError } from '@/utils/format'
 
 function normalizeSession(session) {
   return {
     ...session,
-    peerName: session.peerName || (session.peerId ? `用户${session.peerId}` : ''),
+    peerName: session.peerName || (session.peerId ? `用户 ${session.peerId}` : ''),
     houseLabel: session.houseTitle || '',
     unreadCount: Number(session.unreadCount || 0)
   }
@@ -30,7 +31,7 @@ export function useChatSessionList(fetchPage) {
       const records = Array.isArray(page?.records) ? page.records : []
       sessions.value = records.map(normalizeSession)
     } catch (err) {
-      error.value = err?.message || '会话加载失败'
+      error.value = formatRequestError(err, '消息列表暂时不可用，请稍后再试。')
       sessions.value = []
     } finally {
       loading.value = false

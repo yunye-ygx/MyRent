@@ -1,9 +1,9 @@
 <template>
-  <div class="session card" @click="$emit('click')">
+  <article class="session app-surface" @click="$emit('click')">
     <div class="avatar">{{ avatarText }}</div>
     <div class="main">
       <div class="top">
-        <h3 class="name">{{ session.peerName || `用户${session.peerId}` }}</h3>
+        <h3 class="name">{{ session.peerName || `用户 ${session.peerId}` }}</h3>
         <span class="time">{{ formatRelativeTime(session.updateTime) }}</span>
       </div>
       <p v-if="session.houseLabel || session.houseTitle" class="house">{{ session.houseLabel || session.houseTitle }}</p>
@@ -12,7 +12,7 @@
         <span v-if="Number(session.unreadCount || 0) > 0" class="badge">{{ session.unreadCount }}</span>
       </div>
     </div>
-  </div>
+  </article>
 </template>
 
 <script setup>
@@ -38,16 +38,17 @@ const avatarText = computed(() => {
 .session {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
+  padding: 16px;
   cursor: pointer;
 }
 
 .avatar {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  background: #dbeafe;
-  color: #1d4ed8;
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  background: var(--color-surface-strong);
+  color: var(--color-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -69,43 +70,43 @@ const avatarText = computed(() => {
 
 .name {
   margin: 0;
-  font-size: 15px;
-  color: #111827;
+  font-size: 16px;
+  color: var(--color-text);
 }
 
 .time {
-  color: #9ca3af;
+  color: var(--color-text-muted);
   font-size: 12px;
 }
 
 .house {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: #2563eb;
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--color-warning);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .last-msg {
-  margin: 2px 0 0;
-  font-size: 13px;
-  color: #6b7280;
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .badge {
-  min-width: 18px;
-  height: 18px;
+  min-width: 20px;
+  height: 20px;
   border-radius: 999px;
-  background: #ef4444;
+  background: var(--color-danger);
   color: #fff;
   font-size: 11px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 5px;
+  padding: 0 6px;
 }
 </style>

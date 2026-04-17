@@ -1,9 +1,10 @@
 <template>
-  <div class="empty">
-    <p class="title">{{ title }}</p>
-    <p v-if="description" class="desc">{{ description }}</p>
-    <button v-if="actionText" class="ghost-btn" @click="$emit('action')">{{ actionText }}</button>
-  </div>
+  <section class="empty-state app-surface">
+    <p class="eyebrow">No Data</p>
+    <h3 class="title">{{ title }}</h3>
+    <p v-if="description" class="description">{{ description }}</p>
+    <button v-if="actionText" class="primary-btn action" @click="$emit('action')">{{ actionText }}</button>
+  </section>
 </template>
 
 <script setup>
@@ -26,22 +27,34 @@ defineEmits(['action'])
 </script>
 
 <style scoped>
-.empty {
-  background: #fff;
-  border-radius: 12px;
-  padding: 24px 12px;
+.empty-state {
+  padding: 40px 24px;
   text-align: center;
-  color: #6b7280;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
 }
 
 .title {
-  margin: 0;
-  font-size: 15px;
-  color: #374151;
+  margin: 14px 0 0;
+  font-size: 24px;
+  color: var(--color-text);
 }
 
-.desc {
-  margin: 8px 0 14px;
-  font-size: 13px;
+.description {
+  margin: 14px auto 0;
+  max-width: 520px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-text-muted);
+}
+
+.action {
+  margin-top: 20px;
 }
 </style>

@@ -1,7 +1,7 @@
 <template>
-  <nav class="tabbar">
+  <nav class="tabbar grid">
     <button
-      v-for="item in tabs"
+      v-for="item in mobileTabItems"
       :key="item.path"
       class="tab-btn"
       :class="{ active: isActive(item.path) }"
@@ -15,16 +15,10 @@
 
 <script setup>
 import { useRoute, useRouter } from 'vue-router'
+import { mobileTabItems } from '@/design/site'
 
 const route = useRoute()
 const router = useRouter()
-
-const tabs = [
-  { path: '/home', label: '首页', icon: '🏠' },
-  { path: '/messages', label: '消息', icon: '💬' },
-  { path: '/map', label: '找房', icon: '🗺️' },
-  { path: '/mine', label: '我的', icon: '👤' }
-]
 
 function isActive(path) {
   return route.path.startsWith(path)
@@ -40,30 +34,36 @@ function go(path) {
 
 <style scoped>
 .tabbar {
-  display: grid;
   grid-template-columns: repeat(4, 1fr);
-  background: #fff;
-  border-top: 1px solid #e5e7eb;
-  padding: 6px 0;
+  gap: 8px;
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: rgba(255, 253, 249, 0.94);
+  border-top: 1px solid var(--color-border);
+  backdrop-filter: blur(18px);
 }
 
 .tab-btn {
   border: 0;
+  border-radius: 16px;
   background: transparent;
-  color: #6b7280;
+  color: var(--color-text-muted);
   display: flex;
   flex-direction: column;
   align-items: center;
   font-size: 12px;
-  gap: 2px;
+  gap: 4px;
+  padding: 8px 0;
   cursor: pointer;
 }
 
 .tab-btn.active {
-  color: #2563eb;
+  background: var(--color-surface-strong);
+  color: var(--color-accent);
 }
 
 .icon {
-  font-size: 18px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 </style>

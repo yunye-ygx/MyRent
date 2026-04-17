@@ -1,22 +1,23 @@
 <template>
-  <div class="auth-page">
-    <div class="auth-card card">
+  <div class="auth-page app-shell">
+    <div class="auth-card app-surface">
+      <p class="eyebrow">Create Account</p>
       <h1 class="title">注册账号</h1>
-      <p class="desc">注册后可直接登录，昵称会用于消息展示</p>
+      <p class="description">注册后即可登录，昵称会用于消息会话和个人页展示。</p>
 
       <div class="field">
         <label>手机号</label>
-        <input v-model.trim="form.phone" class="input" placeholder="请输入11位手机号" />
+        <input v-model.trim="form.phone" class="input" placeholder="请输入 11 位手机号" />
       </div>
 
       <div class="field">
         <label>昵称</label>
-        <input v-model.trim="form.name" class="input" placeholder="请输入昵称（最多20字符）" />
+        <input v-model.trim="form.name" class="input" placeholder="请输入展示昵称" />
       </div>
 
       <div class="field">
         <label>密码</label>
-        <input v-model="form.password" class="input" type="password" placeholder="请输入6~32位密码" />
+        <input v-model="form.password" class="input" type="password" placeholder="请输入 6-32 位密码" />
       </div>
 
       <p v-if="error" class="error-text">{{ error }}</p>
@@ -56,6 +57,7 @@ async function handleRegister() {
     error.value = '手机号、昵称、密码不能为空'
     return
   }
+
   loading.value = true
   try {
     await authStore.register(form)
@@ -71,53 +73,58 @@ async function handleRegister() {
 
 <style scoped>
 .auth-page {
-  width: 100%;
-  height: 100%;
+  min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
-  background: linear-gradient(180deg, #ede9fe, #f8fafc 40%);
+  padding: 24px;
 }
 
 .auth-card {
-  width: min(420px, 100%);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  width: min(520px, 100%);
+  padding: 32px;
+}
+
+.eyebrow {
+  margin: 0 0 10px;
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
 }
 
 .title {
   margin: 0;
-  font-size: 24px;
+  font-size: 40px;
 }
 
-.desc {
-  margin: 0;
-  color: #6b7280;
+.description {
+  margin: 12px 0 0;
   font-size: 14px;
+  line-height: 1.8;
+  color: var(--color-text-muted);
 }
 
 .field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
 }
 
 .field label {
-  font-size: 13px;
-  color: #374151;
+  font-size: 14px;
+  color: var(--color-text);
 }
 
 .tips {
-  margin-top: 4px;
-  color: #6b7280;
-  font-size: 13px;
+  margin-top: 16px;
   display: flex;
   gap: 8px;
+  color: var(--color-text-muted);
+  font-size: 14px;
 }
 
 .tips a {
-  color: #2563eb;
+  color: var(--color-accent);
 }
 </style>

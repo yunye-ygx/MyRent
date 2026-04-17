@@ -1,25 +1,30 @@
 <template>
-  <div class="page msg-page">
-    <section class="card topbar">
-      <h2 class="section-title">消息</h2>
-      <button class="ghost-btn" @click="loadSessions">刷新</button>
+  <div class="messages-view">
+    <section class="intro app-surface">
+      <div>
+        <p class="eyebrow">Inbox</p>
+        <h1 class="title">消息与咨询</h1>
+        <p class="description">这里保留看房咨询的主链路，方便从房源详情直接回到会话。</p>
+      </div>
+      <button class="ghost-btn" @click="loadSessions">刷新列表</button>
     </section>
 
-    <LoadingState v-if="loading && !sessions.length" text="会话加载中..." />
-    <p v-if="error" class="error-text">{{ error }}</p>
+    <LoadingState v-if="loading && !sessions.length" text="正在加载会话..." />
 
-    <SessionItem
-      v-for="session in sessions"
-      :key="session.sessionId"
-      :session="session"
-      @click="goChat(session)"
-    />
+    <section v-else-if="sessions.length" class="session-list">
+      <SessionItem
+        v-for="session in sessions"
+        :key="session.sessionId"
+        :session="session"
+        @click="goChat(session)"
+      />
+    </section>
 
     <EmptyState
-      v-if="!loading && !sessions.length"
-      title="暂无会话"
-      description="你可以先从房源详情页进入咨询流程"
-      action-text="去首页"
+      v-else
+      title="暂时没有会话"
+      :description="error || '你可以先从房源详情页进入咨询流程。'"
+      action-text="回到首页"
       @action="router.push('/home')"
     />
   </div>
@@ -49,19 +54,47 @@ function goChat(session) {
 </script>
 
 <style scoped>
-.msg-page {
+.messages-view {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 20px;
 }
 
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.intro {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
 }
 
-.section-title {
+.eyebrow {
+  margin: 0 0 10px;
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.title {
   margin: 0;
+  font-size: 32px;
+}
+
+.description {
+  margin: 10px 0 0;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--color-text-muted);
+}
+
+.session-list {
+  display: grid;
+  gap: 12px;
+}
+
+@media (min-width: 1024px) {
+  .intro {
+    grid-template-columns: 1fr auto;
+    align-items: end;
+  }
 }
 </style>

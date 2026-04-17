@@ -1,28 +1,26 @@
 <template>
-  <div class="layout-root">
-    <div class="layout-content">
-      <router-view />
+  <div class="app-shell">
+    <div class="app-container flex min-h-screen flex-col gap-6 py-5 lg:py-8">
+      <AppTopNav :items="topNavItems" :current-path="route.path" />
+      <main class="min-h-0 flex-1">
+        <router-view />
+      </main>
     </div>
-    <AppTabBar />
+    <AppTabBar class="lg:hidden" />
   </div>
 </template>
 
 <script setup>
+import { useRoute } from 'vue-router'
 import AppTabBar from '@/components/AppTabBar.vue'
+import AppTopNav from '@/components/layout/AppTopNav.vue'
+import { topNavItems } from '@/design/site'
+
+const route = useRoute()
 </script>
 
 <style scoped>
-.layout-root {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-
-.layout-content {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
+main {
+  min-width: 0;
 }
 </style>

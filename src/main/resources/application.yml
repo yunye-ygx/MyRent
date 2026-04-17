@@ -1,5 +1,5 @@
 server:
-  port: 8081
+  port: 8084
 spring:
   datasource:
     url: jdbc:mysql://localhost:3306/rent?useSSL=false&serverTimezone=UTC
@@ -37,14 +37,7 @@ springdoc:
   swagger-ui:
     enabled: true
 
-canal:
-  server:
-    host: 127.0.0.1
-    port: 11111
-    destination: example
-    username: canal
-    password: Canal@123456
-    batchSize: 1000
+
 
 myrent:
   jwt:
