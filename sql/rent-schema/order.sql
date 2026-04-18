@@ -21,6 +21,7 @@ CREATE TABLE `order` (
   `status` tinyint NOT NULL DEFAULT '0' COMMENT '0 unpaid, 1 paid locked, 2 timeout closed, 3 user cancelled',
   `expire_time` datetime NOT NULL COMMENT 'payment expire time',
   `paid_time` datetime DEFAULT NULL COMMENT 'payment success time',
+  `success_payment_no` varchar(64) DEFAULT NULL COMMENT 'final successful payment no'
   `close_time` datetime DEFAULT NULL COMMENT 'order close time',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'update time',

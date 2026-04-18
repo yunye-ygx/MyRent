@@ -30,7 +30,7 @@ public class OrderController {
     @Autowired
     private IOrderService orderService;
 
-    @PostMapping("/create")
+    @PostMapping({"/create", "/createOrder"})
     @Operation(summary = "create order and return mock checkout info")
     public ResponseEntity<Result<CreateOrderVO>> createOrder(@RequestBody LockHouseReqDTO lockHouse) {
         log.info("create order request, houseId={}", lockHouse == null ? null : lockHouse.getHouseId());
