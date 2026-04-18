@@ -7,6 +7,7 @@ import cn.yy.myrent.entity.Order;
 import cn.yy.myrent.entity.Payment;
 import cn.yy.myrent.mapper.OrderMapper;
 import cn.yy.myrent.mapper.PaymentMapper;
+import cn.yy.myrent.service.IHouseCommandService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -26,6 +27,9 @@ class PaymentServiceImplTest {
 
     @Mock
     private OrderMapper orderMapper;
+
+    @Mock
+    private IHouseCommandService houseCommandService;
 
     @InjectMocks
     private PaymentServiceImpl paymentService;
@@ -57,5 +61,35 @@ class PaymentServiceImplTest {
 
         assertEquals(PaymentStatus.SUCCESS, payment.getStatus());
         assertEquals(OrderStatus.PAID_LOCKED, order.getStatus());
+    }
+
+    @Test
+    void handleMockCancelShouldReleaseHouse() {
+        Payment payment = new Payment();
+        payment.setPaymentNo("PAY-1002");
+        payment.setOrderNo("ORDER-1002");
+        payment.setStatus(PaymentStatus.WAITING);
+
+        Order order = new Order();
+        order.setOrderNo("ORDER-1002");
+        order.setStatus(OrderStatus.UNPAID);
+        order.setHouseId(202L);
+
+        when(paymentMapper.selectByPaymentNo("PAY-1002")).thenReturn(payment);
+        when(orderMapper.selectOrderNo("ORDER-1002")).thenReturn(order);
+
+        MockPaymentCallbackReqDTO req = new MockPaymentCallbackReqDTO();
+        req.setPaymentNo("PAY-1002");
+        req.setOrderNo("ORDER-1002");
+        req.setPayStatus("CANCELLED");
+        req.setCallbackNo("CB-1002");
+        req.setCallbackTime(LocalDateTime.now());
+
+        paymentService.handleMockCallback(req);
+
+        assertEquals(PaymentStatus.CANCELLED, payment.getStatus());
+        assertEquals(OrderStatus.USER_CANCELLED, order.getStatus());
+        org.mockito.Mockito.verify(houseCommandService)
+                .updateHouseStatusWithSync(202L, 2, 1, "user-cancel-order");
     }
 }

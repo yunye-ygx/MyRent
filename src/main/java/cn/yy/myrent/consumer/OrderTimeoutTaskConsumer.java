@@ -1,10 +1,12 @@
 package cn.yy.myrent.consumer;
 
+import cn.yy.myrent.common.PaymentStatus;
 import cn.yy.myrent.config.RabbitMQConfig;
 import cn.yy.myrent.entity.Order;
 import cn.yy.myrent.mapper.OrderMapper;
 import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IOrderService;
+import cn.yy.myrent.service.IPaymentService;
 import com.rabbitmq.client.Channel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
@@ -18,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.Map;
 
 @Component
@@ -42,6 +45,9 @@ public class OrderTimeoutTaskConsumer {
 
     @Autowired
     private RabbitTemplate rabbitTemplate;
+
+    @Autowired
+    private IPaymentService paymentService;
 
     @RabbitListener(queues = RabbitMQConfig.ORDER_DL_QUEUE, ackMode = "MANUAL")
     @Transactional(rollbackFor = Exception.class)
@@ -70,6 +76,14 @@ public class OrderTimeoutTaskConsumer {
                 }
 
                 if (updated) {
+                    paymentService.update()
+                            .set("status", PaymentStatus.CLOSED_TIMEOUT)
+                            .set("fail_reason", "TIMEOUT_CLOSED")
+                            .set("update_time", LocalDateTime.now())
+                            .eq("order_no", orderNo)
+                            .eq("status", PaymentStatus.WAITING)
+                            .update();
+
                     boolean houseReleased = houseCommandService.updateHouseStatusWithSync(
                             order.getHouseId(),
                             2,

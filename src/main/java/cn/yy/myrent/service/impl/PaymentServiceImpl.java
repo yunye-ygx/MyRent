@@ -7,6 +7,7 @@ import cn.yy.myrent.entity.Order;
 import cn.yy.myrent.entity.Payment;
 import cn.yy.myrent.mapper.OrderMapper;
 import cn.yy.myrent.mapper.PaymentMapper;
+import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IPaymentService;
 import cn.yy.myrent.vo.MockCheckoutVO;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -25,6 +26,9 @@ public class PaymentServiceImpl extends ServiceImpl<PaymentMapper, Payment> impl
 
     @Autowired
     private OrderMapper orderMapper;
+
+    @Autowired
+    private IHouseCommandService houseCommandService;
 
     @Override
     public MockCheckoutVO getMockCheckout(String paymentNo) {
@@ -84,5 +88,7 @@ public class PaymentServiceImpl extends ServiceImpl<PaymentMapper, Payment> impl
         order.setCloseTime(callbackTime);
         order.setUpdateTime(now);
         orderMapper.updateById(order);
+
+        houseCommandService.updateHouseStatusWithSync(order.getHouseId(), 2, 1, "user-cancel-order");
     }
 }
