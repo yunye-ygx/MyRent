@@ -1,13 +1,14 @@
 package cn.yy.myrent.entity;
 
-import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
-import java.time.LocalDateTime;
-import java.io.Serializable;
+import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.experimental.Accessors;
+
+import java.io.Serializable;
+import java.time.LocalDateTime;
 
 /**
  * <p>
@@ -28,27 +29,31 @@ public class Payment implements Serializable {
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;
 
-    /**
-     * 关联订单号
-     */
+    private String paymentNo;
+
     private String orderNo;
 
-    /**
-     * 支付宝/微信流水号 - 【核心：唯一索引防重】
-     */
-    private String thirdPartyTradeNo;
+    private Long userId;
 
-    /**
-     * 实际支付金额(分) - 【新增：防金额篡改漏洞】
-     */
     private Integer payAmount;
 
-    /**
-     * 状态: 0-处理中, 1-成功
-     */
+    private String channel;
+
+    private String thirdPartyTradeNo;
+
+    private String callbackNo;
+
     private Integer status;
+
+    private LocalDateTime expireTime;
+
+    private LocalDateTime paidTime;
+
+    private LocalDateTime callbackTime;
+
+    private String failReason;
 
     private LocalDateTime createTime;
 
-
+    private LocalDateTime updateTime;
 }

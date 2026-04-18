@@ -1,4 +1,4 @@
-﻿
+
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
 /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
@@ -13,15 +13,29 @@ DROP TABLE IF EXISTS `payment`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `payment` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `order_no` varchar(64) NOT NULL COMMENT '关联订单号',
-  `third_party_trade_no` varchar(128) NOT NULL COMMENT '支付宝/微信流水号 - 【核心：唯一索引防重】',
-  `pay_amount` int NOT NULL COMMENT '实际支付金额(分) - 【新增：防金额篡改漏洞】',
-  `status` tinyint NOT NULL DEFAULT '0' COMMENT '状态: 0-处理中, 1-成功',
-  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'payment record id',
+  `payment_no` varchar(64) NOT NULL COMMENT 'payment number',
+  `order_no` varchar(64) NOT NULL COMMENT 'business order number',
+  `user_id` bigint NOT NULL COMMENT 'paying user id',
+  `pay_amount` int NOT NULL COMMENT 'payment amount in cents',
+  `channel` varchar(32) NOT NULL DEFAULT 'MOCK' COMMENT 'payment channel',
+  `third_party_trade_no` varchar(64) DEFAULT NULL COMMENT 'third party trade number',
+  `callback_no` varchar(64) DEFAULT NULL COMMENT 'callback request number',
+  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0 waiting, 1 success, 3 cancelled, 4 timeout closed',
+  `expire_time` datetime NOT NULL COMMENT 'payment expire time',
+  `paid_time` datetime DEFAULT NULL COMMENT 'payment success time',
+  `callback_time` datetime DEFAULT NULL COMMENT 'callback time',
+  `fail_reason` varchar(255) DEFAULT NULL COMMENT 'failure or cancel reason',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'update time',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_third_party_no` (`third_party_trade_no`) COMMENT '幂等性防线'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='支付流水表';
+  UNIQUE KEY `uk_payment_no` (`payment_no`),
+  UNIQUE KEY `uk_payment_order_no` (`order_no`),
+  UNIQUE KEY `uk_third_party_trade_no` (`third_party_trade_no`),
+  KEY `idx_payment_user_id` (`user_id`),
+  KEY `idx_payment_status` (`status`),
+  KEY `idx_payment_expire_time` (`expire_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='payment record';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -32,4 +46,3 @@ CREATE TABLE `payment` (
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
-
