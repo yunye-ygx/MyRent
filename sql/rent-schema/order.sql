@@ -1,4 +1,4 @@
-﻿
+
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
 /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
@@ -13,17 +13,25 @@ DROP TABLE IF EXISTS `order`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `order` (
-  `id` bigint NOT NULL COMMENT '分布式订单ID',
-  `order_no` varchar(64) NOT NULL COMMENT '业务订单号(全局唯一)',
-  `user_id` bigint NOT NULL COMMENT '用户ID',
-  `house_id` bigint NOT NULL COMMENT '房源ID',
-  `amount` int NOT NULL COMMENT '订单金额(应付定金)',
-  `status` tinyint NOT NULL DEFAULT '0' COMMENT '状态: 0-待支付, 1-已支付锁房, 2-超时取消',
-  `expire_time` datetime NOT NULL COMMENT '过期时间 - 【核心：MQ延迟队列比对基准】',
-  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `id` bigint NOT NULL COMMENT 'distributed order id',
+  `order_no` varchar(64) NOT NULL COMMENT 'business order number',
+  `user_id` bigint NOT NULL COMMENT 'renter user id',
+  `house_id` bigint NOT NULL COMMENT 'house id',
+  `amount` int NOT NULL COMMENT 'deposit amount in cents',
+  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0 unpaid, 1 paid locked, 2 timeout closed, 3 user cancelled',
+  `expire_time` datetime NOT NULL COMMENT 'payment expire time',
+  `paid_time` datetime DEFAULT NULL COMMENT 'payment success time',
+  `success_payment_no` varchar(64) DEFAULT NULL COMMENT 'final successful payment no'
+  `close_time` datetime DEFAULT NULL COMMENT 'order close time',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'update time',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_order_no` (`order_no`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='定金订单表';
+  UNIQUE KEY `uk_order_no` (`order_no`),
+  KEY `idx_order_user_id` (`user_id`),
+  KEY `idx_order_house_id` (`house_id`),
+  KEY `idx_order_status` (`status`),
+  KEY `idx_order_expire_time` (`expire_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='deposit order';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -34,4 +42,3 @@ CREATE TABLE `order` (
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
-

@@ -6,13 +6,13 @@
       <button class="ghost-btn" @click="reload">刷新</button>
     </section>
 
-    <LoadingState v-if="loading && !orders.length" text="订单加载中..." />
+    <LoadingState v-if="loading && !orders.length" text="正在加载订单..." />
     <p v-if="error" class="error-text">{{ error }}</p>
 
     <section v-for="order in orders" :key="order.id" class="card order-card">
       <div class="order-head">
         <div>
-          <h3 class="order-title">{{ order.houseTitle || `房源 ${order.houseId}` }}</h3>
+          <h3 class="order-title">{{ order.houseTitle || `房源${order.houseId}` }}</h3>
           <p class="order-no">订单号：{{ order.orderNo }}</p>
         </div>
         <span :class="['order-status', `status-${order.status}`]">{{ getOrderStatusText(order.status) }}</span>
@@ -20,19 +20,26 @@
 
       <div class="order-body">
         <p>定金：{{ formatPrice(order.amount) }}</p>
-        <p>下单时间：{{ formatDateTime(order.createTime) }}</p>
-        <p>超时时间：{{ formatDateTime(order.expireTime) }}</p>
+        <p>创建时间：{{ formatDateTime(order.createTime) }}</p>
+        <p>过期时间：{{ formatDateTime(order.expireTime) }}</p>
       </div>
 
       <div class="order-actions">
         <button class="ghost-btn" @click="goDetail(order.houseId)">查看房源</button>
+        <button
+          v-if="order.status === 0"
+          class="primary-btn"
+          @click="continuePay(order.orderNo)"
+        >
+          继续支付
+        </button>
       </div>
     </section>
 
     <EmptyState
       v-if="!loading && !orders.length"
       title="暂无订单"
-      description="你可以先从房源详情页提交定金订单"
+      description="请先在房源详情页创建定金订单。"
       action-text="去首页"
       @action="router.push('/home')"
     />
@@ -40,7 +47,7 @@
     <div v-if="orders.length" class="load-more">
       <button v-if="hasMore && !loading" class="ghost-btn" @click="loadOrders">加载更多</button>
       <LoadingState v-else-if="loading" text="正在加载..." />
-      <span v-else class="no-more">没有更多了</span>
+      <span v-else class="no-more">没有更多订单了</span>
     </div>
   </div>
 </template>
@@ -49,7 +56,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchHouseById } from '@/api/house'
-import { fetchMyOrderPage } from '@/api/order'
+import { fetchMyOrderPage, repayOrder } from '@/api/order'
 import EmptyState from '@/components/EmptyState.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import { formatDateTime, formatPrice } from '@/utils/format'
@@ -66,15 +73,10 @@ const hasMore = ref(true)
 const houseCache = new Map()
 
 function getOrderStatusText(status) {
-  if (status === 0) {
-    return '待支付'
-  }
-  if (status === 1) {
-    return '已支付'
-  }
-  if (status === 2) {
-    return '已关闭'
-  }
+  if (status === 0) return '待支付'
+  if (status === 1) return '已支付'
+  if (status === 2) return '超时关闭'
+  if (status === 3) return '已取消'
   return '未知状态'
 }
 
@@ -93,11 +95,11 @@ async function attachHouseTitle(records = []) {
       }
       try {
         const house = await fetchHouseById(order.houseId)
-        const houseTitle = house?.title || `房源 ${order.houseId}`
+        const houseTitle = house?.title || `房源${order.houseId}`
         houseCache.set(order.houseId, houseTitle)
         return { ...order, houseTitle }
       } catch {
-        const houseTitle = `房源 ${order.houseId}`
+        const houseTitle = `房源${order.houseId}`
         houseCache.set(order.houseId, houseTitle)
         return { ...order, houseTitle }
       }
@@ -126,7 +128,7 @@ async function loadOrders(reset = false) {
     hasMore.value = current.value * size < total
     current.value += 1
   } catch (err) {
-    error.value = err?.message || '订单加载失败'
+    error.value = err?.message || '加载订单失败'
     if (reset) {
       orders.value = []
     }
@@ -141,6 +143,17 @@ function reload() {
 
 function goDetail(houseId) {
   router.push(`/house/${houseId}`)
+}
+
+async function continuePay(orderNo) {
+  try {
+    const result = await repayOrder(orderNo)
+    if (result?.mockPayUrl?.startsWith('/')) {
+      window.location.assign(result.mockPayUrl)
+    }
+  } catch (err) {
+    error.value = err?.message || '继续支付失败'
+  }
 }
 
 onMounted(() => {
@@ -206,6 +219,7 @@ onMounted(() => {
 .order-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 12px;
 }
 
 .order-status {
@@ -229,6 +243,11 @@ onMounted(() => {
 .status-2 {
   background: #f3f4f6;
   color: #6b7280;
+}
+
+.status-3 {
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
 .load-more {

@@ -1,6 +1,6 @@
 <template>
   <div class="detail-view">
-    <LoadingState v-if="loading" text="正在加载详情..." />
+    <LoadingState v-if="loading" text="Loading details..." />
 
     <template v-else-if="house">
       <HouseDetailSummary
@@ -16,7 +16,8 @@
         <section class="notes app-surface">
           <p class="eyebrow">House Notes</p>
           <p class="copy">
-            这个阶段先把浏览、咨询、收藏和定金动作整合成更清楚的桌面结构，后续再继续细化合同、预约和支付链路。
+            This stage keeps browsing, consultation, favorites, and deposit actions together while the
+            later tasks finish the payment closed loop.
           </p>
         </section>
         <HouseActionBar
@@ -33,9 +34,9 @@
 
     <EmptyState
       v-else
-      title="房源详情暂时不可用"
-      :description="error || '请稍后再试，或先返回首页浏览其他房源。'"
-      action-text="回到首页"
+      title="House detail unavailable"
+      :description="error || 'Please try again later or go back to the home page.'"
+      action-text="Go Home"
       @action="router.push('/home')"
     />
   </div>
@@ -76,13 +77,13 @@ const favoriteStatus = ref({
 
 const statusText = computed(() => getHouseStatusText(house.value?.status))
 const cover = computed(() => `https://picsum.photos/seed/house-detail-${route.params.id}/960/640`)
-const publisherName = computed(() => publisher.value?.name || '未知发布者')
+const publisherName = computed(() => publisher.value?.name || 'Unknown Publisher')
 const favoriteButtonText = computed(() => (
   favoriteLoading.value
-    ? '处理中...'
+    ? 'Processing...'
     : favoriteStatus.value?.favorited
-      ? '取消收藏'
-      : '收藏房源'
+      ? 'Unfavorite'
+      : 'Favorite House'
 ))
 const favoriteCountText = computed(() => favoriteStatus.value?.favoriteCount ?? 0)
 
@@ -142,7 +143,7 @@ async function loadHouse() {
     await loadPublisher()
     await loadFavoriteStatus()
   } catch (err) {
-    error.value = formatRequestError(err, '房源详情服务暂时不可用，请稍后再试。')
+    error.value = formatRequestError(err, 'House detail is temporarily unavailable.')
     house.value = null
     publisher.value = null
   } finally {
@@ -169,7 +170,7 @@ async function toggleFavorite() {
       ? await unfavoriteHouse(house.value.id)
       : await favoriteHouse(house.value.id)
   } catch (err) {
-    window.alert(formatRequestError(err, '收藏操作失败，请稍后再试。'))
+    window.alert(formatRequestError(err, 'Favorite action failed.'))
   } finally {
     favoriteLoading.value = false
   }
@@ -180,7 +181,7 @@ function goConsult() {
     return
   }
   if (!house.value.publisherUserId) {
-    window.alert('当前房源缺少发布者信息，暂时无法咨询。')
+    window.alert('Current house is missing publisher info.')
     return
   }
   if (!authStore.userId) {
@@ -188,13 +189,13 @@ function goConsult() {
     return
   }
   if (String(authStore.userId) === String(house.value.publisherUserId)) {
-    window.alert('这是你自己发布的房源，无需咨询自己。')
+    window.alert('You cannot consult your own house.')
     return
   }
 
   const targetSessionId = buildSessionId(authStore.userId, house.value.publisherUserId, house.value.id)
   if (!targetSessionId) {
-    window.alert('会话参数异常，请稍后重试。')
+    window.alert('Session parameters are invalid.')
     return
   }
 
@@ -217,20 +218,23 @@ async function submitDeposit() {
     return
   }
   if (String(authStore.userId) === String(house.value.publisherUserId)) {
-    window.alert('不能给自己发布的房源提交定金。')
+    window.alert('You cannot submit a deposit for your own house.')
     return
   }
 
   lockLoading.value = true
   try {
-    await createOrder({
+    const result = await createOrder({
       houseId: house.value.id,
       version: house.value.version || 0
     })
-    window.alert('定金提交成功，请尽快支付。')
-    await loadHouse()
+    if (result?.mockPayUrl?.startsWith('/')) {
+      window.location.assign(result.mockPayUrl)
+      return
+    }
+    window.alert('Deposit order created, but no checkout URL was returned.')
   } catch (err) {
-    window.alert(formatRequestError(err, '提交定金失败，请稍后再试。'))
+    window.alert(formatRequestError(err, 'Submit deposit failed.'))
   } finally {
     lockLoading.value = false
   }
