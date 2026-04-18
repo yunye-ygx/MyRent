@@ -3,16 +3,21 @@ package cn.yy.myrent.service.impl;
 import cn.yy.myrent.common.Constant;
 import cn.yy.myrent.common.GenerateOrder;
 import cn.yy.myrent.common.MessageSend;
+import cn.yy.myrent.common.OrderStatus;
+import cn.yy.myrent.common.PaymentStatus;
 import cn.yy.myrent.common.UserContext;
 import cn.yy.myrent.dto.LockHouseReqDTO;
 import cn.yy.myrent.entity.House;
 import cn.yy.myrent.entity.LocalTask;
 import cn.yy.myrent.entity.Order;
+import cn.yy.myrent.entity.Payment;
 import cn.yy.myrent.mapper.OrderMapper;
 import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IHouseService;
 import cn.yy.myrent.service.ILocalTaskService;
 import cn.yy.myrent.service.IOrderService;
+import cn.yy.myrent.service.IPaymentService;
+import cn.yy.myrent.vo.CreateOrderVO;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,9 +38,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * 定金订单服务实现。
- */
 @Service
 @Slf4j
 public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements IOrderService {
@@ -59,6 +61,8 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     private ObjectMapper objectMapper;
     @Autowired
     private MessageSend messageSend;
+    @Autowired
+    private IPaymentService paymentService;
 
     private final DefaultRedisScript<Long> lockHouseScript;
 
@@ -70,32 +74,26 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void createOrder(LockHouseReqDTO lockHouse) {
+    public CreateOrderVO createOrder(LockHouseReqDTO lockHouse) {
         Long currentUserId = UserContext.requireCurrentUserId();
         if (lockHouse == null || lockHouse.getHouseId() == null) {
-            throw new RuntimeException("houseId不能为空");
+            throw new RuntimeException("houseId cannot be null");
         }
 
         House house = houseService.getById(lockHouse.getHouseId());
         if (house == null) {
-            throw new RuntimeException("房源不存在");
+            throw new RuntimeException("house not found");
         }
         if (currentUserId.equals(house.getPublisherUserId())) {
-            throw new RuntimeException("这是你自己发布的房源，不能给自己的房源下单");
+            throw new RuntimeException("cannot order your own house");
         }
-
-        log.info("下单请求开始，houseId={}, userId={}", lockHouse.getHouseId(), currentUserId);
-        log.info("加载房源信息成功，houseId={}, deposit={}, status={}, publisherUserId={}",
-                house.getId(), house.getDepositAmount(), house.getStatus(), house.getPublisherUserId());
 
         Long locked = stringRedisTemplate.execute(
                 lockHouseScript,
                 Collections.singletonList(lockHouse.getHouseId().toString()));
         if (locked == null || locked != 1L) {
-            log.warn("Redis 锁定失败，houseId={}, locked={}", lockHouse.getHouseId(), locked);
-            throw new RuntimeException("房源已下架");
+            throw new RuntimeException("house already unavailable");
         }
-        log.info("Redis 锁定成功，houseId={}", lockHouse.getHouseId());
 
         String redisLockKey = "house:lock:" + lockHouse.getHouseId();
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -103,36 +101,44 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             public void afterCompletion(int status) {
                 if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
                     stringRedisTemplate.delete(redisLockKey);
-                    log.info("事务回滚，已释放房源锁: {}", redisLockKey);
-                } else {
-                    log.info("事务提交成功，保持房源锁: {}", redisLockKey);
                 }
             }
         });
 
-        boolean isUpdated = houseCommandService.updateHouseStatusWithSync(
+        boolean updated = houseCommandService.updateHouseStatusWithSync(
                 lockHouse.getHouseId(),
                 1,
                 2,
                 "order-lock-house");
-        if (!isUpdated) {
-            log.warn("DB 条件更新失败，houseId={} 可能已被抢", lockHouse.getHouseId());
-            throw new RuntimeException("房源已下架");
+        if (!updated) {
+            throw new RuntimeException("house already unavailable");
         }
-        log.info("DB 条件更新成功，houseId={} 状态置为锁定", lockHouse.getHouseId());
+
+        LocalDateTime now = LocalDateTime.now();
 
         Order order = new Order();
         order.setOrderNo(GenerateOrder.generateOrderNo(Constant.ORDER_NO_PREFIX));
         order.setUserId(currentUserId);
         order.setHouseId(house.getId());
         order.setAmount(house.getDepositAmount());
-        order.setStatus(0);
-        order.setExpireTime(LocalDateTime.now().plusSeconds(30));
-
+        order.setStatus(OrderStatus.UNPAID);
+        order.setExpireTime(now.plusSeconds(30));
+        order.setCreateTime(now);
+        order.setUpdateTime(now);
         orderMapper.insert(order);
-        log.info("订单入库成功，orderNo={}, expireAt={}", order.getOrderNo(), order.getExpireTime());
 
-        LocalDateTime now = LocalDateTime.now();
+        Payment payment = new Payment();
+        payment.setPaymentNo(GenerateOrder.generateOrderNo("PAY"));
+        payment.setOrderNo(order.getOrderNo());
+        payment.setUserId(currentUserId);
+        payment.setPayAmount(order.getAmount());
+        payment.setChannel("MOCK");
+        payment.setStatus(PaymentStatus.WAITING);
+        payment.setExpireTime(order.getExpireTime());
+        payment.setCreateTime(now);
+        payment.setUpdateTime(now);
+        paymentService.save(payment);
+
         LocalTask localTask = new LocalTask();
         localTask.setMessageId(UUID.randomUUID().toString().replace("-", ""));
         localTask.setBizType(LOCAL_TASK_BIZ_TYPE_ORDER);
@@ -149,14 +155,8 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 
         boolean taskSaved = localTaskService.save(localTask);
         if (!taskSaved) {
-            throw new RuntimeException("写入本地任务失败");
+            throw new RuntimeException("save local task failed");
         }
-        log.info("本地任务写入成功，messageId={}, bizId={}, eventType={}, executeTime={}, expireAt={}",
-                localTask.getMessageId(),
-                localTask.getBizId(),
-                localTask.getEventType(),
-                localTask.getExecuteTime(),
-                order.getExpireTime());
 
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
@@ -164,6 +164,13 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
                 messageSend.dispatchPendingTaskByMessageId(localTask.getMessageId());
             }
         });
+
+        CreateOrderVO result = new CreateOrderVO();
+        result.setOrderNo(order.getOrderNo());
+        result.setPaymentNo(payment.getPaymentNo());
+        result.setExpireTime(order.getExpireTime());
+        result.setMockPayUrl("/mock-pay/checkout?paymentNo=" + payment.getPaymentNo());
+        return result;
     }
 
     private String buildOrderLocalTaskPayload(Order order) {
@@ -173,7 +180,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             payload.put("expireTime", order.getExpireTime().toString());
             return objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("订单本地任务 payload 序列化失败", e);
+            throw new IllegalStateException("serialize local task payload failed", e);
         }
     }
 }

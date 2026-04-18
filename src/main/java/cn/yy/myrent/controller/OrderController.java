@@ -5,6 +5,7 @@ import cn.yy.myrent.common.UserContext;
 import cn.yy.myrent.dto.LockHouseReqDTO;
 import cn.yy.myrent.entity.Order;
 import cn.yy.myrent.service.IOrderService;
+import cn.yy.myrent.vo.CreateOrderVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.extern.slf4j.Slf4j;
@@ -29,43 +30,36 @@ public class OrderController {
     @Autowired
     private IOrderService orderService;
 
-    @PostMapping("/createOrder")
-    @Operation(summary = "创建订单", description = "下单并锁定房源")
-    public ResponseEntity<Result<Void>> createOrder(@RequestBody LockHouseReqDTO lockHouse) {
-        log.info("收到创建订单请求，houseId={}", lockHouse == null ? null : lockHouse.getHouseId());
+    @PostMapping("/create")
+    @Operation(summary = "create order and return mock checkout info")
+    public ResponseEntity<Result<CreateOrderVO>> createOrder(@RequestBody LockHouseReqDTO lockHouse) {
+        log.info("create order request, houseId={}", lockHouse == null ? null : lockHouse.getHouseId());
         try {
-            orderService.createOrder(lockHouse);
-            log.info("创建订单成功，houseId={}", lockHouse == null ? null : lockHouse.getHouseId());
-            return ResponseEntity.ok(Result.success("订单创建成功，请尽快支付", null));
+            CreateOrderVO result = orderService.createOrder(lockHouse);
+            return ResponseEntity.ok(Result.success("order created, please pay soon", result));
         } catch (IllegalStateException e) {
-            log.warn("创建订单失败：未登录或上下文缺失，houseId={}, message={}",
-                    lockHouse == null ? null : lockHouse.getHouseId(),
-                    e.getMessage());
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Result.error(401, e.getMessage()));
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Result.error(401, e.getMessage()));
         } catch (RuntimeException e) {
-            String msg = e.getMessage() != null ? e.getMessage() : "房源已下架";
-            log.warn("创建订单业务失败，houseId={}, message={}", lockHouse == null ? null : lockHouse.getHouseId(), msg);
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Result.error(msg));
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Result.error(e.getMessage()));
         } catch (Exception e) {
-            log.error("创建订单系统异常，houseId={}", lockHouse == null ? null : lockHouse.getHouseId(), e);
+            log.error("create order failed, houseId={}", lockHouse == null ? null : lockHouse.getHouseId(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Result.error("系统繁忙，请稍后重试"));
+                    .body(Result.error("system busy, please retry later"));
         }
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "按ID查询订单")
+    @Operation(summary = "query order by id")
     public Result<Order> getById(@PathVariable("id") Long id) {
         Order order = orderService.getById(id);
         if (order == null) {
-            return Result.error("订单不存在");
+            return Result.error("order not found");
         }
         return Result.success(order);
     }
 
     @GetMapping("/page")
-    @Operation(summary = "分页查询订单")
+    @Operation(summary = "page query orders")
     public Result<Page<Order>> page(
             @RequestParam(value = "current", defaultValue = "1") Long current,
             @RequestParam(value = "size", defaultValue = "10") Long size) {
@@ -78,13 +72,13 @@ public class OrderController {
     }
 
     @GetMapping("/mine")
-    @Operation(summary = "查询当前用户订单")
+    @Operation(summary = "query current user orders")
     public Result<Page<Order>> mine(
             @RequestParam(value = "current", defaultValue = "1") Long current,
             @RequestParam(value = "size", defaultValue = "10") Long size) {
         Long userId = UserContext.getCurrentUserId();
         if (userId == null) {
-            return Result.error(401, "请先登录");
+            return Result.error(401, "please login first");
         }
 
         long safeCurrent = Math.max(current, 1L);
@@ -98,33 +92,33 @@ public class OrderController {
     }
 
     @PostMapping
-    @Operation(summary = "新增订单")
+    @Operation(summary = "create order record")
     public Result<Long> create(@RequestBody Order order) {
         order.setId(null);
         boolean saved = orderService.save(order);
         if (!saved) {
-            return Result.error("新增订单失败");
+            return Result.error("create order failed");
         }
-        return Result.success("新增订单成功", order.getId());
+        return Result.success("create order success", order.getId());
     }
 
     @PutMapping("/{id}")
-    @Operation(summary = "更新订单")
+    @Operation(summary = "update order")
     public Result<Void> update(@PathVariable("id") Long id, @RequestBody Order order) {
         order.setId(id);
         boolean updated = orderService.updateById(order);
         if (!updated) {
-            return Result.error("更新订单失败或订单不存在");
+            return Result.error("update order failed");
         }
         return Result.success();
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "删除订单")
+    @Operation(summary = "delete order")
     public Result<Void> delete(@PathVariable("id") Long id) {
         boolean removed = orderService.removeById(id);
         if (!removed) {
-            return Result.error("删除订单失败或订单不存在");
+            return Result.error("delete order failed");
         }
         return Result.success();
     }
