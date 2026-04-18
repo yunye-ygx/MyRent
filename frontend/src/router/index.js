@@ -73,6 +73,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/mock-pay/checkout',
+    name: 'mock-checkout',
+    component: () => import('@/views/mock/MockCheckoutView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/placeholder/:key',
     name: 'placeholder',
     component: () => import('@/views/placeholder/PlaceholderView.vue'),

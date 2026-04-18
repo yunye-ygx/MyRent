@@ -1,8 +1,10 @@
 package cn.yy.myrent.controller;
 
 import cn.yy.myrent.common.Result;
+import cn.yy.myrent.dto.MockPaymentCallbackReqDTO;
 import cn.yy.myrent.entity.Payment;
 import cn.yy.myrent.service.IPaymentService;
+import cn.yy.myrent.vo.MockCheckoutVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,18 +25,29 @@ public class PaymentController {
     @Autowired
     private IPaymentService paymentService;
 
+    @GetMapping("/mock-checkout/{paymentNo}")
+    public Result<MockCheckoutVO> mockCheckout(@PathVariable String paymentNo) {
+        return Result.success(paymentService.getMockCheckout(paymentNo));
+    }
+
+    @PostMapping("/callback/mock")
+    public Result<Void> mockCallback(@RequestBody MockPaymentCallbackReqDTO req) {
+        paymentService.handleMockCallback(req);
+        return Result.success();
+    }
+
     @GetMapping("/{id}")
-    @Operation(summary = "按ID查询支付记录")
+    @Operation(summary = "query payment by id")
     public Result<Payment> getById(@PathVariable("id") Long id) {
         Payment payment = paymentService.getById(id);
         if (payment == null) {
-            return Result.error("支付记录不存在");
+            return Result.error("payment not found");
         }
         return Result.success(payment);
     }
 
     @GetMapping("/page")
-    @Operation(summary = "分页查询支付记录")
+    @Operation(summary = "page query payments")
     public Result<Page<Payment>> page(
             @RequestParam(value = "current", defaultValue = "1") Long current,
             @RequestParam(value = "size", defaultValue = "10") Long size) {
@@ -47,33 +60,33 @@ public class PaymentController {
     }
 
     @PostMapping
-    @Operation(summary = "新增支付记录")
+    @Operation(summary = "create payment record")
     public Result<Long> create(@RequestBody Payment payment) {
         payment.setId(null);
         boolean saved = paymentService.save(payment);
         if (!saved) {
-            return Result.error("新增支付记录失败");
+            return Result.error("create payment failed");
         }
-        return Result.success("新增支付记录成功", payment.getId());
+        return Result.success("create payment success", payment.getId());
     }
 
     @PutMapping("/{id}")
-    @Operation(summary = "更新支付记录")
+    @Operation(summary = "update payment")
     public Result<Void> update(@PathVariable("id") Long id, @RequestBody Payment payment) {
         payment.setId(id);
         boolean updated = paymentService.updateById(payment);
         if (!updated) {
-            return Result.error("更新支付记录失败或记录不存在");
+            return Result.error("update payment failed");
         }
         return Result.success();
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "删除支付记录")
+    @Operation(summary = "delete payment")
     public Result<Void> delete(@PathVariable("id") Long id) {
         boolean removed = paymentService.removeById(id);
         if (!removed) {
-            return Result.error("删除支付记录失败或记录不存在");
+            return Result.error("delete payment failed");
         }
         return Result.success();
     }
