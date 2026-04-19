@@ -56,9 +56,10 @@ describe('MineOrderView', () => {
     })
 
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(wrapper.text()).toContain('Continue Payment')
+    expect(wrapper.text()).toContain('ORDER-1001')
 
-    const continueButton = wrapper.findAll('button').find((button) => button.text().includes('Continue Payment'))
+    const continueButton = wrapper.find('button.primary-btn')
+    expect(continueButton.exists()).toBe(true)
     await continueButton.trigger('click')
     await new Promise((resolve) => setTimeout(resolve, 0))
 

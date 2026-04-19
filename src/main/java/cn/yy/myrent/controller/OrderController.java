@@ -48,6 +48,22 @@ public class OrderController {
         }
     }
 
+    @PostMapping("/{orderNo}/repay")
+    @Operation(summary = "create a new payment attempt for unpaid order")
+    public ResponseEntity<Result<CreateOrderVO>> repay(@PathVariable String orderNo) {
+        try {
+            return ResponseEntity.ok(Result.success(orderService.repay(orderNo)));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Result.error(401, e.getMessage()));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Result.error(e.getMessage()));
+        } catch (Exception e) {
+            log.error("repay failed, orderNo={}", orderNo, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Result.error("system busy, please retry later"));
+        }
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "query order by id")
     public Result<Order> getById(@PathVariable("id") Long id) {

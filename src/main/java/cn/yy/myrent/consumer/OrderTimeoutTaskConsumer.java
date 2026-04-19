@@ -1,10 +1,16 @@
 package cn.yy.myrent.consumer;
 
+import cn.yy.myrent.common.MockPayTradeStatus;
+import cn.yy.myrent.common.OrderStatus;
 import cn.yy.myrent.common.PaymentStatus;
 import cn.yy.myrent.config.RabbitMQConfig;
+import cn.yy.myrent.entity.MockPayTrade;
 import cn.yy.myrent.entity.Order;
 import cn.yy.myrent.mapper.OrderMapper;
+import cn.yy.myrent.mapper.PaymentMapper;
+import cn.yy.myrent.entity.Payment;
 import cn.yy.myrent.service.IHouseCommandService;
+import cn.yy.myrent.service.IMockPayTradeService;
 import cn.yy.myrent.service.IOrderService;
 import cn.yy.myrent.service.IPaymentService;
 import com.rabbitmq.client.Channel;
@@ -35,6 +41,9 @@ public class OrderTimeoutTaskConsumer {
     private OrderMapper orderMapper;
 
     @Autowired
+    private PaymentMapper paymentMapper;
+
+    @Autowired
     private IOrderService orderService;
 
     @Autowired
@@ -48,6 +57,9 @@ public class OrderTimeoutTaskConsumer {
 
     @Autowired
     private IPaymentService paymentService;
+
+    @Autowired
+    private IMockPayTradeService mockPayTradeService;
 
     @RabbitListener(queues = RabbitMQConfig.ORDER_DL_QUEUE, ackMode = "MANUAL")
     @Transactional(rollbackFor = Exception.class)
@@ -64,7 +76,12 @@ public class OrderTimeoutTaskConsumer {
 
         try {
             Order order = orderMapper.selectOrderNo(orderNo);
-            if (order != null && order.getStatus() == 0) {
+            if (order != null && order.getStatus() == OrderStatus.UNPAID) {
+                if (tryRepairPaidOrderBeforeClose(orderNo)) {
+                    channel.basicAck(deliveryTag, false);
+                    return;
+                }
+
                 boolean updated = orderService.update()
                         .set("status", 2)
                         .eq("order_no", orderNo)
@@ -81,7 +98,13 @@ public class OrderTimeoutTaskConsumer {
                             .set("fail_reason", "TIMEOUT_CLOSED")
                             .set("update_time", LocalDateTime.now())
                             .eq("order_no", orderNo)
-                            .eq("status", PaymentStatus.WAITING)
+                            .in("status", PaymentStatus.PENDING, PaymentStatus.PAYING)
+                            .update();
+                    mockPayTradeService.update()
+                            .set("status", MockPayTradeStatus.CLOSED_TIMEOUT)
+                            .set("update_time", LocalDateTime.now())
+                            .eq("order_no", orderNo)
+                            .in("status", MockPayTradeStatus.CREATED, MockPayTradeStatus.PAYING)
                             .update();
 
                     boolean houseReleased = houseCommandService.updateHouseStatusWithSync(
@@ -110,6 +133,38 @@ public class OrderTimeoutTaskConsumer {
             TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
             handleConsumeFailure(orderNo, message, channel, deliveryTag, currentRetry, e);
         }
+    }
+
+    private boolean tryRepairPaidOrderBeforeClose(String orderNo) {
+        log.info("关单前开始检查支付平台状态，orderNo={}", orderNo);
+        Payment latestPayment = paymentMapper.selectLatestActiveByOrderNo(orderNo);
+        if (latestPayment == null) {
+            log.info("支付平台检查跳过：未找到活跃支付记录，orderNo={}", orderNo);
+            return false;
+        }
+        MockPayTrade trade = mockPayTradeService.getByPaymentNo(latestPayment.getPaymentNo());
+        if (trade == null) {
+            log.info("支付平台检查跳过：未找到 mock trade，orderNo={}, paymentNo={}",
+                    orderNo,
+                    latestPayment.getPaymentNo());
+            return false;
+        }
+        if (trade.getStatus() == null || trade.getStatus() != MockPayTradeStatus.SUCCESS) {
+            log.info("支付平台检查结果：trade 未成功，orderNo={}, paymentNo={}, tradeStatus={}",
+                    orderNo,
+                    latestPayment.getPaymentNo(),
+                    trade.getStatus());
+            return false;
+        }
+        log.info("支付平台检查结果：发现成功交易，orderNo={}, paymentNo={}, thirdPartyTradeNo={}",
+                orderNo,
+                latestPayment.getPaymentNo(),
+                trade.getThirdPartyTradeNo());
+        paymentService.repairOrderPaidFromTrade(latestPayment.getPaymentNo(),
+                trade.getThirdPartyTradeNo(),
+                null,
+                trade.getPaidTime());
+        return true;
     }
 
     private void handleConsumeFailure(String orderNo,

@@ -18,6 +18,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/user/login",
                         "/user/register",
+                        "/house/hot/rebuild",
                         "/ws/chat",
                         "/error",
                         "/favicon.ico",

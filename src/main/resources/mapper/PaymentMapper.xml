@@ -5,4 +5,31 @@
     <select id="selectByPaymentNo" resultType="cn.yy.myrent.entity.Payment" parameterType="java.lang.String">
         select * from payment where payment_no = #{paymentNo}
     </select>
+
+    <select id="selectLatestActiveByOrderNo" resultType="cn.yy.myrent.entity.Payment" parameterType="java.lang.String">
+        select * from payment
+        where order_no = #{orderNo}
+          and status in (0, 1)
+        order by id desc
+        limit 1
+    </select>
+
+    <select id="selectByOrderNo" resultType="cn.yy.myrent.entity.Payment" parameterType="java.lang.String">
+        select * from payment
+        where order_no = #{orderNo}
+        order by id desc
+    </select>
+
+    <select id="selectSuspiciousPayingPayments" resultType="cn.yy.myrent.entity.Payment">
+        select p.*
+        from payment p
+        join `order` o on o.order_no = p.order_no
+        join mock_pay_trade t on t.payment_no = p.payment_no
+        where p.status = 1
+          and o.status = 0
+          and t.status = 2
+          and t.callback_status != 1
+        order by p.id asc
+        limit 100
+    </select>
 </mapper>

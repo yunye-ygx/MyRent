@@ -43,6 +43,8 @@ public class Order implements Serializable {
 
     private LocalDateTime paidTime;
 
+    private String successPaymentNo;
+
     private LocalDateTime closeTime;
 
     private LocalDateTime createTime;

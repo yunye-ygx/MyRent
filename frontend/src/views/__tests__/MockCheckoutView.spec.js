@@ -26,8 +26,8 @@ describe('MockCheckoutView', () => {
     })
 
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(wrapper.text()).toContain('Mock Checkout')
     expect(wrapper.text()).toContain('ORDER-1001')
     expect(wrapper.text()).toContain('PAY-1001')
+    expect(wrapper.findAll('button')).toHaveLength(2)
   })
 })
