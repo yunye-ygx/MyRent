@@ -2,6 +2,9 @@ package cn.yy.myrent.mapper;
 
 import cn.yy.myrent.entity.Order;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import org.apache.ibatis.annotations.Param;
+
+import java.time.LocalDateTime;
 
 /**
  * <p>
@@ -14,4 +17,14 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 public interface OrderMapper extends BaseMapper<Order> {
 
     Order selectOrderNo(String orderNo);
+
+    int markPaidIfUnpaid(@Param("orderNo") String orderNo,
+                         @Param("paidTime") LocalDateTime paidTime,
+                         @Param("successPaymentNo") String successPaymentNo,
+                         @Param("updateTime") LocalDateTime updateTime);
+
+    int recoverPaidFromClosedTimeout(@Param("orderNo") String orderNo,
+                                     @Param("paidTime") LocalDateTime paidTime,
+                                     @Param("successPaymentNo") String successPaymentNo,
+                                     @Param("updateTime") LocalDateTime updateTime);
 }

@@ -8,4 +8,6 @@ import com.baomidou.mybatisplus.extension.service.IService;
 public interface IOrderService extends IService<Order> {
 
     CreateOrderVO createOrder(LockHouseReqDTO lockHouse);
+
+    CreateOrderVO repay(String orderNo);
 }

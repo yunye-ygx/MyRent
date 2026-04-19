@@ -7,6 +7,7 @@ import cn.yy.myrent.dto.SmartGuideReqDTO;
 import cn.yy.myrent.entity.House;
 import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IHouseService;
+import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.sync.house.service.HouseEsSyncService;
 import cn.yy.myrent.vo.HouseSearchResultVO;
 import cn.yy.myrent.vo.SmartGuideResultVO;
@@ -36,6 +37,7 @@ public class HouseController {
     private final IHouseService houseService;
     private final IHouseCommandService houseCommandService;
     private final HouseEsSyncService houseEsSyncService;
+    private final HouseHotService houseHotService;
 
     @PostMapping("/nearby")
     @Operation(summary = "附近房源搜索", description = "优先走 ES，失败后自动降级")
@@ -53,6 +55,13 @@ public class HouseController {
             @RequestParam(value = "page", defaultValue = "1") Integer page,
             @RequestParam(value = "size", defaultValue = "10") Integer size) {
         return Result.success(houseService.hotHouses(page, size));
+    }
+
+    @PostMapping("/hot/rebuild")
+    @Operation(summary = "重建 Redis 热门房源缓存", description = "临时测试接口：从 MySQL 当前可租房源重建 Redis 热门房源缓存")
+    public Result<Void> rebuildHotCache() {
+        houseHotService.rebuildHotRanking();
+        return Result.success("Redis 热门房源缓存重建完成", null);
     }
 
     @PostMapping("/smart-guide")

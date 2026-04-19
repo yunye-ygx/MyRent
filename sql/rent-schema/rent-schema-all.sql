@@ -122,6 +122,7 @@ CREATE TABLE `order` (
   `status` tinyint NOT NULL DEFAULT '0' COMMENT '0 unpaid, 1 paid locked, 2 timeout closed, 3 user cancelled',
   `expire_time` datetime NOT NULL COMMENT 'payment expire time',
   `paid_time` datetime DEFAULT NULL COMMENT 'payment success time',
+  `success_payment_no` varchar(64) DEFAULT NULL COMMENT 'final successful payment no',
   `close_time` datetime DEFAULT NULL COMMENT 'order close time',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'update time',
@@ -145,7 +146,7 @@ CREATE TABLE `payment` (
   `channel` varchar(32) NOT NULL DEFAULT 'MOCK' COMMENT 'payment channel',
   `third_party_trade_no` varchar(64) DEFAULT NULL COMMENT 'third party trade number',
   `callback_no` varchar(64) DEFAULT NULL COMMENT 'callback request number',
-  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0 waiting, 1 success, 3 cancelled, 4 timeout closed',
+  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0 pending, 1 paying, 2 paid, 3 user cancelled, 4 timeout closed, 5 duplicate paid',
   `expire_time` datetime NOT NULL COMMENT 'payment expire time',
   `paid_time` datetime DEFAULT NULL COMMENT 'payment success time',
   `callback_time` datetime DEFAULT NULL COMMENT 'callback time',
@@ -154,12 +155,34 @@ CREATE TABLE `payment` (
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'update time',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_payment_no` (`payment_no`),
-  UNIQUE KEY `uk_payment_order_no` (`order_no`),
   UNIQUE KEY `uk_third_party_trade_no` (`third_party_trade_no`),
   KEY `idx_payment_user_id` (`user_id`),
   KEY `idx_payment_status` (`status`),
   KEY `idx_payment_expire_time` (`expire_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='payment record';
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `mock_pay_trade`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `mock_pay_trade` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'mock trade id',
+  `payment_no` varchar(64) NOT NULL COMMENT 'internal payment number',
+  `order_no` varchar(64) NOT NULL COMMENT 'business order number',
+  `third_party_trade_no` varchar(64) DEFAULT NULL COMMENT 'mock third-party trade number',
+  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0 created, 1 paying, 2 success, 3 user cancelled, 4 timeout closed',
+  `amount` int NOT NULL COMMENT 'payment amount in cents',
+  `paid_time` datetime DEFAULT NULL COMMENT 'mock payment success time',
+  `callback_status` tinyint NOT NULL DEFAULT '0' COMMENT '0 not sent or not confirmed, 1 callback confirmed, 2 callback failed',
+  `last_callback_time` datetime DEFAULT NULL COMMENT 'last callback attempt time',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'update time',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_mock_trade_payment_no` (`payment_no`),
+  UNIQUE KEY `uk_mock_trade_third_party_trade_no` (`third_party_trade_no`),
+  KEY `idx_mock_trade_order_no` (`order_no`),
+  KEY `idx_mock_trade_status` (`status`),
+  KEY `idx_mock_trade_callback_status` (`callback_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='mock third-party payment trade';
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `user`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;

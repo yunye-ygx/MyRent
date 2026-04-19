@@ -7,6 +7,7 @@ import cn.yy.myrent.mapper.HouseFavoriteMapper;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.mapper.LocalTaskMapper;
 import cn.yy.myrent.mapper.LocationDictMapper;
+import cn.yy.myrent.mapper.MockPayTradeMapper;
 import cn.yy.myrent.mapper.OrderMapper;
 import cn.yy.myrent.mapper.PaymentMapper;
 import cn.yy.myrent.mapper.UserMapper;
@@ -63,6 +64,9 @@ class OrderControllerWebMvcTest {
     private LocationDictMapper locationDictMapper;
 
     @MockBean
+    private MockPayTradeMapper mockPayTradeMapper;
+
+    @MockBean
     private OrderMapper orderMapper;
 
     @MockBean
@@ -94,5 +98,23 @@ class OrderControllerWebMvcTest {
                 .andExpect(jsonPath("$.data.orderNo").value("ORDER-1001"))
                 .andExpect(jsonPath("$.data.paymentNo").value("PAY-1001"))
                 .andExpect(jsonPath("$.data.mockPayUrl").value("/mock-pay/checkout?paymentNo=PAY-1001"));
+    }
+
+    @Test
+    void repayShouldReturnNewPaymentAttemptInfo() throws Exception {
+        CreateOrderVO result = new CreateOrderVO();
+        result.setOrderNo("ORDER-1001");
+        result.setPaymentNo("PAY-1002");
+        result.setMockPayUrl("/mock-pay/checkout?paymentNo=PAY-1002");
+
+        given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
+        given(orderService.repay("ORDER-1001")).willReturn(result);
+
+        mockMvc.perform(post("/order/ORDER-1001/repay")
+                        .header("token", "test-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.orderNo").value("ORDER-1001"))
+                .andExpect(jsonPath("$.data.paymentNo").value("PAY-1002"))
+                .andExpect(jsonPath("$.data.mockPayUrl").value("/mock-pay/checkout?paymentNo=PAY-1002"));
     }
 }
