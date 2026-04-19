@@ -1,5 +1,6 @@
 package cn.yy.myrent.service;
 
+import cn.yy.myrent.common.PaymentRepairResult;
 import cn.yy.myrent.dto.MockPaymentCallbackReqDTO;
 import cn.yy.myrent.entity.Payment;
 import cn.yy.myrent.vo.MockCheckoutVO;
@@ -17,4 +18,11 @@ public interface IPaymentService extends IService<Payment> {
                                      String thirdPartyTradeNo,
                                      String callbackNo,
                                      LocalDateTime callbackTime);
+
+    PaymentRepairResult reconcilePaymentSuccess(String paymentNo,
+                                                String thirdPartyTradeNo,
+                                                String callbackNo,
+                                                LocalDateTime callbackTime);
+
+    boolean repairSuccessfulPaymentsForOrder(String orderNo);
 }

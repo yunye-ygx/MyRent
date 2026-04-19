@@ -32,4 +32,25 @@
         order by p.id asc
         limit 100
     </select>
+
+    <select id="selectCandidatePaymentsByOrderNo" resultType="cn.yy.myrent.entity.Payment" parameterType="java.lang.String">
+        select *
+        from payment
+        where order_no = #{orderNo}
+          and status in (0, 1, 4)
+        order by id asc
+    </select>
+
+    <select id="selectSuspiciousOrderNosForRepair" resultType="java.lang.String">
+        select distinct p.order_no
+        from payment p
+        join mock_pay_trade t on t.payment_no = p.payment_no
+        join `order` o on o.order_no = p.order_no
+        where t.status = 2
+          and t.callback_status != 1
+          and p.status in (0, 1, 4)
+          and o.status in (0, 2)
+        order by p.order_no asc
+        limit 100
+    </select>
 </mapper>

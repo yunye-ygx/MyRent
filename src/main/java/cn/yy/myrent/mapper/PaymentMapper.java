@@ -14,4 +14,8 @@ public interface PaymentMapper extends BaseMapper<Payment> {
     List<Payment> selectByOrderNo(String orderNo);
 
     List<Payment> selectSuspiciousPayingPayments();
+
+    List<Payment> selectCandidatePaymentsByOrderNo(String orderNo);
+
+    List<String> selectSuspiciousOrderNosForRepair();
 }

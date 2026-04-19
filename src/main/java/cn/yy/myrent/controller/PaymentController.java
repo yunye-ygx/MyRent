@@ -7,6 +7,7 @@ import cn.yy.myrent.service.IPaymentService;
 import cn.yy.myrent.vo.MockCheckoutVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/payment")
+@Slf4j
 public class PaymentController {
 
     @Autowired
@@ -27,6 +29,7 @@ public class PaymentController {
 
     @GetMapping("/mock-checkout/{paymentNo}")
     public Result<MockCheckoutVO> mockCheckout(@PathVariable String paymentNo) {
+        log.info("如果跳转到支付页面，修改支付状态为支付中");
         return Result.success(paymentService.getMockCheckout(paymentNo));
     }
 

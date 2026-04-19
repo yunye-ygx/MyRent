@@ -22,4 +22,9 @@ public interface OrderMapper extends BaseMapper<Order> {
                          @Param("paidTime") LocalDateTime paidTime,
                          @Param("successPaymentNo") String successPaymentNo,
                          @Param("updateTime") LocalDateTime updateTime);
+
+    int recoverPaidFromClosedTimeout(@Param("orderNo") String orderNo,
+                                     @Param("paidTime") LocalDateTime paidTime,
+                                     @Param("successPaymentNo") String successPaymentNo,
+                                     @Param("updateTime") LocalDateTime updateTime);
 }

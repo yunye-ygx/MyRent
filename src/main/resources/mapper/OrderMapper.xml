@@ -15,4 +15,14 @@
         where order_no = #{orderNo}
           and status = 0
     </update>
+
+    <update id="recoverPaidFromClosedTimeout">
+        update `order`
+        set status = 1,
+            paid_time = #{paidTime},
+            success_payment_no = #{successPaymentNo},
+            update_time = #{updateTime}
+        where order_no = #{orderNo}
+          and status = 2
+    </update>
 </mapper>

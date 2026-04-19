@@ -3,12 +3,9 @@ package cn.yy.myrent.consumer;
 import cn.yy.myrent.common.MockPayTradeStatus;
 import cn.yy.myrent.common.OrderStatus;
 import cn.yy.myrent.common.PaymentStatus;
-import cn.yy.myrent.config.RabbitMQConfig;
-import cn.yy.myrent.entity.MockPayTrade;
 import cn.yy.myrent.entity.Order;
+import cn.yy.myrent.config.RabbitMQConfig;
 import cn.yy.myrent.mapper.OrderMapper;
-import cn.yy.myrent.mapper.PaymentMapper;
-import cn.yy.myrent.entity.Payment;
 import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IMockPayTradeService;
 import cn.yy.myrent.service.IOrderService;
@@ -39,9 +36,6 @@ public class OrderTimeoutTaskConsumer {
 
     @Autowired
     private OrderMapper orderMapper;
-
-    @Autowired
-    private PaymentMapper paymentMapper;
 
     @Autowired
     private IOrderService orderService;
@@ -137,34 +131,13 @@ public class OrderTimeoutTaskConsumer {
 
     private boolean tryRepairPaidOrderBeforeClose(String orderNo) {
         log.info("关单前开始检查支付平台状态，orderNo={}", orderNo);
-        Payment latestPayment = paymentMapper.selectLatestActiveByOrderNo(orderNo);
-        if (latestPayment == null) {
-            log.info("支付平台检查跳过：未找到活跃支付记录，orderNo={}", orderNo);
-            return false;
+        boolean repaired = paymentService.repairSuccessfulPaymentsForOrder(orderNo);
+        if (repaired) {
+            log.info("支付平台检查结果：订单已通过候选支付修复，orderNo={}", orderNo);
+            return true;
         }
-        MockPayTrade trade = mockPayTradeService.getByPaymentNo(latestPayment.getPaymentNo());
-        if (trade == null) {
-            log.info("支付平台检查跳过：未找到 mock trade，orderNo={}, paymentNo={}",
-                    orderNo,
-                    latestPayment.getPaymentNo());
-            return false;
-        }
-        if (trade.getStatus() == null || trade.getStatus() != MockPayTradeStatus.SUCCESS) {
-            log.info("支付平台检查结果：trade 未成功，orderNo={}, paymentNo={}, tradeStatus={}",
-                    orderNo,
-                    latestPayment.getPaymentNo(),
-                    trade.getStatus());
-            return false;
-        }
-        log.info("支付平台检查结果：发现成功交易，orderNo={}, paymentNo={}, thirdPartyTradeNo={}",
-                orderNo,
-                latestPayment.getPaymentNo(),
-                trade.getThirdPartyTradeNo());
-        paymentService.repairOrderPaidFromTrade(latestPayment.getPaymentNo(),
-                trade.getThirdPartyTradeNo(),
-                null,
-                trade.getPaidTime());
-        return true;
+        log.info("支付平台检查结果：未发现可修复成功支付，orderNo={}", orderNo);
+        return false;
     }
 
     private void handleConsumeFailure(String orderNo,
