@@ -1,10 +1,19 @@
 package cn.yy.myrent.controller;
 
 import cn.yy.myrent.common.Result;
+import cn.yy.myrent.common.PaymentRefundReasonCode;
+import cn.yy.myrent.common.PaymentRefundSourceType;
+import cn.yy.myrent.common.UserContext;
 import cn.yy.myrent.dto.MockPaymentCallbackReqDTO;
+import cn.yy.myrent.dto.PaymentRefundApplyCommand;
+import cn.yy.myrent.dto.PaymentRefundApplyReqDTO;
 import cn.yy.myrent.entity.Payment;
+import cn.yy.myrent.entity.PaymentRefund;
 import cn.yy.myrent.service.IPaymentService;
+import cn.yy.myrent.service.IPaymentRefundService;
 import cn.yy.myrent.vo.MockCheckoutVO;
+import cn.yy.myrent.vo.PaymentRefundApplyVO;
+import cn.yy.myrent.vo.PaymentRefundOrderStatusVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +28,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+
 @RestController
 @RequestMapping("/payment")
 @Slf4j
@@ -26,6 +39,9 @@ public class PaymentController {
 
     @Autowired
     private IPaymentService paymentService;
+
+    @Autowired
+    private IPaymentRefundService paymentRefundService;
 
     @GetMapping("/mock-checkout/{paymentNo}")
     public Result<MockCheckoutVO> mockCheckout(@PathVariable String paymentNo) {
@@ -37,6 +53,36 @@ public class PaymentController {
     public Result<Void> mockCallback(@RequestBody MockPaymentCallbackReqDTO req) {
         paymentService.handleMockCallback(req);
         return Result.success();
+    }
+
+    @PostMapping("/refunds/apply")
+    public Result<PaymentRefundApplyVO> applyRefund(@RequestBody PaymentRefundApplyReqDTO req) {
+        Long userId = UserContext.getCurrentUserId();
+        if (userId == null) {
+            return Result.error(401, "please login first");
+        }
+        PaymentRefundApplyCommand command = new PaymentRefundApplyCommand();
+        command.setOrderNo(req == null ? null : req.getOrderNo());
+        command.setSourceType(PaymentRefundSourceType.USER_APPLY);
+        command.setReasonCode(PaymentRefundReasonCode.USER_APPLY);
+        command.setReasonDetail(req == null ? null : req.getReasonDetail());
+        command.setUserId(userId);
+        PaymentRefund refund = paymentRefundService.applyRefund(command);
+        return Result.success(paymentRefundService.toApplyVO(refund));
+    }
+
+    @GetMapping("/refunds/order-status")
+    public Result<List<PaymentRefundOrderStatusVO>> orderRefundStatus(@RequestParam("orderNos") String orderNos) {
+        log.info("查询当前登录用户指定订单集合中，每个订单最新的一条退款记录状态");
+        Long userId = UserContext.getCurrentUserId();
+        if (userId == null) {
+            return Result.error(401, "please login first");
+        }
+        List<String> orderNoList = Arrays.stream(orderNos.split(","))
+                .map(String::trim)
+                .filter(item -> !item.isEmpty())
+                .collect(Collectors.toList());
+        return Result.success(paymentRefundService.listLatestRefundStatusForOrders(userId, orderNoList));
     }
 
     @GetMapping("/{id}")

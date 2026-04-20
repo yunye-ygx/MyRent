@@ -121,6 +121,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         }
 
         LocalDateTime now = LocalDateTime.now();
+        log.info("锁房成功，开始创建订单，houseId={}", lockHouse.getHouseId());
 
         Order order = new Order();
         order.setOrderNo(GenerateOrder.generateOrderNo(Constant.ORDER_NO_PREFIX));
@@ -133,10 +134,13 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         order.setUpdateTime(now);
         orderMapper.insert(order);
 
+        log.info("创建订单成功，开始创建支付记录，orderNo={}", order.getOrderNo());
         Payment payment = buildPayment(order.getOrderNo(), currentUserId, order.getAmount(), order.getExpireTime(), now);
         paymentService.save(payment);
+        log.info("创建支付记录成功，开始创建本地任务，orderNo={}", order.getOrderNo());
         mockPayTradeService.save(buildMockTrade(payment, now));
 
+        log.info("创建本地任务成功，开始注册事务同步，orderNo={}", order.getOrderNo());
         LocalTask localTask = new LocalTask();
         localTask.setMessageId(UUID.randomUUID().toString().replace("-", ""));
         localTask.setBizType(LOCAL_TASK_BIZ_TYPE_ORDER);
@@ -156,12 +160,15 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             throw new RuntimeException("save local task failed");
         }
 
+
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
+                log.info("派发本地任务，orderNo={}", order.getOrderNo());
                 messageSend.dispatchPendingTaskByMessageId(localTask.getMessageId());
             }
         });
+
 
         return buildCreateOrderVO(order.getOrderNo(), payment.getPaymentNo(), order.getExpireTime());
     }

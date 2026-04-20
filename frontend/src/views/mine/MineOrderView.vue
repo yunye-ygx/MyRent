@@ -22,6 +22,9 @@
         <p>定金：{{ formatPrice(order.amount) }}</p>
         <p>创建时间：{{ formatDateTime(order.createTime) }}</p>
         <p>过期时间：{{ formatDateTime(order.expireTime) }}</p>
+        <p v-if="order.latestRefundStatus !== null" class="refund-text">
+          退款状态：{{ getRefundStatusText(order.latestRefundStatus) }}
+        </p>
       </div>
 
       <div class="order-actions">
@@ -32,6 +35,14 @@
           @click="continuePay(order.orderNo)"
         >
           继续支付
+        </button>
+        <button
+          v-if="canRequestRefund(order)"
+          class="ghost-btn refund-btn"
+          :disabled="refundingOrderNo === order.orderNo"
+          @click="submitRefund(order)"
+        >
+          申请退款
         </button>
       </div>
     </section>
@@ -57,6 +68,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchHouseById } from '@/api/house'
 import { fetchMyOrderPage, repayOrder } from '@/api/order'
+import { applyPaymentRefund, fetchOrderRefundStatuses } from '@/api/payment'
 import EmptyState from '@/components/EmptyState.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import { formatDateTime, formatPrice } from '@/utils/format'
@@ -69,6 +81,7 @@ const orders = ref([])
 const current = ref(1)
 const size = 10
 const hasMore = ref(true)
+const refundingOrderNo = ref('')
 
 const houseCache = new Map()
 
@@ -107,6 +120,30 @@ async function attachHouseTitle(records = []) {
   )
 }
 
+async function attachRefundStatus(records = []) {
+  if (!records.length) {
+    return []
+  }
+
+  try {
+    const refundStatuses = await fetchOrderRefundStatuses(records.map((order) => order.orderNo))
+    const refundMap = new Map((refundStatuses || []).map((item) => [item.orderNo, item]))
+    return records.map((order) => ({
+      ...order,
+      latestRefundStatus: refundMap.get(order.orderNo)?.status ?? null,
+      latestRefundNo: refundMap.get(order.orderNo)?.refundNo || '',
+      latestRefundReasonCode: refundMap.get(order.orderNo)?.reasonCode || ''
+    }))
+  } catch {
+    return records.map((order) => ({
+      ...order,
+      latestRefundStatus: order.latestRefundStatus ?? null,
+      latestRefundNo: order.latestRefundNo || '',
+      latestRefundReasonCode: order.latestRefundReasonCode || ''
+    }))
+  }
+}
+
 async function loadOrders(reset = false) {
   if (loading.value || (!hasMore.value && !reset)) {
     return
@@ -122,7 +159,8 @@ async function loadOrders(reset = false) {
   loading.value = true
   try {
     const page = await fetchMyOrderPage({ current: current.value, size })
-    const records = await attachHouseTitle(page?.records || [])
+    const withTitle = await attachHouseTitle(page?.records || [])
+    const records = await attachRefundStatus(withTitle)
     orders.value = reset ? records : [...orders.value, ...records]
     const total = Number(page?.total || 0)
     hasMore.value = current.value * size < total
@@ -153,6 +191,49 @@ async function continuePay(orderNo) {
     }
   } catch (err) {
     error.value = err?.message || '继续支付失败'
+  }
+}
+
+function canRequestRefund(order) {
+  return order.status === 1 && order.latestRefundStatus === null
+}
+
+function getRefundStatusText(status) {
+  if (status === 0 || status === 1) return '退款处理中'
+  if (status === 2) return '退款成功'
+  if (status === 3) return '退款重试中'
+  if (status === 4) return '退款失败'
+  if (status === 5) return '待人工处理'
+  if (status === 6) return '退款已取消'
+  return ''
+}
+
+async function submitRefund(order) {
+  if (!order?.orderNo || refundingOrderNo.value) {
+    return
+  }
+
+  refundingOrderNo.value = order.orderNo
+  try {
+    const refund = await applyPaymentRefund({
+      orderNo: order.orderNo,
+      reasonDetail: ''
+    })
+    orders.value = orders.value.map((item) => {
+      if (item.orderNo !== order.orderNo) {
+        return item
+      }
+      return {
+        ...item,
+        latestRefundStatus: refund?.status ?? 0,
+        latestRefundNo: refund?.refundNo || '',
+        latestRefundReasonCode: refund?.reasonCode || 'USER_APPLY'
+      }
+    })
+  } catch (err) {
+    error.value = err?.message || '申请退款失败'
+  } finally {
+    refundingOrderNo.value = ''
   }
 }
 
@@ -214,6 +295,10 @@ onMounted(() => {
 
 .order-body p {
   margin: 0;
+}
+
+.refund-text {
+  color: #b45309;
 }
 
 .order-actions {
