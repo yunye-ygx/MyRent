@@ -13,6 +13,7 @@ import cn.yy.myrent.entity.PaymentRefund;
 import cn.yy.myrent.mapper.OrderMapper;
 import cn.yy.myrent.mapper.PaymentMapper;
 import cn.yy.myrent.mapper.PaymentRefundMapper;
+import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IPaymentRefundService;
 import cn.yy.myrent.vo.PaymentRefundApplyVO;
 import cn.yy.myrent.vo.PaymentRefundOrderStatusVO;
@@ -30,7 +31,6 @@ import java.util.Map;
 
 @Service
 @Slf4j
-
 public class PaymentRefundServiceImpl extends ServiceImpl<PaymentRefundMapper, PaymentRefund> implements IPaymentRefundService {
 
     private static final int PROCESS_BATCH_SIZE = 20;
@@ -38,13 +38,16 @@ public class PaymentRefundServiceImpl extends ServiceImpl<PaymentRefundMapper, P
     private final PaymentRefundMapper paymentRefundMapper;
     private final OrderMapper orderMapper;
     private final PaymentMapper paymentMapper;
+    private final IHouseCommandService houseCommandService;
 
     public PaymentRefundServiceImpl(PaymentRefundMapper paymentRefundMapper,
                                     OrderMapper orderMapper,
-                                    PaymentMapper paymentMapper) {
+                                    PaymentMapper paymentMapper,
+                                    IHouseCommandService houseCommandService) {
         this.paymentRefundMapper = paymentRefundMapper;
         this.orderMapper = orderMapper;
         this.paymentMapper = paymentMapper;
+        this.houseCommandService = houseCommandService;
     }
 
     @Override
@@ -110,7 +113,6 @@ public class PaymentRefundServiceImpl extends ServiceImpl<PaymentRefundMapper, P
 
         Map<String, PaymentRefundOrderStatusVO> latest = new LinkedHashMap<>();
         for (PaymentRefund refund : refunds) {
-
             if (refund == null || latest.containsKey(refund.getOrderNo())) {
                 log.info("此退款请求不是最新的 {}", refund.getId());
                 continue;
@@ -207,30 +209,131 @@ public class PaymentRefundServiceImpl extends ServiceImpl<PaymentRefundMapper, P
                 throw new IllegalStateException("unsupported refund channel: " + refund.getChannel());
             }
 
-            refund.setStatus(PaymentRefundStatus.SUCCESS);
-            refund.setThirdPartyRefundNo(GenerateOrder.generateOrderNo("MOCKRF"));
-            refund.setSuccessTime(now);
-            refund.setNextRetryTime(null);
-            refund.setFailReason(null);
-            refund.setUpdateTime(now);
+            markRefundSuccess(refund, now);
 
-            log.info("尝试把退款请求标记为成功 {}", refund.getId());
-            paymentRefundMapper.updateById(refund);
+            log.info("退款请求标记为成功 {}", refund.getId());
+            handleRefundSuccess(refund, now);
         } catch (Exception e) {
-            int retryCount = refund.getRetryCount() == null ? 0 : refund.getRetryCount();
-            retryCount++;
-            refund.setRetryCount(retryCount);
-            refund.setFailReason(e.getMessage());
-            refund.setUpdateTime(now);
-            if (retryCount >= (refund.getMaxRetryCount() == null ? 10 : refund.getMaxRetryCount())) {
-                refund.setStatus(PaymentRefundStatus.MANUAL_REVIEW);
-                refund.setCloseTime(now);
-                refund.setNextRetryTime(null);
-            } else {
-                refund.setStatus(PaymentRefundStatus.RETRY);
-                refund.setNextRetryTime(now.plusSeconds(10L * retryCount));
-            }
-            paymentRefundMapper.updateById(refund);
+            handleRefundFailure(refund, now, e);
         }
+    }
+
+    private void markRefundSuccess(PaymentRefund refund, LocalDateTime now) {
+        refund.setStatus(PaymentRefundStatus.SUCCESS);
+        refund.setThirdPartyRefundNo(GenerateOrder.generateOrderNo("MOCKRF"));
+        refund.setSuccessTime(now);
+        refund.setNextRetryTime(null);
+        refund.setFailReason(null);
+        refund.setUpdateTime(now);
+
+        log.info("尝试把退款请求标记为成功 {}", refund.getId());
+        paymentRefundMapper.updateById(refund);
+    }
+
+    private void handleRefundSuccess(PaymentRefund refund, LocalDateTime now) {
+        if (refund.getSourceType() == PaymentRefundSourceType.USER_APPLY) {
+            log.info("处理用户申请退款成功 {}", refund.getId());
+            handleUserApplyRefundSuccess(refund, now);
+            return;
+        }
+        if (refund.getSourceType() == PaymentRefundSourceType.DUPLICATE_PAID) {
+            log.info("处理重复支付退款成功 {}", refund.getId());
+            handleDuplicatePaidRefundSuccess(refund, now);
+            return;
+        }
+        if (refund.getSourceType() == PaymentRefundSourceType.LATE_SUCCESS_UNRECOVERABLE) {
+            log.info("处理延迟成功退款成功 {}", refund.getId());
+            handleLateSuccessRefundSuccess(refund, now);
+            return;
+        }
+        throw new IllegalStateException("unsupported refund source type: " + refund.getSourceType());
+    }
+
+    private void handleRefundFailure(PaymentRefund refund, LocalDateTime now, Exception e) {
+        int retryCount = refund.getRetryCount() == null ? 0 : refund.getRetryCount();
+        retryCount++;
+        refund.setRetryCount(retryCount);
+        refund.setFailReason(e.getMessage());
+        refund.setUpdateTime(now);
+        if (retryCount >= (refund.getMaxRetryCount() == null ? 10 : refund.getMaxRetryCount())) {
+            refund.setStatus(PaymentRefundStatus.MANUAL_REVIEW);
+            refund.setCloseTime(now);
+            refund.setNextRetryTime(null);
+        } else {
+            refund.setStatus(PaymentRefundStatus.RETRY);
+            refund.setNextRetryTime(now.plusSeconds(10L * retryCount));
+        }
+        paymentRefundMapper.updateById(refund);
+    }
+
+    private void handleUserApplyRefundSuccess(PaymentRefund refund, LocalDateTime now) {
+        Order order = orderMapper.selectOrderNo(refund.getOrderNo());
+        Payment payment = paymentMapper.selectByPaymentNo(refund.getPaymentNo());
+        if (order == null || payment == null) {
+            throw new IllegalStateException("refund compensation target not found");
+        }
+
+        if (order.getStatus() == OrderStatus.REFUNDED
+                && payment.getStatus() == PaymentStatus.REFUNDED) {
+            return;
+        }
+
+        if (order.getStatus() != OrderStatus.PAID_LOCKED) {
+            throw new IllegalStateException("user apply refund order status invalid: " + order.getStatus());
+        }
+        if (payment.getStatus() != PaymentStatus.PAID) {
+            throw new IllegalStateException("user apply refund payment status invalid: " + payment.getStatus());
+        }
+
+        payment.setStatus(PaymentStatus.REFUNDED);
+        payment.setUpdateTime(now);
+        paymentMapper.updateById(payment);
+
+        order.setStatus(OrderStatus.REFUNDED);
+        order.setCloseTime(now);
+        order.setUpdateTime(now);
+        orderMapper.updateById(order);
+
+        boolean released = houseCommandService.updateHouseStatusWithSync(
+                order.getHouseId(),
+                2,
+                1,
+                "refund-user-apply-release");
+        if (!released) {
+            throw new IllegalStateException("refund user apply release house failed");
+        }
+    }
+
+    private void handleDuplicatePaidRefundSuccess(PaymentRefund refund, LocalDateTime now) {
+        Payment payment = paymentMapper.selectByPaymentNo(refund.getPaymentNo());
+        if (payment == null) {
+            throw new IllegalStateException("duplicate paid refund payment not found");
+        }
+        if (payment.getStatus() == PaymentStatus.REFUNDED) {
+            return;
+        }
+        if (payment.getStatus() != PaymentStatus.DUPLICATE_PAID) {
+            throw new IllegalStateException("duplicate paid refund payment status invalid: " + payment.getStatus());
+        }
+        payment.setStatus(PaymentStatus.REFUNDED);
+        payment.setUpdateTime(now);
+        paymentMapper.updateById(payment);
+    }
+
+    private void handleLateSuccessRefundSuccess(PaymentRefund refund, LocalDateTime now) {
+        Order order = orderMapper.selectOrderNo(refund.getOrderNo());
+        Payment payment = paymentMapper.selectByPaymentNo(refund.getPaymentNo());
+        if (order == null || payment == null) {
+            throw new IllegalStateException("late success refund target not found");
+        }
+        if (payment.getStatus() == PaymentStatus.REFUNDED) {
+            return;
+        }
+        if (order.getStatus() != OrderStatus.CLOSED_TIMEOUT) {
+            throw new IllegalStateException("late success refund order status invalid: " + order.getStatus());
+        }
+        payment.setStatus(PaymentStatus.REFUNDED);
+        payment.setUpdateTime(now);
+        paymentMapper.updateById(payment);
     }
 }

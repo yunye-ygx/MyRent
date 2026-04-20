@@ -113,6 +113,7 @@ public class HouseCommandServiceImpl extends ServiceImpl<HouseMapper, House> imp
             return false;
         }
 
+        log.info("房源状态变更成功，调用ES同步方法，houseId={}", houseId);
         dispatchCoreEvent(houseId, HouseSyncConstants.EVENT_HOUSE_ES_UPSERT, reason);
         return true;
     }
@@ -123,6 +124,8 @@ public class HouseCommandServiceImpl extends ServiceImpl<HouseMapper, House> imp
         context.setEventType(eventType);
         context.setCoreEvent(true);
         context.setReason(reason);
+
+        log.info("开始进行ES同步，houseId={}, eventType={}, reason={}", houseId, eventType, reason);
         houseSyncDispatcher.dispatch(context);
     }
 
@@ -133,6 +136,7 @@ public class HouseCommandServiceImpl extends ServiceImpl<HouseMapper, House> imp
         context.setCoreEvent(false);
         context.setReason(reason);
 
+        log.info("开始进行ES同步，houseId={}, eventType={}, reason={}", houseId, eventType, reason);
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             houseSyncDispatcher.dispatch(context);
             return;
