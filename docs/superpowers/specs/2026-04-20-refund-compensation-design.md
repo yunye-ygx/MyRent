@@ -214,7 +214,7 @@ Recommended short-term handling:
 
 Recommended medium-term direction:
 
-- separate “refund channel success” from “business compensation completed” if retries become ambiguous in practice
+- separate "refund channel success" from "business compensation completed" if retries become ambiguous in practice
 
 This design does not require the medium-term split immediately, but it should not block it.
 
