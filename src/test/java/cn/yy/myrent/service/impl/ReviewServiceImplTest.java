@@ -8,6 +8,8 @@ import cn.yy.myrent.entity.Order;
 import cn.yy.myrent.entity.Review;
 import cn.yy.myrent.mapper.OrderMapper;
 import cn.yy.myrent.mapper.ReviewMapper;
+import cn.yy.myrent.vo.HouseReviewItemVO;
+import cn.yy.myrent.vo.HouseReviewPageVO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -16,8 +18,13 @@ import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -129,5 +136,30 @@ class ReviewServiceImplTest {
             RuntimeException ex = assertThrows(RuntimeException.class, () -> reviewService.updateReview(12L, req));
             assertEquals("review cannot be edited anymore", ex.getMessage());
         }
+    }
+
+    @Test
+    void pageHouseReviewsShouldReturnSummaryAndLatestRecords() {
+        HouseReviewItemVO item = new HouseReviewItemVO();
+        item.setReviewId(21L);
+        item.setOrderNo("ORDER-REVIEW-LIST-1");
+        item.setScore(5);
+        item.setContent("评论列表应返回最新记录。");
+        item.setReviewerName("测试用户");
+        item.setEdited(false);
+        item.setCreateTime(LocalDateTime.of(2026, 4, 21, 11, 0, 0));
+        item.setUpdateTime(LocalDateTime.of(2026, 4, 21, 11, 0, 0));
+
+        when(reviewMapper.avgScoreByHouseId(301L)).thenReturn(4.5D);
+        when(reviewMapper.countByHouseId(301L)).thenReturn(2L);
+        when(reviewMapper.selectLatestByHouseId(301L, 0L, 5L)).thenReturn(List.of(item));
+
+        HouseReviewPageVO result = reviewService.pageHouseReviews(301L, 1, 5);
+
+        assertEquals(4.5D, result.getAverageScore());
+        assertEquals(2L, result.getReviewCount());
+        assertEquals(1, result.getRecords().size());
+        assertNotNull(result.getRecords().get(0).getReviewerName());
+        assertFalse(result.getRecords().get(0).getEdited());
     }
 }

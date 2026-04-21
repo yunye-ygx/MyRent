@@ -9,6 +9,43 @@
         limit 1
     </select>
 
+    <select id="selectByOrderNos" resultType="cn.yy.myrent.entity.Review">
+        select *
+        from review
+        where order_no in
+        <foreach collection="orderNos" item="orderNo" open="(" separator="," close=")">
+            #{orderNo}
+        </foreach>
+    </select>
+
+    <select id="selectLatestByHouseId" resultType="cn.yy.myrent.vo.HouseReviewItemVO">
+        select r.id as reviewId,
+               r.order_no as orderNo,
+               r.score,
+               r.content,
+               coalesce(u.name, '用户') as reviewerName,
+               case when r.edit_count > 0 then true else false end as edited,
+               r.create_time as createTime,
+               r.update_time as updateTime
+        from review r
+        left join user u on u.id = r.user_id
+        where r.house_id = #{houseId}
+        order by r.create_time desc, r.id desc
+        limit #{offset}, #{size}
+    </select>
+
+    <select id="countByHouseId" resultType="java.lang.Long">
+        select count(1)
+        from review
+        where house_id = #{houseId}
+    </select>
+
+    <select id="avgScoreByHouseId" resultType="java.lang.Double">
+        select coalesce(avg(score), 0)
+        from review
+        where house_id = #{houseId}
+    </select>
+
     <update id="updateContentIfEditable">
         update review
         set score = #{score},

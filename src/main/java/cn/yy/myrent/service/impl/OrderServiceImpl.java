@@ -14,7 +14,9 @@ import cn.yy.myrent.entity.LocalTask;
 import cn.yy.myrent.entity.MockPayTrade;
 import cn.yy.myrent.entity.Order;
 import cn.yy.myrent.entity.Payment;
+import cn.yy.myrent.entity.Review;
 import cn.yy.myrent.mapper.OrderMapper;
+import cn.yy.myrent.service.IReviewService;
 import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IHouseService;
 import cn.yy.myrent.service.ILocalTaskService;
@@ -22,6 +24,9 @@ import cn.yy.myrent.service.IMockPayTradeService;
 import cn.yy.myrent.service.IOrderService;
 import cn.yy.myrent.service.IPaymentService;
 import cn.yy.myrent.vo.CreateOrderVO;
+import cn.yy.myrent.vo.MyOrderItemVO;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,6 +44,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -69,6 +75,8 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     private IPaymentService paymentService;
     @Autowired
     private IMockPayTradeService mockPayTradeService;
+    @Autowired
+    private IReviewService reviewService;
 
     private final DefaultRedisScript<Long> lockHouseScript;
 
@@ -217,6 +225,50 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         if (updated <= 0) {
             throw new RuntimeException("order complete failed");
         }
+    }
+
+    @Override
+    public Page<MyOrderItemVO> pageMineOrders(Long userId, long current, long size) {
+        long safeCurrent = Math.max(current, 1L);
+        long safeSize = Math.min(Math.max(size, 1L), 100L);
+
+        Page<Order> page = orderMapper.selectPage(
+                new Page<>(safeCurrent, safeSize),
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getUserId, userId)
+                        .orderByDesc(Order::getCreateTime)
+                        .orderByDesc(Order::getId));
+
+        List<Order> orderRecords = page == null || page.getRecords() == null ? Collections.emptyList() : page.getRecords();
+        List<String> orderNos = orderRecords.stream().map(Order::getOrderNo).toList();
+        Map<String, Review> reviewMap = reviewService.mapByOrderNos(orderNos);
+
+        List<MyOrderItemVO> records = orderRecords.stream().map(order -> {
+            Review review = reviewMap.get(order.getOrderNo());
+            MyOrderItemVO item = new MyOrderItemVO();
+            item.setId(order.getId());
+            item.setOrderNo(order.getOrderNo());
+            item.setHouseId(order.getHouseId());
+            item.setAmount(order.getAmount());
+            item.setStatus(order.getStatus());
+            item.setCreateTime(order.getCreateTime());
+            item.setExpireTime(order.getExpireTime());
+            item.setPaidTime(order.getPaidTime());
+            item.setReviewId(review == null ? null : review.getId());
+            item.setHasReview(review != null);
+            item.setCanComplete(order.getStatus() != null && order.getStatus() == OrderStatus.PAID);
+            item.setCanReview(order.getStatus() != null && order.getStatus() == OrderStatus.COMPLETED);
+            item.setCanEditReview(order.getStatus() != null
+                    && order.getStatus() == OrderStatus.REVIEWED
+                    && review != null
+                    && review.getEditCount() != null
+                    && review.getEditCount() == 0);
+            return item;
+        }).toList();
+
+        Page<MyOrderItemVO> result = new Page<>(safeCurrent, safeSize, page == null ? 0L : page.getTotal());
+        result.setRecords(records);
+        return result;
     }
 
     private String buildOrderLocalTaskPayload(Order order) {
