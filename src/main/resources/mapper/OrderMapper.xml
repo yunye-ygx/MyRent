@@ -25,4 +25,22 @@
         where order_no = #{orderNo}
           and status = 2
     </update>
+
+    <update id="markCompletedIfPaid">
+        update `order`
+        set status = #{targetStatus},
+            update_time = #{updateTime}
+        where order_no = #{orderNo}
+          and user_id = #{userId}
+          and status = #{expectedStatus}
+    </update>
+
+    <update id="markReviewedIfCompleted">
+        update `order`
+        set status = #{targetStatus},
+            update_time = #{updateTime}
+        where order_no = #{orderNo}
+          and user_id = #{userId}
+          and status = #{expectedStatus}
+    </update>
 </mapper>

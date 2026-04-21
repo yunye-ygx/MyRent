@@ -6,6 +6,7 @@ import cn.yy.myrent.dto.LockHouseReqDTO;
 import cn.yy.myrent.entity.Order;
 import cn.yy.myrent.service.IOrderService;
 import cn.yy.myrent.vo.CreateOrderVO;
+import cn.yy.myrent.vo.MyOrderItemVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.extern.slf4j.Slf4j;
@@ -64,6 +65,23 @@ public class OrderController {
         }
     }
 
+    @PostMapping("/{orderNo}/complete")
+    @Operation(summary = "complete a paid order")
+    public ResponseEntity<Result<Void>> complete(@PathVariable String orderNo) {
+        try {
+            orderService.completeOrder(orderNo);
+            return ResponseEntity.ok(Result.success());
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Result.error(401, e.getMessage()));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Result.error(e.getMessage()));
+        } catch (Exception e) {
+            log.error("complete order failed, orderNo={}", orderNo, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Result.error("system busy, please retry later"));
+        }
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "query order by id")
     public Result<Order> getById(@PathVariable("id") Long id) {
@@ -89,22 +107,14 @@ public class OrderController {
 
     @GetMapping("/mine")
     @Operation(summary = "query current user orders")
-    public Result<Page<Order>> mine(
+    public Result<Page<MyOrderItemVO>> mine(
             @RequestParam(value = "current", defaultValue = "1") Long current,
             @RequestParam(value = "size", defaultValue = "10") Long size) {
         Long userId = UserContext.getCurrentUserId();
         if (userId == null) {
             return Result.error(401, "please login first");
         }
-
-        long safeCurrent = Math.max(current, 1L);
-        long safeSize = Math.min(Math.max(size, 1L), 100L);
-        Page<Order> page = orderService.lambdaQuery()
-                .eq(Order::getUserId, userId)
-                .orderByDesc(Order::getCreateTime)
-                .orderByDesc(Order::getId)
-                .page(new Page<>(safeCurrent, safeSize));
-        return Result.success(page);
+        return Result.success(orderService.pageMineOrders(userId, current, size));
     }
 
     @PostMapping

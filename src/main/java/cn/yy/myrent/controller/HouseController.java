@@ -7,8 +7,10 @@ import cn.yy.myrent.dto.SmartGuideReqDTO;
 import cn.yy.myrent.entity.House;
 import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IHouseService;
+import cn.yy.myrent.service.IReviewService;
 import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.sync.house.service.HouseEsSyncService;
+import cn.yy.myrent.vo.HouseReviewPageVO;
 import cn.yy.myrent.vo.HouseSearchResultVO;
 import cn.yy.myrent.vo.SmartGuideResultVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -36,6 +38,7 @@ public class HouseController {
 
     private final IHouseService houseService;
     private final IHouseCommandService houseCommandService;
+    private final IReviewService reviewService;
     private final HouseEsSyncService houseEsSyncService;
     private final HouseHotService houseHotService;
 
@@ -78,6 +81,14 @@ public class HouseController {
             return Result.error("房源不存在");
         }
         return Result.success(house);
+    }
+
+    @GetMapping("/{houseId}/reviews")
+    @Operation(summary = "查询房源评论列表")
+    public Result<HouseReviewPageVO> reviews(@PathVariable Long houseId,
+                                             @RequestParam(value = "current", defaultValue = "1") Long current,
+                                             @RequestParam(value = "size", defaultValue = "5") Long size) {
+        return Result.success(reviewService.pageHouseReviews(houseId, current, size));
     }
 
     @GetMapping("/page")

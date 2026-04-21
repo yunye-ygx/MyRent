@@ -12,6 +12,7 @@ import cn.yy.myrent.mapper.OrderMapper;
 import cn.yy.myrent.mapper.PaymentMapper;
 import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IMockPayTradeService;
+import cn.yy.myrent.service.IPaymentRefundService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -57,6 +58,9 @@ class PaymentServiceImplTest {
 
     @Mock
     private IMockPayTradeService mockPayTradeService;
+
+    @Mock
+    private IPaymentRefundService paymentRefundService;
 
     @InjectMocks
     private PaymentServiceImpl paymentService;

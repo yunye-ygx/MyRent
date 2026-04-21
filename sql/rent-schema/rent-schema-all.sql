@@ -119,7 +119,7 @@ CREATE TABLE `order` (
   `user_id` bigint NOT NULL COMMENT 'renter user id',
   `house_id` bigint NOT NULL COMMENT 'house id',
   `amount` int NOT NULL COMMENT 'deposit amount in cents',
-  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0 unpaid, 1 paid locked, 2 timeout closed, 3 user cancelled',
+  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0未支付，1已支付，2超时关闭，3用户取消，4已退款，5已完成，6已评价',
   `expire_time` datetime NOT NULL COMMENT 'payment expire time',
   `paid_time` datetime DEFAULT NULL COMMENT 'payment success time',
   `success_payment_no` varchar(64) DEFAULT NULL COMMENT 'final successful payment no',

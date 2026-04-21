@@ -20,6 +20,25 @@
             later tasks finish the payment closed loop.
           </p>
         </section>
+
+        <section class="reviews app-surface">
+          <p class="eyebrow">Reviews</p>
+          <div class="review-meta">
+            <strong>{{ Number(reviewSummary.averageScore || 0).toFixed(1) }}</strong>
+            <span>{{ reviewSummary.reviewCount || 0 }} 条评价</span>
+          </div>
+          <ul v-if="reviewSummary.records?.length" class="review-list">
+            <li v-for="item in reviewSummary.records" :key="item.reviewId" class="review-item">
+              <div class="review-head">
+                <span>{{ item.reviewerName }}</span>
+                <span>{{ item.score }} 星</span>
+              </div>
+              <p>{{ item.content }}</p>
+            </li>
+          </ul>
+          <p v-else class="copy">当前还没有评价，完成订单后的租客可以在“我的订单”中提交评价。</p>
+        </section>
+
         <HouseActionBar
           :favorite-loading="favoriteLoading"
           :favorite-button-text="favoriteButtonText"
@@ -49,6 +68,7 @@ import {
   favoriteHouse,
   fetchHouseById,
   fetchHouseFavoriteStatus,
+  fetchHouseReviews,
   unfavoriteHouse
 } from '@/api/house'
 import { createOrder } from '@/api/order'
@@ -73,6 +93,11 @@ const publisher = ref(null)
 const favoriteStatus = ref({
   favorited: false,
   favoriteCount: 0
+})
+const reviewSummary = ref({
+  averageScore: 0,
+  reviewCount: 0,
+  records: []
 })
 
 const statusText = computed(() => getHouseStatusText(house.value?.status))
@@ -134,18 +159,47 @@ async function loadFavoriteStatus() {
   }
 }
 
+async function loadReviews() {
+  if (!route.params.id) {
+    reviewSummary.value = {
+      averageScore: 0,
+      reviewCount: 0,
+      records: []
+    }
+    return
+  }
+
+  try {
+    reviewSummary.value = await fetchHouseReviews(route.params.id, { current: 1, size: 5 })
+  } catch {
+    reviewSummary.value = {
+      averageScore: 0,
+      reviewCount: 0,
+      records: []
+    }
+  }
+}
+
 async function loadHouse() {
   loading.value = true
   error.value = ''
 
   try {
     house.value = await fetchHouseById(route.params.id)
-    await loadPublisher()
-    await loadFavoriteStatus()
+    await Promise.all([
+      loadPublisher(),
+      loadFavoriteStatus(),
+      loadReviews()
+    ])
   } catch (err) {
     error.value = formatRequestError(err, 'House detail is temporarily unavailable.')
     house.value = null
     publisher.value = null
+    reviewSummary.value = {
+      averageScore: 0,
+      reviewCount: 0,
+      records: []
+    }
   } finally {
     loading.value = false
   }
@@ -261,7 +315,8 @@ watch(
   gap: 20px;
 }
 
-.notes {
+.notes,
+.reviews {
   padding: 24px;
 }
 
@@ -280,9 +335,57 @@ watch(
   color: var(--color-text-muted);
 }
 
+.review-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 16px;
+  color: #111827;
+}
+
+.review-meta strong {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.review-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.review-item {
+  padding-top: 14px;
+  border-top: 1px solid rgba(17, 24, 39, 0.08);
+}
+
+.review-item:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.review-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.review-item p {
+  margin: 0;
+  color: #4b5563;
+  line-height: 1.7;
+}
+
 @media (min-width: 1024px) {
   .detail-grid {
-    grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(320px, 0.8fr);
     align-items: start;
   }
 }

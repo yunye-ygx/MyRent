@@ -12,6 +12,10 @@ export function fetchHouseById(id) {
   return http.get(`/house/${id}`)
 }
 
+export function fetchHouseReviews(id, params = {}) {
+  return http.get(`/house/${id}/reviews`, { params })
+}
+
 export function searchNearbyHouse(payload) {
   return http.post('/house/nearby', payload)
 }

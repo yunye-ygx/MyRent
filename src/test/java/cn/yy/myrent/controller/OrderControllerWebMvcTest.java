@@ -10,6 +10,8 @@ import cn.yy.myrent.mapper.LocationDictMapper;
 import cn.yy.myrent.mapper.MockPayTradeMapper;
 import cn.yy.myrent.mapper.OrderMapper;
 import cn.yy.myrent.mapper.PaymentMapper;
+import cn.yy.myrent.mapper.PaymentRefundMapper;
+import cn.yy.myrent.mapper.ReviewMapper;
 import cn.yy.myrent.mapper.UserMapper;
 import cn.yy.myrent.service.IOrderService;
 import cn.yy.myrent.vo.CreateOrderVO;
@@ -71,6 +73,12 @@ class OrderControllerWebMvcTest {
 
     @MockBean
     private PaymentMapper paymentMapper;
+
+    @MockBean
+    private PaymentRefundMapper paymentRefundMapper;
+
+    @MockBean
+    private ReviewMapper reviewMapper;
 
     @MockBean
     private UserMapper userMapper;
