@@ -54,6 +54,11 @@ const routes = [
         component: () => import('@/views/mine/MineOrderView.vue')
       },
       {
+        path: 'mine/orders/:orderNo/review',
+        name: 'mine-order-review',
+        component: () => import('@/views/mine/MineOrderReviewView.vue')
+      },
+      {
         path: 'mine/consults',
         name: 'mine-consults',
         component: () => import('@/views/mine/MineConsultView.vue')
