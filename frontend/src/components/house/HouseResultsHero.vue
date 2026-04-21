@@ -7,13 +7,10 @@
     </div>
     <div class="search-box">
       <div class="search-row">
-        <input
-          v-model.trim="keyword"
-          class="input"
-          placeholder="输入地点，切换到附近房源"
-          @keyup.enter="emitSearch"
+        <HouseSuggestField
+          @search="emit('search', $event)"
+          @suggestion-select="emit('suggestion-select', $event)"
         />
-        <button class="primary-btn" @click="emitSearch">搜索</button>
       </div>
       <button v-if="isNearbyMode" class="ghost-btn reset-btn" @click="$emit('reset')">回到精选推荐</button>
     </div>
@@ -21,7 +18,8 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
+import HouseSuggestField from '@/components/HouseSuggestField.vue'
 
 const props = defineProps({
   title: {
@@ -38,18 +36,13 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['search', 'reset'])
-const keyword = ref('')
+const emit = defineEmits(['search', 'reset', 'suggestion-select'])
 
 const defaultTip = computed(() => (
   props.isNearbyMode
     ? '已切换到附近房源模式。'
     : '默认展示热门精选，可继续按地点缩小范围。'
 ))
-
-function emitSearch() {
-  emit('search', keyword.value)
-}
 </script>
 
 <style scoped>
