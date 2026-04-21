@@ -13,6 +13,22 @@ vi.mock('@/api/house', () => ({
     publisherUserId: 9
   }),
   fetchHouseFavoriteStatus: vi.fn().mockResolvedValue({ favorited: false, favoriteCount: 3 }),
+  fetchHouseReviews: vi.fn().mockResolvedValue({
+    averageScore: 4.5,
+    reviewCount: 2,
+    records: [
+      {
+        reviewId: 11,
+        orderNo: 'ORDER-1001',
+        score: 5,
+        content: '房间采光不错。',
+        reviewerName: '测试用户A',
+        edited: false,
+        createTime: '2026-04-21T10:00:00',
+        updateTime: '2026-04-21T10:00:00'
+      }
+    ]
+  }),
   favoriteHouse: vi.fn(),
   unfavoriteHouse: vi.fn()
 }))
@@ -48,7 +64,7 @@ describe('HouseDetailView', () => {
     window.location = originalLocation
   })
 
-  it('shows the redesigned detail summary and primary action', async () => {
+  it('shows the redesigned detail summary and review block', async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [{ path: '/house/:id', component: HouseDetailView }]
@@ -68,6 +84,9 @@ describe('HouseDetailView', () => {
     expect(wrapper.text()).toContain('天河区一居室')
     expect(wrapper.text()).toContain('提交定金')
     expect(wrapper.text()).toContain('房东 A')
+    expect(wrapper.text()).toContain('4.5')
+    expect(wrapper.text()).toContain('2 条评价')
+    expect(wrapper.text()).toContain('房间采光不错。')
   })
 
   it('redirects to mock checkout after creating an order', async () => {
