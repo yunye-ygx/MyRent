@@ -195,6 +195,30 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         return buildCreateOrderVO(orderNo, payment.getPaymentNo(), order.getExpireTime());
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void completeOrder(String orderNo) {
+        Long currentUserId = UserContext.requireCurrentUserId();
+        Order order = orderMapper.selectOrderNo(orderNo);
+        if (order == null || !currentUserId.equals(order.getUserId())) {
+            throw new RuntimeException("order not found");
+        }
+        if (order.getStatus() == null || order.getStatus() != OrderStatus.PAID) {
+            throw new RuntimeException("order is not completable");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        int updated = orderMapper.markCompletedIfPaid(
+                orderNo,
+                currentUserId,
+                OrderStatus.PAID,
+                OrderStatus.COMPLETED,
+                now);
+        if (updated <= 0) {
+            throw new RuntimeException("order complete failed");
+        }
+    }
+
     private String buildOrderLocalTaskPayload(Order order) {
         try {
             Map<String, Object> payload = new LinkedHashMap<>();

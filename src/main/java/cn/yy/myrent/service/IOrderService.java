@@ -10,4 +10,6 @@ public interface IOrderService extends IService<Order> {
     CreateOrderVO createOrder(LockHouseReqDTO lockHouse);
 
     CreateOrderVO repay(String orderNo);
+
+    void completeOrder(String orderNo);
 }

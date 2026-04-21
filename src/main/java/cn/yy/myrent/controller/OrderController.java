@@ -64,6 +64,23 @@ public class OrderController {
         }
     }
 
+    @PostMapping("/{orderNo}/complete")
+    @Operation(summary = "complete a paid order")
+    public ResponseEntity<Result<Void>> complete(@PathVariable String orderNo) {
+        try {
+            orderService.completeOrder(orderNo);
+            return ResponseEntity.ok(Result.success());
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Result.error(401, e.getMessage()));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Result.error(e.getMessage()));
+        } catch (Exception e) {
+            log.error("complete order failed, orderNo={}", orderNo, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Result.error("system busy, please retry later"));
+        }
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "query order by id")
     public Result<Order> getById(@PathVariable("id") Long id) {
