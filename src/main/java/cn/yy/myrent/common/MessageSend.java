@@ -130,6 +130,7 @@ public class MessageSend {
             return;
         }
 
+        log.info("这次要处理的本地任务，没有被定时任务处理，messageId={}", messageId);
         dispatchTask(task);
     }
 
@@ -194,6 +195,9 @@ public class MessageSend {
     private void sendTaskToMq(LocalTask task) {
         if (LOCAL_TASK_BIZ_TYPE_ORDER.equals(task.getBizType())
                 && LOCAL_TASK_EVENT_ORDER_TIMEOUT_RELEASE.equals(task.getEventType())) {
+            log.info("此次任务是订单超时释放，messageId={}, bizId={}",
+                    task.getMessageId(),
+                    task.getBizId());
             sendOrderTimeoutTask(task);
             return;
         }

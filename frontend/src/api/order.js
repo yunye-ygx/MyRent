@@ -12,6 +12,10 @@ export function fetchMyOrderPage(params = {}) {
   return http.get('/order/mine', { params })
 }
 
+export function completeOrder(orderNo) {
+  return http.post(`/order/${orderNo}/complete`)
+}
+
 export function repayOrder(orderNo) {
   return http.post(`/order/${orderNo}/repay`)
 }

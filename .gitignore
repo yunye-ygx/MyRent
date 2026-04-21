@@ -62,6 +62,7 @@ tools/skywalking-agent/
 tools/_tmp/
 runtime-logs/
 runtime-logs/skywalking-agent/
+.worktrees/
 
 # Frontend dependency and build outputs
 frontend/node_modules/

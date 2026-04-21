@@ -37,6 +37,28 @@
           继续支付
         </button>
         <button
+          v-if="canCompleteOrder(order)"
+          class="ghost-btn"
+          :disabled="completingOrderNo === order.orderNo"
+          @click="submitComplete(order)"
+        >
+          完成订单
+        </button>
+        <button
+          v-if="canReviewOrder(order)"
+          class="primary-btn"
+          @click="goReview(order)"
+        >
+          去评价
+        </button>
+        <button
+          v-if="order.canEditReview"
+          class="ghost-btn"
+          @click="goEditReview(order)"
+        >
+          修改评价
+        </button>
+        <button
           v-if="canRequestRefund(order)"
           class="ghost-btn refund-btn"
           :disabled="refundingOrderNo === order.orderNo"
@@ -67,11 +89,11 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchHouseById } from '@/api/house'
-import { fetchMyOrderPage, repayOrder } from '@/api/order'
+import { completeOrder, fetchMyOrderPage, repayOrder } from '@/api/order'
 import { applyPaymentRefund, fetchOrderRefundStatuses } from '@/api/payment'
 import EmptyState from '@/components/EmptyState.vue'
 import LoadingState from '@/components/LoadingState.vue'
-import { formatDateTime, formatPrice } from '@/utils/format'
+import { formatDateTime, formatPrice, formatRequestError, getOrderStatusText } from '@/utils/format'
 
 const router = useRouter()
 
@@ -82,16 +104,9 @@ const current = ref(1)
 const size = 10
 const hasMore = ref(true)
 const refundingOrderNo = ref('')
+const completingOrderNo = ref('')
 
 const houseCache = new Map()
-
-function getOrderStatusText(status) {
-  if (status === 0) return '待支付'
-  if (status === 1) return '已支付'
-  if (status === 2) return '超时关闭'
-  if (status === 3) return '已取消'
-  return '未知状态'
-}
 
 async function attachHouseTitle(records = []) {
   if (!records.length) {
@@ -166,7 +181,7 @@ async function loadOrders(reset = false) {
     hasMore.value = current.value * size < total
     current.value += 1
   } catch (err) {
-    error.value = err?.message || '加载订单失败'
+    error.value = formatRequestError(err, '加载订单失败')
     if (reset) {
       orders.value = []
     }
@@ -183,6 +198,17 @@ function goDetail(houseId) {
   router.push(`/house/${houseId}`)
 }
 
+function goReview(order) {
+  router.push(`/mine/orders/${order.orderNo}/review`)
+}
+
+function goEditReview(order) {
+  router.push({
+    path: `/mine/orders/${order.orderNo}/review`,
+    query: { reviewId: String(order.reviewId || '') }
+  })
+}
+
 async function continuePay(orderNo) {
   try {
     const result = await repayOrder(orderNo)
@@ -190,12 +216,24 @@ async function continuePay(orderNo) {
       window.location.assign(result.mockPayUrl)
     }
   } catch (err) {
-    error.value = err?.message || '继续支付失败'
+    error.value = formatRequestError(err, '继续支付失败')
   }
 }
 
 function canRequestRefund(order) {
   return order.status === 1 && order.latestRefundStatus === null
+}
+
+function isRefundBlockingStatus(status) {
+  return status === 0 || status === 1 || status === 2 || status === 3 || status === 5
+}
+
+function canCompleteOrder(order) {
+  return Boolean(order?.canComplete) && !isRefundBlockingStatus(order?.latestRefundStatus)
+}
+
+function canReviewOrder(order) {
+  return Boolean(order?.canReview) && !isRefundBlockingStatus(order?.latestRefundStatus)
 }
 
 function getRefundStatusText(status) {
@@ -231,9 +269,25 @@ async function submitRefund(order) {
       }
     })
   } catch (err) {
-    error.value = err?.message || '申请退款失败'
+    error.value = formatRequestError(err, '申请退款失败')
   } finally {
     refundingOrderNo.value = ''
+  }
+}
+
+async function submitComplete(order) {
+  if (!order?.orderNo || completingOrderNo.value) {
+    return
+  }
+
+  completingOrderNo.value = order.orderNo
+  try {
+    await completeOrder(order.orderNo)
+    await loadOrders(true)
+  } catch (err) {
+    error.value = formatRequestError(err, '完成订单失败')
+  } finally {
+    completingOrderNo.value = ''
   }
 }
 
@@ -304,6 +358,7 @@ onMounted(() => {
 .order-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
@@ -325,7 +380,8 @@ onMounted(() => {
   color: #15803d;
 }
 
-.status-2 {
+.status-2,
+.status-4 {
   background: #f3f4f6;
   color: #6b7280;
 }
@@ -333,6 +389,16 @@ onMounted(() => {
 .status-3 {
   background: #fee2e2;
   color: #b91c1c;
+}
+
+.status-5 {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.status-6 {
+  background: #ede9fe;
+  color: #6d28d9;
 }
 
 .load-more {

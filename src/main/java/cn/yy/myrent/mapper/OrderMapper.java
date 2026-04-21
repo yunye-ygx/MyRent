@@ -27,4 +27,16 @@ public interface OrderMapper extends BaseMapper<Order> {
                                      @Param("paidTime") LocalDateTime paidTime,
                                      @Param("successPaymentNo") String successPaymentNo,
                                      @Param("updateTime") LocalDateTime updateTime);
+
+    int markCompletedIfPaid(@Param("orderNo") String orderNo,
+                            @Param("userId") Long userId,
+                            @Param("expectedStatus") Integer expectedStatus,
+                            @Param("targetStatus") Integer targetStatus,
+                            @Param("updateTime") LocalDateTime updateTime);
+
+    int markReviewedIfCompleted(@Param("orderNo") String orderNo,
+                                @Param("userId") Long userId,
+                                @Param("expectedStatus") Integer expectedStatus,
+                                @Param("targetStatus") Integer targetStatus,
+                                @Param("updateTime") LocalDateTime updateTime);
 }

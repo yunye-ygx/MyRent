@@ -74,3 +74,14 @@ export function formatRequestError(error, fallback = '请求失败，请稍后�
   }
   return rawMessage
 }
+
+export function getOrderStatusText(status) {
+  if (status === 0) return '待支付'
+  if (status === 1) return '已支付'
+  if (status === 2) return '超时关闭'
+  if (status === 3) return '已取消'
+  if (status === 4) return '已退款'
+  if (status === 5) return '已完成'
+  if (status === 6) return '已评价'
+  return '未知状态'
+}

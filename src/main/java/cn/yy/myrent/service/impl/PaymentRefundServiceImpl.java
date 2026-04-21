@@ -173,7 +173,7 @@ public class PaymentRefundServiceImpl extends ServiceImpl<PaymentRefundMapper, P
         }
 
         if (command.getSourceType() == PaymentRefundSourceType.USER_APPLY) {
-            if (order.getStatus() != OrderStatus.PAID_LOCKED
+            if (order.getStatus() != OrderStatus.PAID
                     || payment.getStatus() == null
                     || payment.getStatus() != PaymentStatus.PAID
                     || !payment.getPaymentNo().equals(order.getSuccessPaymentNo())) {

@@ -10,9 +10,12 @@ import cn.yy.myrent.mapper.LocationDictMapper;
 import cn.yy.myrent.mapper.MockPayTradeMapper;
 import cn.yy.myrent.mapper.OrderMapper;
 import cn.yy.myrent.mapper.PaymentMapper;
+import cn.yy.myrent.mapper.PaymentRefundMapper;
+import cn.yy.myrent.mapper.ReviewMapper;
 import cn.yy.myrent.mapper.UserMapper;
 import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IHouseService;
+import cn.yy.myrent.service.IReviewService;
 import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.sync.house.service.HouseEsSyncService;
 import org.junit.jupiter.api.Test;
@@ -38,6 +41,9 @@ class HouseControllerWebMvcTest {
 
     @MockBean
     private IHouseCommandService houseCommandService;
+
+    @MockBean
+    private IReviewService reviewService;
 
     @MockBean
     private HouseEsSyncService houseEsSyncService;
@@ -74,6 +80,12 @@ class HouseControllerWebMvcTest {
 
     @MockBean
     private PaymentMapper paymentMapper;
+
+    @MockBean
+    private PaymentRefundMapper paymentRefundMapper;
+
+    @MockBean
+    private ReviewMapper reviewMapper;
 
     @MockBean
     private UserMapper userMapper;

@@ -6,6 +6,7 @@ import cn.yy.myrent.common.MessageSend;
 import cn.yy.myrent.common.MockPayCallbackStatus;
 import cn.yy.myrent.common.MockPayTradeStatus;
 import cn.yy.myrent.common.OrderStatus;
+import cn.yy.myrent.common.PaymentRefundStatus;
 import cn.yy.myrent.common.PaymentStatus;
 import cn.yy.myrent.common.UserContext;
 import cn.yy.myrent.dto.LockHouseReqDTO;
@@ -14,7 +15,11 @@ import cn.yy.myrent.entity.LocalTask;
 import cn.yy.myrent.entity.MockPayTrade;
 import cn.yy.myrent.entity.Order;
 import cn.yy.myrent.entity.Payment;
+import cn.yy.myrent.entity.PaymentRefund;
+import cn.yy.myrent.entity.Review;
 import cn.yy.myrent.mapper.OrderMapper;
+import cn.yy.myrent.mapper.PaymentRefundMapper;
+import cn.yy.myrent.service.IReviewService;
 import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IHouseService;
 import cn.yy.myrent.service.ILocalTaskService;
@@ -22,6 +27,9 @@ import cn.yy.myrent.service.IMockPayTradeService;
 import cn.yy.myrent.service.IOrderService;
 import cn.yy.myrent.service.IPaymentService;
 import cn.yy.myrent.vo.CreateOrderVO;
+import cn.yy.myrent.vo.MyOrderItemVO;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,6 +47,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -69,6 +78,10 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     private IPaymentService paymentService;
     @Autowired
     private IMockPayTradeService mockPayTradeService;
+    @Autowired
+    private IReviewService reviewService;
+    @Autowired
+    private PaymentRefundMapper paymentRefundMapper;
 
     private final DefaultRedisScript<Long> lockHouseScript;
 
@@ -193,6 +206,129 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         paymentService.save(payment);
         mockPayTradeService.save(buildMockTrade(payment, now));
         return buildCreateOrderVO(orderNo, payment.getPaymentNo(), order.getExpireTime());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void completeOrder(String orderNo) {
+        Long currentUserId = UserContext.requireCurrentUserId();
+        Order order = orderMapper.selectOrderNo(orderNo);
+        if (order == null || !currentUserId.equals(order.getUserId())) {
+            throw new RuntimeException("order not found");
+        }
+        if (order.getStatus() == null || order.getStatus() != OrderStatus.PAID) {
+            throw new RuntimeException("order is not completable");
+        }
+        if (hasBlockingRefund(currentUserId, orderNo)) {
+            throw new RuntimeException("order is not completable");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        int updated = orderMapper.markCompletedIfPaid(
+                orderNo,
+                currentUserId,
+                OrderStatus.PAID,
+                OrderStatus.COMPLETED,
+                now);
+        if (updated <= 0) {
+            throw new RuntimeException("order complete failed");
+        }
+    }
+
+    @Override
+    public Page<MyOrderItemVO> pageMineOrders(Long userId, long current, long size) {
+        long safeCurrent = Math.max(current, 1L);
+        long safeSize = Math.min(Math.max(size, 1L), 100L);
+
+        Page<Order> page = orderMapper.selectPage(
+                new Page<>(safeCurrent, safeSize),
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getUserId, userId)
+                        .orderByDesc(Order::getCreateTime)
+                        .orderByDesc(Order::getId));
+
+        List<Order> orderRecords = page == null || page.getRecords() == null ? Collections.emptyList() : page.getRecords();
+        List<String> orderNos = orderRecords.stream().map(Order::getOrderNo).toList();
+        Map<String, Review> reviewMap = reviewService.mapByOrderNos(orderNos);
+        Map<String, PaymentRefund> latestRefundMap = mapLatestRefundByOrderNo(userId, orderNos);
+
+        List<MyOrderItemVO> records = orderRecords.stream().map(order -> {
+            Review review = reviewMap.get(order.getOrderNo());
+            PaymentRefund latestRefund = latestRefundMap.get(order.getOrderNo());
+            boolean refundBlocking = isRefundBlocking(latestRefund == null ? null : latestRefund.getStatus());
+            MyOrderItemVO item = new MyOrderItemVO();
+            item.setId(order.getId());
+            item.setOrderNo(order.getOrderNo());
+            item.setHouseId(order.getHouseId());
+            item.setAmount(order.getAmount());
+            item.setStatus(order.getStatus());
+            item.setCreateTime(order.getCreateTime());
+            item.setExpireTime(order.getExpireTime());
+            item.setPaidTime(order.getPaidTime());
+            item.setReviewId(review == null ? null : review.getId());
+            item.setHasReview(review != null);
+            item.setCanComplete(order.getStatus() != null
+                    && order.getStatus() == OrderStatus.PAID
+                    && !refundBlocking);
+            item.setCanReview(order.getStatus() != null
+                    && order.getStatus() == OrderStatus.COMPLETED
+                    && !refundBlocking);
+            item.setCanEditReview(order.getStatus() != null
+                    && order.getStatus() == OrderStatus.REVIEWED
+                    && !refundBlocking
+                    && review != null
+                    && review.getEditCount() != null
+                    && review.getEditCount() == 0);
+            return item;
+        }).toList();
+
+        Page<MyOrderItemVO> result = new Page<>(safeCurrent, safeSize, page == null ? 0L : page.getTotal());
+        result.setRecords(records);
+        return result;
+    }
+
+    private boolean hasBlockingRefund(Long userId, String orderNo) {
+        return isRefundBlocking(resolveLatestRefundStatus(userId, orderNo));
+    }
+
+    private Integer resolveLatestRefundStatus(Long userId, String orderNo) {
+        if (userId == null || orderNo == null || orderNo.isBlank()) {
+            return null;
+        }
+        List<PaymentRefund> refunds = paymentRefundMapper.selectByUserIdAndOrderNos(userId, List.of(orderNo));
+        if (refunds == null || refunds.isEmpty() || refunds.get(0) == null) {
+            return null;
+        }
+        return refunds.get(0).getStatus();
+    }
+
+    private Map<String, PaymentRefund> mapLatestRefundByOrderNo(Long userId, List<String> orderNos) {
+        if (userId == null || orderNos == null || orderNos.isEmpty()) {
+            return Map.of();
+        }
+        List<PaymentRefund> refunds = paymentRefundMapper.selectByUserIdAndOrderNos(userId, orderNos);
+        if (refunds == null || refunds.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, PaymentRefund> latest = new LinkedHashMap<>();
+        for (PaymentRefund refund : refunds) {
+            if (refund == null || refund.getOrderNo() == null || latest.containsKey(refund.getOrderNo())) {
+                continue;
+            }
+            latest.put(refund.getOrderNo(), refund);
+        }
+        return latest;
+    }
+
+    private boolean isRefundBlocking(Integer refundStatus) {
+        if (refundStatus == null) {
+            return false;
+        }
+        return refundStatus == PaymentRefundStatus.PENDING
+                || refundStatus == PaymentRefundStatus.PROCESSING
+                || refundStatus == PaymentRefundStatus.SUCCESS
+                || refundStatus == PaymentRefundStatus.RETRY
+                || refundStatus == PaymentRefundStatus.MANUAL_REVIEW;
     }
 
     private String buildOrderLocalTaskPayload(Order order) {

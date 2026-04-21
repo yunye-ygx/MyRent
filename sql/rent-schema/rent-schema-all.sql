@@ -119,7 +119,7 @@ CREATE TABLE `order` (
   `user_id` bigint NOT NULL COMMENT 'renter user id',
   `house_id` bigint NOT NULL COMMENT 'house id',
   `amount` int NOT NULL COMMENT 'deposit amount in cents',
-  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0 unpaid, 1 paid locked, 2 timeout closed, 3 user cancelled',
+  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0未支付，1已支付，2超时关闭，3用户取消，4已退款，5已完成，6已评价',
   `expire_time` datetime NOT NULL COMMENT 'payment expire time',
   `paid_time` datetime DEFAULT NULL COMMENT 'payment success time',
   `success_payment_no` varchar(64) DEFAULT NULL COMMENT 'final successful payment no',
@@ -160,6 +160,26 @@ CREATE TABLE `payment` (
   KEY `idx_payment_status` (`status`),
   KEY `idx_payment_expire_time` (`expire_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='payment record';
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `review`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `review` (
+  `id` bigint NOT NULL COMMENT '评论ID',
+  `order_id` bigint NOT NULL COMMENT '订单ID',
+  `order_no` varchar(64) NOT NULL COMMENT '订单编号，每个订单只能评价一次',
+  `house_id` bigint NOT NULL COMMENT '房源ID',
+  `user_id` bigint NOT NULL COMMENT '评价用户ID',
+  `score` tinyint NOT NULL COMMENT '评分，范围1-5',
+  `content` text NOT NULL COMMENT '评价内容',
+  `edit_count` tinyint NOT NULL DEFAULT '0' COMMENT '已修改次数，第一版最多允许修改1次',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_review_order_no` (`order_no`),
+  KEY `idx_review_house_id_create_time` (`house_id`,`create_time`),
+  KEY `idx_review_user_id` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='房源评价表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `mock_pay_trade`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
