@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.yy.myrent.mapper.ReviewMapper">
+
+    <select id="selectByOrderNo" resultType="cn.yy.myrent.entity.Review">
+        select *
+        from review
+        where order_no = #{orderNo}
+        limit 1
+    </select>
+
+    <update id="updateContentIfEditable">
+        update review
+        set score = #{score},
+            content = #{content},
+            edit_count = edit_count + 1,
+            update_time = #{updateTime}
+        where id = #{id}
+          and user_id = #{userId}
+          and edit_count = 0
+    </update>
+</mapper>
