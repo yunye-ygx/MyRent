@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import MineOrderView from '@/views/mine/MineOrderView.vue'
 import { repayOrder } from '@/api/order'
@@ -28,6 +28,15 @@ vi.mock('@/api/house', () => ({
   fetchHouseById: vi.fn(async () => ({ id: 101, title: 'Test House' }))
 }))
 
+vi.mock('@/api/payment', () => ({
+  applyPaymentRefund: vi.fn(async () => ({
+    refundNo: 'REF-1001',
+    status: 0,
+    reasonCode: 'USER_APPLY'
+  })),
+  fetchOrderRefundStatuses: vi.fn(async () => [])
+}))
+
 describe('MineOrderView', () => {
   const originalLocation = window.location
 
@@ -55,13 +64,13 @@ describe('MineOrderView', () => {
       global: { plugins: [router] }
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await flushPromises()
     expect(wrapper.text()).toContain('ORDER-1001')
 
     const continueButton = wrapper.find('button.primary-btn')
     expect(continueButton.exists()).toBe(true)
     await continueButton.trigger('click')
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await flushPromises()
 
     expect(repayOrder).toHaveBeenCalledWith('ORDER-1001')
     expect(window.location.assign).toHaveBeenCalledWith('/mock-pay/checkout?paymentNo=PAY-1001')
