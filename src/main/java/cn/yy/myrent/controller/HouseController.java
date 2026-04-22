@@ -89,6 +89,7 @@ public class HouseController {
         }
         Long currentUserId = UserContext.getCurrentUserId();
         if (currentUserId != null) {
+            log.info("记录当前用户浏览房源 {}", id);
             houseHistoryService.recordBrowse(id, currentUserId);
         }
         return Result.success(house);
