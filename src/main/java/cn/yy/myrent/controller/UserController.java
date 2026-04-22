@@ -1,8 +1,10 @@
 package cn.yy.myrent.controller;
 
-import cn.yy.myrent.common.Result;
 import cn.yy.myrent.common.JwtTokenUtil;
+import cn.yy.myrent.common.Result;
+import cn.yy.myrent.common.UserContext;
 import cn.yy.myrent.dto.UserPhoneReqDTO;
+import cn.yy.myrent.dto.UserProfileUpdateReqDTO;
 import cn.yy.myrent.entity.User;
 import cn.yy.myrent.service.IUserService;
 import cn.yy.myrent.vo.LoginVO;
@@ -64,15 +66,40 @@ public class UserController {
         }
     }
 
+    @GetMapping("/me")
+    @Operation(summary = "获取当前登录用户资料")
+    public Result<User> getCurrentUserProfile() {
+        try {
+            Long userId = UserContext.requireCurrentUserId();
+            return Result.success(userService.getSafeById(userId));
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    @PutMapping("/me/name")
+    @Operation(summary = "修改当前登录用户昵称")
+    public Result<User> updateCurrentUserName(@RequestBody UserProfileUpdateReqDTO reqDTO) {
+        if (reqDTO == null) {
+            return Result.error("参数不能为空");
+        }
+        try {
+            Long userId = UserContext.requireCurrentUserId();
+            User user = userService.updateName(userId, reqDTO.getName());
+            return Result.success("修改成功", user);
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "按ID查询用户")
     public Result<User> getById(@PathVariable("id") Long id) {
-        User user = userService.getById(id);
-        if (user == null) {
-            return Result.error("用户不存在");
+        try {
+            return Result.success(userService.getSafeById(id));
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
         }
-        user.setPassword(null);
-        return Result.success(user);
     }
 
     @GetMapping("/page")

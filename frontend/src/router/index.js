@@ -44,6 +44,11 @@ const routes = [
         component: () => import('@/views/MineView.vue')
       },
       {
+        path: 'mine/profile',
+        name: 'mine-profile',
+        component: () => import('@/views/mine/MineProfileView.vue')
+      },
+      {
         path: 'mine/favorites',
         name: 'mine-favorites',
         component: () => import('@/views/mine/MineFavoriteView.vue')

@@ -10,9 +10,9 @@ import org.springframework.util.StringUtils;
 
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.regex.Pattern;
@@ -46,7 +46,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
 
         User user = new User()
                 .setPhone(phone)
-                .setName(name)
+                .setName(name.trim())
                 .setPassword(encodePassword(password))
                 .setCreateTime(LocalDateTime.now());
         boolean saved = this.save(user);
@@ -72,6 +72,37 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         return toSafeUser(user);
     }
 
+    @Override
+    public User getSafeById(Long userId) {
+        if (userId == null || userId <= 0) {
+            throw new RuntimeException("用户不存在");
+        }
+
+        User user = this.getById(userId);
+        if (user == null) {
+            throw new RuntimeException("用户不存在");
+        }
+        return toSafeUser(user);
+    }
+
+    @Override
+    public User updateName(Long userId, String name) {
+        validateName(name);
+
+        User user = this.getById(userId);
+        if (user == null) {
+            throw new RuntimeException("用户不存在");
+        }
+
+        user.setName(name.trim());
+        boolean updated = this.updateById(user);
+        if (!updated) {
+            throw new RuntimeException("更新用户失败");
+        }
+
+        return toSafeUser(user);
+    }
+
     private void validatePhone(String phone) {
         if (!StringUtils.hasText(phone) || !PHONE_PATTERN.matcher(phone).matches()) {
             throw new RuntimeException("手机号格式不正确");
@@ -87,7 +118,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     }
 
     private void validateName(String name) {
-        if (!StringUtils.hasText(name) || name.length() > MAX_NAME_LENGTH) {
+        String trimmedName = name == null ? null : name.trim();
+        if (!StringUtils.hasText(trimmedName) || trimmedName.length() > MAX_NAME_LENGTH) {
             throw new RuntimeException("昵称不能为空且长度不能超过20");
         }
     }
