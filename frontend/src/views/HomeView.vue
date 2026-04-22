@@ -4,6 +4,7 @@
       :result-tip="feed.resultTip.value"
       :is-nearby-mode="feed.mode.value === 'nearby'"
       @search="handleSearch"
+      @suggestion-select="handleSuggestionSelect"
     />
 
     <HomeQuickLinks />
@@ -82,6 +83,11 @@ async function handleSearch(keyword) {
 
 function toDetail(id) {
   router.push(`/house/${id}`)
+}
+
+function handleSuggestionSelect(item) {
+  if (!item?.id && item?.id !== 0) return
+  router.push(`/house/${item.id}`)
 }
 
 onMounted(() => {

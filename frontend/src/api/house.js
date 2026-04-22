@@ -24,6 +24,10 @@ export function smartGuideHouse(payload) {
   return http.post('/house/smart-guide', payload)
 }
 
+export function fetchHouseSuggest(payload) {
+  return http.post('/house/suggest', payload)
+}
+
 export function fetchHouseFavoriteStatus(id) {
   return http.get(`/house-favorite/${id}/status`)
 }

@@ -6,6 +6,7 @@
       :is-nearby-mode="feed.mode.value === 'nearby'"
       @search="handleSearch"
       @reset="handleReset"
+      @suggestion-select="handleSuggestionSelect"
     />
 
     <LoadingState v-if="feed.loading.value && !feed.houses.value.length" text="正在加载房源..." />
@@ -66,6 +67,11 @@ async function handleReset() {
 
 function toDetail(id) {
   router.push(`/house/${id}`)
+}
+
+function handleSuggestionSelect(item) {
+  if (!item?.id && item?.id !== 0) return
+  router.push(`/house/${item.id}`)
 }
 
 onMounted(() => {

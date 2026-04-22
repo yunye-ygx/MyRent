@@ -2,6 +2,7 @@ package cn.yy.myrent.controller;
 
 import cn.yy.myrent.common.Result;
 import cn.yy.myrent.common.UserContext;
+import cn.yy.myrent.dto.HouseSuggestReqDTO;
 import cn.yy.myrent.dto.SearchHouseReqDTO;
 import cn.yy.myrent.dto.SmartGuideReqDTO;
 import cn.yy.myrent.entity.House;
@@ -12,6 +13,7 @@ import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.sync.house.service.HouseEsSyncService;
 import cn.yy.myrent.vo.HouseReviewPageVO;
 import cn.yy.myrent.vo.HouseSearchResultVO;
+import cn.yy.myrent.vo.HouseSuggestItemVO;
 import cn.yy.myrent.vo.SmartGuideResultVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
@@ -19,6 +21,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import java.util.List;
+
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -176,5 +181,18 @@ public class HouseController {
             return Result.error("删除房源失败或房源不存在");
         }
         return Result.success();
+    }
+
+    @PostMapping("/suggest")
+    @Operation(summary = "House Suggest", description = "Suggest houses by keyword")
+    public Result<List<HouseSuggestItemVO>> suggest(@Valid @RequestBody HouseSuggestReqDTO reqDTO) {
+        Integer size = reqDTO.getSize();
+        if (size == null) {
+            size = 5;
+        } else if (size > 5) {
+            size = 5;
+        }
+        reqDTO.setSize(size);
+        return Result.success(houseService.suggest(reqDTO));
     }
 }

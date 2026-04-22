@@ -9,17 +9,10 @@
         <p class="tip">{{ tipText }}</p>
       </div>
 
-      <div class="primary-row">
-        <input
-          v-model.trim="keyword"
-          class="input"
-          placeholder="区域 / 地点 / 地铁站"
-          @keyup.enter="emitSearch"
-        />
-        <button data-test="search-submit" class="primary-btn" @click="emitSearch">
-          开始找房
-        </button>
-      </div>
+      <HouseSuggestField
+        @search="emit('search', $event)"
+        @suggestion-select="emit('suggestion-select', $event)"
+      />
 
       <div class="filter-row">
         <button class="ghost-chip" type="button" @click="$emit('preset', 'budget')">预算</button>
@@ -38,7 +31,8 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
+import HouseSuggestField from '@/components/HouseSuggestField.vue'
 
 const props = defineProps({
   resultTip: {
@@ -51,8 +45,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['search', 'preset'])
-const keyword = ref('')
+const emit = defineEmits(['search', 'preset', 'suggestion-select'])
 
 const tipText = computed(() => {
   if (props.resultTip) {
@@ -64,9 +57,6 @@ const tipText = computed(() => {
   return '输入地点、预算和通勤偏好，快速开始找房。'
 })
 
-function emitSearch() {
-  emit('search', keyword.value)
-}
 </script>
 
 <style scoped>

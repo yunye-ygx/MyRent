@@ -1,6 +1,7 @@
 package cn.yy.myrent.service.impl;
 
 import cn.yy.myrent.document.HouseDoc;
+import cn.yy.myrent.dto.HouseSuggestReqDTO;
 import cn.yy.myrent.dto.SearchHouseReqDTO;
 import cn.yy.myrent.dto.SmartGuideReqDTO;
 import cn.yy.myrent.entity.House;
@@ -12,6 +13,7 @@ import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.service.location.LocationResolveService;
 import cn.yy.myrent.service.smartguide.SmartGuideRecommendationService;
 import cn.yy.myrent.vo.HouseSearchResultVO;
+import cn.yy.myrent.vo.HouseSuggestItemVO;
 import cn.yy.myrent.vo.HouseVO;
 import cn.yy.myrent.vo.SmartGuideResultVO;
 import co.elastic.clients.elasticsearch._types.DistanceUnit;
@@ -66,6 +68,55 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
     private final HouseHotService houseHotService;
     private final LocationResolveService locationResolveService;
     private final IUserService userService;
+
+    @Override
+    public List<HouseSuggestItemVO> suggest(HouseSuggestReqDTO reqDTO) {
+        String keyword = reqDTO == null ? null : reqDTO.getKeyword();
+        if (!StringUtils.hasText(keyword)) {
+            return List.of();
+        }
+
+        int size = 5;
+        if (reqDTO != null && reqDTO.getSize() != null) {
+            size = reqDTO.getSize();
+        }
+        size = Math.min(Math.max(size, 1), 5);
+
+        try {
+            Query boolQuery = Query.of(q -> q.bool(b -> b
+                    .must(m -> m.term(t -> t.field("status").value(HOUSE_STATUS_AVAILABLE)))
+                    .must(m -> m.match(mm -> mm.field("title").query(keyword)))
+            ));
+
+            NativeQuery nativeQuery = NativeQuery.builder()
+                    .withQuery(boolQuery)
+                    .withPageable(PageRequest.of(0, size))
+                    .build();
+
+            SearchHits<HouseDoc> hits = elasticsearchOperations.search(nativeQuery, HouseDoc.class);
+            List<HouseSuggestItemVO> result = new ArrayList<>();
+            for (SearchHit<HouseDoc> hit : hits) {
+                HouseDoc doc = hit.getContent();
+                if (doc == null) {
+                    continue;
+                }
+                result.add(new HouseSuggestItemVO(doc.getId(), doc.getTitle(), centsToYuan(doc.getPrice())));
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("ES suggest failed, keyword={}, size={}", keyword, size, e);
+            return List.of();
+        }
+    }
+
+    private static Integer centsToYuan(Integer cents) {
+        if (cents == null) {
+            return null;
+        }
+        return BigDecimal.valueOf(cents)
+                .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP)
+                .intValue();
+    }
 
     @Override
     public HouseSearchResultVO searchNearbyHouse(SearchHouseReqDTO reqDTO) {
