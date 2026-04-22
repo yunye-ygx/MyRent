@@ -1,11 +1,11 @@
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import LoginView from '@/views/auth/LoginView.vue'
 import MineView from '@/views/MineView.vue'
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
-    profile: { name: '测试用户', phone: '13800138000' },
+    profile: { name: '娴嬭瘯鐢ㄦ埛', phone: '13800138000' },
     logout: vi.fn(),
     login: vi.fn(),
     register: vi.fn()
@@ -35,6 +35,28 @@ describe('secondary page shells', () => {
 
     expect(loginWrapper.text()).toContain('登录 MyRent')
     expect(mineWrapper.text()).toContain('功能入口')
-    expect(mineWrapper.text()).toContain('测试用户')
+    expect(mineWrapper.text()).toContain('13800138000')
+  })
+
+  it('routes the history menu item to /mine/history', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/mine', component: MineView },
+        { path: '/mine/history', component: { template: '<div>history page</div>' } }
+      ]
+    })
+
+    router.push('/mine')
+    await router.isReady()
+
+    const wrapper = mount(MineView, {
+      global: { plugins: [router] }
+    })
+
+    await wrapper.findAll('.menu-item')[4].trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/mine/history')
   })
 })

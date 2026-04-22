@@ -60,6 +60,10 @@ function openModule(item) {
     router.push('/mine/favorites')
     return
   }
+  if (item.key === 'history') {
+    router.push('/mine/history')
+    return
+  }
   if (item.key === 'consult') {
     router.push('/mine/consults')
     return

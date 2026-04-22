@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.yy.myrent.mapper.HouseHistoryMapper">
+
+    <select id="selectByUserHouseAndDate" resultType="cn.yy.myrent.entity.HouseHistory">
+        select id,
+               user_id,
+               house_id,
+               browse_date,
+               last_browse_time,
+               create_time,
+               update_time
+        from house_history
+        where user_id = #{userId}
+          and house_id = #{houseId}
+          and browse_date = #{browseDate}
+        limit 1
+    </select>
+
+    <select id="selectActiveDays" resultType="java.lang.Integer">
+        select day(browse_date)
+        from house_history
+        where user_id = #{userId}
+          and browse_date between #{startDate} and #{endDate}
+        group by browse_date
+        order by browse_date asc
+    </select>
+
+    <select id="selectMyHistoryPage" resultType="cn.yy.myrent.vo.HouseHistoryItemVO">
+        select hh.id as historyId,
+               hh.house_id as houseId,
+               hh.browse_date as browseDate,
+               hh.last_browse_time as lastBrowseTime,
+               round(h.price / 100.0, 2) as price,
+               concat('https://picsum.photos/seed/history-', hh.house_id, '/480/320') as cover
+        from house_history hh
+        join house h on h.id = hh.house_id
+        where hh.user_id = #{userId}
+          <if test="browseDate != null">
+              and hh.browse_date = #{browseDate}
+          </if>
+        order by hh.browse_date desc, hh.last_browse_time desc, hh.id desc
+    </select>
+</mapper>

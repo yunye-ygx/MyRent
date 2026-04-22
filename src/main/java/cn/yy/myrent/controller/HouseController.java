@@ -7,6 +7,7 @@ import cn.yy.myrent.dto.SearchHouseReqDTO;
 import cn.yy.myrent.dto.SmartGuideReqDTO;
 import cn.yy.myrent.entity.House;
 import cn.yy.myrent.service.IHouseCommandService;
+import cn.yy.myrent.service.IHouseHistoryService;
 import cn.yy.myrent.service.IHouseService;
 import cn.yy.myrent.service.IReviewService;
 import cn.yy.myrent.service.hot.HouseHotService;
@@ -43,6 +44,7 @@ public class HouseController {
 
     private final IHouseService houseService;
     private final IHouseCommandService houseCommandService;
+    private final IHouseHistoryService houseHistoryService;
     private final IReviewService reviewService;
     private final HouseEsSyncService houseEsSyncService;
     private final HouseHotService houseHotService;
@@ -84,6 +86,10 @@ public class HouseController {
         House house = houseService.getById(id);
         if (house == null) {
             return Result.error("房源不存在");
+        }
+        Long currentUserId = UserContext.getCurrentUserId();
+        if (currentUserId != null) {
+            houseHistoryService.recordBrowse(id, currentUserId);
         }
         return Result.success(house);
     }
