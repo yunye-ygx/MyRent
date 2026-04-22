@@ -7,6 +7,8 @@
         class="input"
         placeholder="Area / Place / Metro"
         @input="onKeywordInput"
+        @compositionstart="onCompositionStart"
+        @compositionend="onCompositionEnd"
         @focus="onFocus"
         @keydown.enter.prevent="onSubmit"
       />
@@ -49,12 +51,26 @@ import { useHouseSuggest } from '@/composables/useHouseSuggest'
 const emit = defineEmits(['search', 'suggestion-select'])
 
 const keyword = ref('')
+const isComposing = ref(false)
 const rootEl = ref(null)
 
 const suggest = useHouseSuggest()
 
 function onKeywordInput(event) {
+  if (isComposing.value || event?.isComposing) {
+    return
+  }
   // v-model updates can be async relative to event handlers; rely on the DOM value.
+  const value = event?.target?.value ?? keyword.value
+  suggest.request(value)
+}
+
+function onCompositionStart() {
+  isComposing.value = true
+}
+
+function onCompositionEnd(event) {
+  isComposing.value = false
   const value = event?.target?.value ?? keyword.value
   suggest.request(value)
 }

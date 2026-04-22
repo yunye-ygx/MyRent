@@ -34,6 +34,33 @@ describe('HouseSuggestField', () => {
     expect(wrapper.emitted('search')).toEqual([['tianhe']])
   })
 
+  it('does not request suggestions during IME composition and only requests after composition ends', async () => {
+    const wrapper = mount(HouseSuggestField)
+    const input = wrapper.find('[data-test="house-suggest-input"]')
+
+    await input.trigger('compositionstart')
+
+    input.element.value = 'bei'
+    await input.trigger('input')
+
+    expect(suggest.request).not.toHaveBeenCalled()
+
+    input.element.value = '\u5317\u4eac'
+    await input.trigger('compositionend')
+
+    expect(suggest.request).toHaveBeenCalledWith('\u5317\u4eac')
+  })
+
+  it('does not request suggestions when the browser marks the input event as composing', async () => {
+    const wrapper = mount(HouseSuggestField)
+    const input = wrapper.find('[data-test="house-suggest-input"]')
+
+    input.element.value = 'be'
+    await input.trigger('input', { isComposing: true })
+
+    expect(suggest.request).not.toHaveBeenCalled()
+  })
+
   it('renders dropdown states (loading, empty, error) based on composable state', async () => {
     const wrapper = mount(HouseSuggestField)
 
@@ -63,7 +90,7 @@ describe('HouseSuggestField', () => {
     await nextTick()
 
     expect(wrapper.text()).toContain('Foo Garden')
-    expect(wrapper.text()).toContain('¥3200/月')
+    expect(wrapper.text()).toContain('\u00a53200/\u6708')
 
     await wrapper.find('[data-test="house-suggest-item-0"]').trigger('click')
     expect(wrapper.emitted('suggestion-select')).toEqual([[item]])
@@ -86,4 +113,3 @@ describe('HouseSuggestField', () => {
     wrapper.unmount()
   })
 })
-
