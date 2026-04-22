@@ -5,6 +5,7 @@ import cn.yy.myrent.dto.HouseSuggestReqDTO;
 import cn.yy.myrent.mapper.ChatMessageMapper;
 import cn.yy.myrent.mapper.ChatSessionMapper;
 import cn.yy.myrent.mapper.HouseFavoriteMapper;
+import cn.yy.myrent.mapper.HouseHistoryMapper;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.mapper.LocalTaskMapper;
 import cn.yy.myrent.mapper.LocationDictMapper;
@@ -14,7 +15,9 @@ import cn.yy.myrent.mapper.PaymentMapper;
 import cn.yy.myrent.mapper.PaymentRefundMapper;
 import cn.yy.myrent.mapper.ReviewMapper;
 import cn.yy.myrent.mapper.UserMapper;
+import cn.yy.myrent.entity.House;
 import cn.yy.myrent.service.IHouseCommandService;
+import cn.yy.myrent.service.IHouseHistoryService;
 import cn.yy.myrent.service.IHouseService;
 import cn.yy.myrent.service.IReviewService;
 import cn.yy.myrent.service.hot.HouseHotService;
@@ -33,8 +36,9 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -50,6 +54,9 @@ class HouseControllerWebMvcTest {
 
     @MockBean
     private IHouseCommandService houseCommandService;
+
+    @MockBean
+    private IHouseHistoryService houseHistoryService;
 
     @MockBean
     private IReviewService reviewService;
@@ -71,6 +78,9 @@ class HouseControllerWebMvcTest {
 
     @MockBean
     private HouseFavoriteMapper houseFavoriteMapper;
+
+    @MockBean
+    private HouseHistoryMapper houseHistoryMapper;
 
     @MockBean
     private HouseMapper houseMapper;
@@ -169,5 +179,32 @@ class HouseControllerWebMvcTest {
                 .andExpect(status().isBadRequest());
 
         verifyNoInteractions(houseService);
+    }
+
+    @Test
+    void getByIdShouldRecordBrowseAfterSuccessfulAuthenticatedFetch() throws Exception {
+        House house = new House();
+        house.setId(7L);
+        house.setTitle("History House");
+
+        given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
+        given(houseService.getById(7L)).willReturn(house);
+
+        mockMvc.perform(get("/house/7")
+                        .header("token", "test-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.id").value(7));
+
+        verify(houseHistoryService).recordBrowse(7L, 1001L);
+    }
+
+    @Test
+    void getByIdShouldRejectAnonymousRequest() throws Exception {
+        mockMvc.perform(get("/house/7"))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(houseService);
+        verifyNoInteractions(houseHistoryService);
     }
 }
