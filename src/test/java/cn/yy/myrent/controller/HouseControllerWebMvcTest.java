@@ -1,6 +1,7 @@
 package cn.yy.myrent.controller;
 
 import cn.yy.myrent.common.JwtTokenUtil;
+import cn.yy.myrent.dto.HouseSuggestReqDTO;
 import cn.yy.myrent.mapper.ChatMessageMapper;
 import cn.yy.myrent.mapper.ChatSessionMapper;
 import cn.yy.myrent.mapper.HouseFavoriteMapper;
@@ -10,18 +11,27 @@ import cn.yy.myrent.mapper.LocationDictMapper;
 import cn.yy.myrent.mapper.MockPayTradeMapper;
 import cn.yy.myrent.mapper.OrderMapper;
 import cn.yy.myrent.mapper.PaymentMapper;
+import cn.yy.myrent.mapper.PaymentRefundMapper;
 import cn.yy.myrent.mapper.UserMapper;
 import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IHouseService;
 import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.sync.house.service.HouseEsSyncService;
+import cn.yy.myrent.vo.HouseSuggestItemVO;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -76,6 +86,9 @@ class HouseControllerWebMvcTest {
     private PaymentMapper paymentMapper;
 
     @MockBean
+    private PaymentRefundMapper paymentRefundMapper;
+
+    @MockBean
     private UserMapper userMapper;
 
     @Test
@@ -95,5 +108,58 @@ class HouseControllerWebMvcTest {
         mockMvc.perform(post("/house/hot/rebuild"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
+    }
+
+    @Test
+    void suggestShouldDefaultSizeTo5AndReturnItems() throws Exception {
+        given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
+        given(houseService.suggest(any(HouseSuggestReqDTO.class))).willReturn(List.of(
+                new HouseSuggestItemVO(1L, "整租 1 室 1 厅", 3000),
+                new HouseSuggestItemVO(2L, "合租 次卧", 1800)
+        ));
+
+        mockMvc.perform(post("/house/suggest")
+                        .header("token", "test-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"keyword\":\"1室\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data[0].id").value(1))
+                .andExpect(jsonPath("$.data[0].title").value("整租 1 室 1 厅"))
+                .andExpect(jsonPath("$.data[0].price").value(3000));
+
+        ArgumentCaptor<HouseSuggestReqDTO> captor = ArgumentCaptor.forClass(HouseSuggestReqDTO.class);
+        verify(houseService).suggest(captor.capture());
+        assertEquals("1室", captor.getValue().getKeyword());
+        assertEquals(5, captor.getValue().getSize());
+    }
+
+    @Test
+    void suggestShouldCapSizeAt5() throws Exception {
+        given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
+        given(houseService.suggest(any(HouseSuggestReqDTO.class))).willReturn(List.of());
+
+        mockMvc.perform(post("/house/suggest")
+                        .header("token", "test-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"keyword\":\"abc\",\"size\":6}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        ArgumentCaptor<HouseSuggestReqDTO> captor = ArgumentCaptor.forClass(HouseSuggestReqDTO.class);
+        verify(houseService).suggest(captor.capture());
+        assertEquals(5, captor.getValue().getSize());
+    }
+
+    @Test
+    void suggestShouldRequireKeyword() throws Exception {
+        given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
+        mockMvc.perform(post("/house/suggest")
+                        .header("token", "test-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"size\":5}"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(houseService);
     }
 }

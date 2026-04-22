@@ -38,4 +38,35 @@ describe('HouseListView', () => {
     expect(wrapper.text()).toContain('精选房源列表')
     expect(wrapper.text()).toContain('共 1 套房源')
   })
+
+  it('navigates to the house detail page when a suggestion is selected', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', component: { template: '<div />' } },
+        { path: '/house/:id', component: { template: '<div />' } }
+      ]
+    })
+
+    const pushSpy = vi.spyOn(router, 'push')
+
+    const wrapper = mount(HouseListView, {
+      global: {
+        plugins: [router],
+        stubs: {
+          HouseResultsHero: {
+            template: `<button data-test="pick" type="button" @click="$emit('suggestion-select', { id: 34 })">pick</button>`,
+            emits: ['search', 'reset', 'suggestion-select']
+          },
+          HouseCard: true,
+          LoadingState: true,
+          EmptyState: true
+        }
+      }
+    })
+
+    await wrapper.get('[data-test=\"pick\"]').trigger('click')
+
+    expect(pushSpy).toHaveBeenCalledWith('/house/34')
+  })
 })

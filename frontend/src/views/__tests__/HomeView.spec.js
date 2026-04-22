@@ -43,4 +43,35 @@ describe('HomeView', () => {
     expect(wrapper.text()).toContain('今日新上')
     expect(wrapper.text()).not.toContain('Phase 1')
   })
+
+  it('navigates to the house detail page when a suggestion is selected', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', component: { template: '<div />' } },
+        { path: '/houses', component: { template: '<div />' } },
+        { path: '/house/:id', component: { template: '<div />' } }
+      ]
+    })
+
+    const pushSpy = vi.spyOn(router, 'push')
+
+    const wrapper = mount(HomeView, {
+      global: {
+        plugins: [router],
+        stubs: {
+          HomeHero: {
+            template: `<button data-test="pick" type="button" @click="$emit('suggestion-select', { id: 12 })">pick</button>`,
+            emits: ['search', 'suggestion-select']
+          },
+          HomeQuickLinks: true,
+          HouseCard: true
+        }
+      }
+    })
+
+    await wrapper.get('[data-test=\"pick\"]').trigger('click')
+
+    expect(pushSpy).toHaveBeenCalledWith('/house/12')
+  })
 })
