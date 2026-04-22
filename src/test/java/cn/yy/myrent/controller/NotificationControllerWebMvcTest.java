@@ -1,6 +1,7 @@
 package cn.yy.myrent.controller;
 
 import cn.yy.myrent.common.JwtTokenUtil;
+import cn.yy.myrent.entity.Notification;
 import cn.yy.myrent.mapper.ChatMessageMapper;
 import cn.yy.myrent.mapper.ChatSessionMapper;
 import cn.yy.myrent.mapper.HouseFavoriteMapper;
@@ -15,36 +16,31 @@ import cn.yy.myrent.mapper.PaymentRefundMapper;
 import cn.yy.myrent.mapper.PublisherFollowMapper;
 import cn.yy.myrent.mapper.ReviewMapper;
 import cn.yy.myrent.mapper.UserMapper;
-import cn.yy.myrent.service.IOrderService;
-import cn.yy.myrent.vo.CreateOrderVO;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import cn.yy.myrent.service.INotificationService;
+import cn.yy.myrent.vo.UnreadTotalVO;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
-import java.util.LinkedHashMap;
+import java.util.List;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(OrderController.class)
-class OrderControllerWebMvcTest {
+@WebMvcTest(NotificationController.class)
+class NotificationControllerWebMvcTest {
 
     @Autowired
     private MockMvc mockMvc;
 
-    @Autowired
-    private ObjectMapper objectMapper;
-
     @MockBean
-    private IOrderService orderService;
+    private INotificationService notificationService;
 
     @MockBean
     private JwtTokenUtil jwtTokenUtil;
@@ -92,45 +88,38 @@ class OrderControllerWebMvcTest {
     private UserMapper userMapper;
 
     @Test
-    void createOrderShouldReturnCheckoutInfo() throws Exception {
-        CreateOrderVO result = new CreateOrderVO();
-        result.setOrderNo("ORDER-1001");
-        result.setPaymentNo("PAY-1001");
-        result.setMockPayUrl("/mock-pay/checkout?paymentNo=PAY-1001");
-        result.setExpireTime(LocalDateTime.of(2026, 4, 18, 21, 0, 0));
-
+    void unreadTotalShouldReturnCurrentUserInboxCount() throws Exception {
+        UnreadTotalVO vo = new UnreadTotalVO();
+        vo.setTotal(3L);
         given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
-        given(orderService.createOrder(any())).willReturn(result);
+        given(notificationService.buildUnreadTotal(1001L)).willReturn(vo);
 
-        LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
-        payload.put("houseId", 101);
-        payload.put("version", 0);
-
-        mockMvc.perform(post("/order/create")
-                        .header("token", "test-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(payload)))
+        mockMvc.perform(get("/notification/unread-total").header("token", "test-token"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.orderNo").value("ORDER-1001"))
-                .andExpect(jsonPath("$.data.paymentNo").value("PAY-1001"))
-                .andExpect(jsonPath("$.data.mockPayUrl").value("/mock-pay/checkout?paymentNo=PAY-1001"));
+                .andExpect(jsonPath("$.data.total").value(3));
     }
 
     @Test
-    void repayShouldReturnNewPaymentAttemptInfo() throws Exception {
-        CreateOrderVO result = new CreateOrderVO();
-        result.setOrderNo("ORDER-1001");
-        result.setPaymentNo("PAY-1002");
-        result.setMockPayUrl("/mock-pay/checkout?paymentNo=PAY-1002");
+    void pageShouldReturnLatestNotificationRows() throws Exception {
+        Notification item = new Notification()
+                .setId(8L)
+                .setUserId(1001L)
+                .setType("HOUSE_PRICE_CHANGED")
+                .setTitle("Price changed")
+                .setContent("The monthly price changed from 5200 to 5000.")
+                .setRedirectType("house_detail")
+                .setRedirectTargetId(7L)
+                .setIsRead(0)
+                .setCreateTime(LocalDateTime.of(2026, 4, 22, 10, 0));
+        Page<Notification> page = new Page<>(1, 10, 1);
+        page.setRecords(List.of(item));
 
         given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
-        given(orderService.repay("ORDER-1001")).willReturn(result);
+        given(notificationService.pageMine(1001L, 1L, 10L)).willReturn(page);
 
-        mockMvc.perform(post("/order/ORDER-1001/repay")
-                        .header("token", "test-token"))
+        mockMvc.perform(get("/notification/page").header("token", "test-token"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.orderNo").value("ORDER-1001"))
-                .andExpect(jsonPath("$.data.paymentNo").value("PAY-1002"))
-                .andExpect(jsonPath("$.data.mockPayUrl").value("/mock-pay/checkout?paymentNo=PAY-1002"));
+                .andExpect(jsonPath("$.data.records[0].type").value("HOUSE_PRICE_CHANGED"))
+                .andExpect(jsonPath("$.data.records[0].redirectTargetId").value(7));
     }
 }

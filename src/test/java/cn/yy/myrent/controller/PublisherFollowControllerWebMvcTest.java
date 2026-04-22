@@ -15,36 +15,28 @@ import cn.yy.myrent.mapper.PaymentRefundMapper;
 import cn.yy.myrent.mapper.PublisherFollowMapper;
 import cn.yy.myrent.mapper.ReviewMapper;
 import cn.yy.myrent.mapper.UserMapper;
-import cn.yy.myrent.service.IOrderService;
-import cn.yy.myrent.vo.CreateOrderVO;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import cn.yy.myrent.service.IPublisherFollowService;
+import cn.yy.myrent.vo.PublisherFollowStatusVO;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.time.LocalDateTime;
-import java.util.LinkedHashMap;
-
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(OrderController.class)
-class OrderControllerWebMvcTest {
+@WebMvcTest(PublisherFollowController.class)
+class PublisherFollowControllerWebMvcTest {
 
     @Autowired
     private MockMvc mockMvc;
 
-    @Autowired
-    private ObjectMapper objectMapper;
-
     @MockBean
-    private IOrderService orderService;
+    private IPublisherFollowService publisherFollowService;
 
     @MockBean
     private JwtTokenUtil jwtTokenUtil;
@@ -92,45 +84,31 @@ class OrderControllerWebMvcTest {
     private UserMapper userMapper;
 
     @Test
-    void createOrderShouldReturnCheckoutInfo() throws Exception {
-        CreateOrderVO result = new CreateOrderVO();
-        result.setOrderNo("ORDER-1001");
-        result.setPaymentNo("PAY-1001");
-        result.setMockPayUrl("/mock-pay/checkout?paymentNo=PAY-1001");
-        result.setExpireTime(LocalDateTime.of(2026, 4, 18, 21, 0, 0));
+    void statusShouldReturnCurrentFollowState() throws Exception {
+        PublisherFollowStatusVO vo = new PublisherFollowStatusVO();
+        vo.setPublisherUserId(9L);
+        vo.setFollowing(true);
 
         given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
-        given(orderService.createOrder(any())).willReturn(result);
+        given(publisherFollowService.getStatus(9L, 1001L)).willReturn(vo);
 
-        LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
-        payload.put("houseId", 101);
-        payload.put("version", 0);
-
-        mockMvc.perform(post("/order/create")
-                        .header("token", "test-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(payload)))
+        mockMvc.perform(get("/publisher-follow/9/status").header("token", "test-token"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.orderNo").value("ORDER-1001"))
-                .andExpect(jsonPath("$.data.paymentNo").value("PAY-1001"))
-                .andExpect(jsonPath("$.data.mockPayUrl").value("/mock-pay/checkout?paymentNo=PAY-1001"));
+                .andExpect(jsonPath("$.data.following").value(true));
     }
 
     @Test
-    void repayShouldReturnNewPaymentAttemptInfo() throws Exception {
-        CreateOrderVO result = new CreateOrderVO();
-        result.setOrderNo("ORDER-1001");
-        result.setPaymentNo("PAY-1002");
-        result.setMockPayUrl("/mock-pay/checkout?paymentNo=PAY-1002");
+    void followShouldReturnUpdatedFollowState() throws Exception {
+        PublisherFollowStatusVO vo = new PublisherFollowStatusVO();
+        vo.setPublisherUserId(9L);
+        vo.setFollowing(true);
 
         given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
-        given(orderService.repay("ORDER-1001")).willReturn(result);
+        given(publisherFollowService.follow(9L, 1001L)).willReturn(vo);
 
-        mockMvc.perform(post("/order/ORDER-1001/repay")
-                        .header("token", "test-token"))
+        mockMvc.perform(post("/publisher-follow/9").header("token", "test-token"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.orderNo").value("ORDER-1001"))
-                .andExpect(jsonPath("$.data.paymentNo").value("PAY-1002"))
-                .andExpect(jsonPath("$.data.mockPayUrl").value("/mock-pay/checkout?paymentNo=PAY-1002"));
+                .andExpect(jsonPath("$.data.publisherUserId").value("9"))
+                .andExpect(jsonPath("$.data.following").value(true));
     }
 }

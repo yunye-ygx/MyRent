@@ -13,6 +13,7 @@ import cn.yy.myrent.mapper.UserMapper;
 import cn.yy.myrent.service.IChatSessionService;
 import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.vo.ChatSessionSummaryVO;
+import cn.yy.myrent.vo.UnreadTotalVO;
 import cn.yy.myrent.websocket.ChatWebSocketSessionManager;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -176,6 +177,13 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
 
         page.setRecords(this.baseMapper.selectSessionSummaries(userId, offset, safeSize));
         return page;
+    }
+
+    @Override
+    public UnreadTotalVO buildUnreadTotal(Long userId) {
+        UnreadTotalVO vo = new UnreadTotalVO();
+        vo.setTotal(this.baseMapper.countUnreadMessages(userId));
+        return vo;
     }
 
     private void validateSendMessageRequest(Long senderId, Long receiverId, Long houseId, String content) {

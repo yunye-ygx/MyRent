@@ -9,6 +9,8 @@ import java.util.List;
 
 public interface ChatSessionMapper extends BaseMapper<ChatSession> {
 
+    long countUnreadMessages(@Param("userId") Long userId);
+
     long countSessionSummaries(@Param("userId") Long userId);
 
     List<ChatSessionSummaryVO> selectSessionSummaries(@Param("userId") Long userId,

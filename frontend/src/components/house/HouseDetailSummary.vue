@@ -1,7 +1,7 @@
 <template>
   <section class="summary app-surface">
     <div class="toolbar">
-      <button class="ghost-btn" @click="$emit('back')">返回</button>
+      <button class="ghost-btn" @click="$emit('back')">Back</button>
       <span class="eyebrow">House Detail</span>
     </div>
     <div class="content">
@@ -11,19 +11,30 @@
         <h1 class="title">{{ house.title }}</h1>
         <p class="price">
           {{ formatPrice(house.price) }}
-          <span class="price-unit">/ 月</span>
+          <span class="price-unit">/ month</span>
         </p>
         <dl class="meta-list">
           <div>
-            <dt>押金</dt>
+            <dt>Deposit</dt>
             <dd>{{ formatPrice(house.depositAmount) }}</dd>
           </div>
           <div>
-            <dt>发布者</dt>
-            <dd>{{ publisherName }}</dd>
+            <dt>Publisher</dt>
+            <dd class="publisher-row">
+              <span>{{ publisherName }}</span>
+              <button
+                v-if="canFollowPublisher"
+                data-test="publisher-follow"
+                class="ghost-btn follow-btn"
+                :disabled="publisherFollowLoading"
+                @click="$emit('publisher-follow')"
+              >
+                {{ publisherFollowText }}
+              </button>
+            </dd>
           </div>
           <div>
-            <dt>收藏数</dt>
+            <dt>Favorites</dt>
             <dd>{{ favoriteCount }}</dd>
           </div>
         </dl>
@@ -46,7 +57,7 @@ defineProps({
   },
   publisherName: {
     type: String,
-    default: '未知发布者'
+    default: 'Unknown Publisher'
   },
   favoriteCount: {
     type: [String, Number],
@@ -55,10 +66,22 @@ defineProps({
   statusText: {
     type: String,
     default: ''
+  },
+  publisherFollowLoading: {
+    type: Boolean,
+    default: false
+  },
+  publisherFollowText: {
+    type: String,
+    default: 'Follow'
+  },
+  canFollowPublisher: {
+    type: Boolean,
+    default: false
   }
 })
 
-defineEmits(['back'])
+defineEmits(['back', 'publisher-follow'])
 </script>
 
 <style scoped>
@@ -146,6 +169,17 @@ defineEmits(['back'])
   margin: 8px 0 0;
   font-size: 16px;
   color: var(--color-text);
+}
+
+.publisher-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.follow-btn {
+  flex-shrink: 0;
 }
 
 @media (min-width: 1024px) {

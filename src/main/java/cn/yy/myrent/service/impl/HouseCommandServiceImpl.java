@@ -3,10 +3,11 @@ package cn.yy.myrent.service.impl;
 import cn.yy.myrent.entity.House;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.service.IHouseCommandService;
-import cn.yy.myrent.sync.house.classifier.HouseChangeClassificationResult;
-import cn.yy.myrent.sync.house.classifier.HouseChangeClassifier;
+import cn.yy.myrent.service.INotificationService;
 import cn.yy.myrent.sync.house.HouseSyncConstants;
 import cn.yy.myrent.sync.house.HouseSyncDispatcher;
+import cn.yy.myrent.sync.house.classifier.HouseChangeClassificationResult;
+import cn.yy.myrent.sync.house.classifier.HouseChangeClassifier;
 import cn.yy.myrent.sync.house.model.HouseSyncContext;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.slf4j.Logger;
@@ -28,6 +29,9 @@ public class HouseCommandServiceImpl extends ServiceImpl<HouseMapper, House> imp
     @Autowired
     private HouseChangeClassifier houseChangeClassifier;
 
+    @Autowired
+    private INotificationService notificationService;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean createHouseWithSync(House house) {
@@ -41,6 +45,7 @@ public class HouseCommandServiceImpl extends ServiceImpl<HouseMapper, House> imp
         }
 
         dispatchCoreEvent(house.getId(), HouseSyncConstants.EVENT_HOUSE_ES_UPSERT, "house-create");
+        notificationService.notifyHouseCreated(house);
         return true;
     }
 
@@ -58,7 +63,7 @@ public class HouseCommandServiceImpl extends ServiceImpl<HouseMapper, House> imp
 
         HouseChangeClassificationResult classificationResult = houseChangeClassifier.classify(id, oldHouse, reqHouse);
         if (!classificationResult.isChanged()) {
-            log.info("房源更新请求无实际变更，houseId={}", id);
+            log.info("House update request has no effective change, houseId={}", id);
             return true;
         }
 
@@ -67,7 +72,14 @@ public class HouseCommandServiceImpl extends ServiceImpl<HouseMapper, House> imp
             return false;
         }
 
-        log.info("房源更新分类完成，houseId={}, changedFields={}, coreChanged={}",
+        House latestHouse = this.getById(id);
+        if (latestHouse == null) {
+            latestHouse = reqHouse;
+            latestHouse.setId(id);
+        }
+        notificationService.notifyHouseUpdated(oldHouse, latestHouse);
+
+        log.info("House update classified, houseId={}, changedFields={}, coreChanged={}",
                 id,
                 classificationResult.getChangedFields(),
                 classificationResult.isCoreChanged());
@@ -87,12 +99,14 @@ public class HouseCommandServiceImpl extends ServiceImpl<HouseMapper, House> imp
             return false;
         }
 
+        House oldHouse = this.getById(id);
         boolean removed = this.removeById(id);
         if (!removed) {
             return false;
         }
 
         dispatchCoreEvent(id, HouseSyncConstants.EVENT_HOUSE_ES_DELETE, "house-delete");
+        notificationService.notifyHouseDeleted(oldHouse);
         return true;
     }
 
@@ -100,6 +114,11 @@ public class HouseCommandServiceImpl extends ServiceImpl<HouseMapper, House> imp
     @Transactional(rollbackFor = Exception.class)
     public boolean updateHouseStatusWithSync(Long houseId, Integer expectedStatus, Integer targetStatus, String reason) {
         if (houseId == null || targetStatus == null) {
+            return false;
+        }
+
+        House oldHouse = this.getById(houseId);
+        if (oldHouse == null) {
             return false;
         }
 
@@ -113,8 +132,19 @@ public class HouseCommandServiceImpl extends ServiceImpl<HouseMapper, House> imp
             return false;
         }
 
-        log.info("房源状态变更成功，调用ES同步方法，houseId={}", houseId);
+        log.info("House status changed, triggering ES sync, houseId={}", houseId);
         dispatchCoreEvent(houseId, HouseSyncConstants.EVENT_HOUSE_ES_UPSERT, reason);
+
+        House latestHouse = this.getById(houseId);
+        if (latestHouse == null) {
+            latestHouse = new House()
+                    .setId(houseId)
+                    .setTitle(oldHouse.getTitle())
+                    .setPrice(oldHouse.getPrice())
+                    .setStatus(targetStatus)
+                    .setVersion(oldHouse.getVersion() == null ? 1 : oldHouse.getVersion() + 1);
+        }
+        notificationService.notifyHouseUpdated(oldHouse, latestHouse);
         return true;
     }
 
@@ -125,7 +155,7 @@ public class HouseCommandServiceImpl extends ServiceImpl<HouseMapper, House> imp
         context.setCoreEvent(true);
         context.setReason(reason);
 
-        log.info("开始进行ES同步，houseId={}, eventType={}, reason={}", houseId, eventType, reason);
+        log.info("Dispatching ES sync, houseId={}, eventType={}, reason={}", houseId, eventType, reason);
         houseSyncDispatcher.dispatch(context);
     }
 
@@ -136,7 +166,7 @@ public class HouseCommandServiceImpl extends ServiceImpl<HouseMapper, House> imp
         context.setCoreEvent(false);
         context.setReason(reason);
 
-        log.info("开始进行ES同步，houseId={}, eventType={}, reason={}", houseId, eventType, reason);
+        log.info("Dispatching ES sync, houseId={}, eventType={}, reason={}", houseId, eventType, reason);
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             houseSyncDispatcher.dispatch(context);
             return;

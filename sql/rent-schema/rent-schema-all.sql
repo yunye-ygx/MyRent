@@ -204,6 +204,42 @@ CREATE TABLE `mock_pay_trade` (
   KEY `idx_mock_trade_callback_status` (`callback_status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='mock third-party payment trade';
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `notification`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `notification` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'notification primary key',
+  `user_id` bigint NOT NULL COMMENT 'receiver user id',
+  `type` varchar(64) NOT NULL COMMENT 'notification type',
+  `title` varchar(128) NOT NULL COMMENT 'notification title',
+  `content` varchar(255) NOT NULL COMMENT 'notification summary',
+  `biz_key` varchar(255) NOT NULL COMMENT 'idempotency business key',
+  `redirect_type` varchar(64) NOT NULL DEFAULT 'house_detail' COMMENT 'navigation target type',
+  `redirect_target_id` bigint NOT NULL COMMENT 'navigation target id',
+  `extra_json` varchar(1000) DEFAULT NULL COMMENT 'extra metadata json',
+  `is_read` tinyint NOT NULL DEFAULT '0' COMMENT '0 unread, 1 read',
+  `read_time` datetime DEFAULT NULL COMMENT 'read time',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_notification_user_biz` (`user_id`,`biz_key`),
+  KEY `idx_notification_user_read_time` (`user_id`,`is_read`,`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='in-app notification inbox';
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `publisher_follow`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `publisher_follow` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'publisher follow primary key',
+  `user_id` bigint NOT NULL COMMENT 'follower user id',
+  `publisher_user_id` bigint NOT NULL COMMENT 'publisher user id',
+  `status` tinyint NOT NULL DEFAULT '1' COMMENT '1 active, 0 canceled',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'first follow time',
+  `cancel_time` datetime DEFAULT NULL COMMENT 'cancel time',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_follow_user_publisher` (`user_id`,`publisher_user_id`),
+  KEY `idx_follow_publisher_status` (`publisher_user_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='publisher follow relationship';
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `user`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;

@@ -8,7 +8,12 @@
       @click="go(item.path)"
     >
       <span class="icon">{{ item.icon }}</span>
-      <span>{{ item.label }}</span>
+      <span class="label-row">
+        <span>{{ item.label }}</span>
+        <span v-if="item.path === '/messages' && messageCenterStore.totalUnread > 0" class="nav-badge">
+          {{ messageCenterStore.totalUnread }}
+        </span>
+      </span>
     </button>
   </nav>
 </template>
@@ -16,9 +21,11 @@
 <script setup>
 import { useRoute, useRouter } from 'vue-router'
 import { mobileTabItems } from '@/design/site'
+import { useMessageCenterStore } from '@/stores/messageCenter'
 
 const route = useRoute()
 const router = useRouter()
+const messageCenterStore = useMessageCenterStore()
 
 function isActive(path) {
   return route.path.startsWith(path)
@@ -65,5 +72,25 @@ function go(path) {
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+.label-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nav-badge {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  background: rgba(220, 38, 38, 0.92);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
 }
 </style>

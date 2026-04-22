@@ -4,6 +4,10 @@ export function fetchSessionPage(params = {}) {
   return http.get('/chat-session/page', { params })
 }
 
+export function fetchChatUnreadTotal() {
+  return http.get('/chat-session/unread-total')
+}
+
 export function sendChatMessage(payload) {
   return http.post('/chat-session/send', payload)
 }

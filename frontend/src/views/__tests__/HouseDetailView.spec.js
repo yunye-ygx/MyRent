@@ -2,6 +2,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { flushPromises, mount } from '@vue/test-utils'
 import HouseDetailView from '@/views/HouseDetailView.vue'
 import { createOrder } from '@/api/order'
+import { followPublisher, fetchPublisherFollowStatus } from '@/api/publisherFollow'
 
 vi.mock('@/api/house', () => ({
   fetchHouseById: vi.fn().mockResolvedValue({
@@ -43,6 +44,12 @@ vi.mock('@/api/order', () => ({
     paymentNo: 'PAY-1001',
     mockPayUrl: '/mock-pay/checkout?paymentNo=PAY-1001'
   })
+}))
+
+vi.mock('@/api/publisherFollow', () => ({
+  fetchPublisherFollowStatus: vi.fn().mockResolvedValue({ publisherUserId: 9, following: false }),
+  followPublisher: vi.fn().mockResolvedValue({ publisherUserId: 9, following: true }),
+  unfollowPublisher: vi.fn()
 }))
 
 vi.mock('@/stores/auth', () => ({
@@ -112,5 +119,32 @@ describe('HouseDetailView', () => {
 
     expect(createOrder).toHaveBeenCalled()
     expect(window.location.assign).toHaveBeenCalledWith('/mock-pay/checkout?paymentNo=PAY-1001')
+  })
+
+  it('shows and updates the publisher follow action', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/house/:id', component: HouseDetailView }]
+    })
+
+    router.push('/house/7')
+    await router.isReady()
+
+    const wrapper = mount(HouseDetailView, {
+      global: {
+        plugins: [router]
+      }
+    })
+
+    await flushPromises()
+
+    const followButton = wrapper.find('[data-test="publisher-follow"]')
+    expect(fetchPublisherFollowStatus).toHaveBeenCalledWith(9)
+    expect(followButton.text()).toContain('Follow')
+
+    await followButton.trigger('click')
+    await flushPromises()
+
+    expect(followPublisher).toHaveBeenCalledWith(9)
   })
 })
