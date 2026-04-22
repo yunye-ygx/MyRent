@@ -11,3 +11,11 @@ export function loginByPhone(payload) {
 export function fetchUserById(id) {
   return http.get(`/user/${id}`)
 }
+
+export function fetchCurrentUser() {
+  return http.get('/user/me')
+}
+
+export function updateMyName(payload) {
+  return http.put('/user/me/name', payload)
+}

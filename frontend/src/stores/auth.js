@@ -31,6 +31,22 @@ export const useAuthStore = defineStore('auth', {
       setProfile(this.profile)
       return loginVO
     },
+    syncProfile(profile) {
+      if (!profile) {
+        return
+      }
+      this.profile = {
+        ...(this.profile || {}),
+        ...profile
+      }
+      setProfile(this.profile)
+    },
+    updateProfileName(name) {
+      if (!name) {
+        return
+      }
+      this.syncProfile({ name })
+    },
     logout() {
       this.token = ''
       this.profile = null

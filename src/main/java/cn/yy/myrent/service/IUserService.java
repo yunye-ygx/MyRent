@@ -17,4 +17,8 @@ public interface IUserService extends IService<User> {
 
     User loginByPhone(String phone, String password);
 
+    User getSafeById(Long userId);
+
+    User updateName(Long userId, String name);
+
 }

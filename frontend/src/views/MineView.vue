@@ -2,13 +2,22 @@
   <div class="mine-view">
     <section class="profile app-surface">
       <div class="avatar">{{ avatarText }}</div>
-      <div>
+      <div class="profile-main">
         <p class="eyebrow">Profile</p>
-        <h2 class="name">{{ authStore.profile?.name || '未命名用户' }}</h2>
-        <p class="phone">{{ authStore.profile?.phone || '--' }}</p>
+        <div class="name-row">
+          <h2 class="name" data-testid="mine-name">{{ displayName }}</h2>
+          <span class="status-chip" data-testid="mine-status">{{ accountStatus }}</span>
+        </div>
+        <p class="phone" data-testid="mine-phone">{{ displayPhone }}</p>
+        <p class="status-copy">{{ statusDescription }}</p>
       </div>
-      <button class="primary-btn" @click="logout">退出登录</button>
+      <div class="profile-actions">
+        <button class="ghost-btn" type="button" @click="goProfile">个人资料</button>
+        <button class="primary-btn" type="button" @click="logout">退出登录</button>
+      </div>
     </section>
+
+    <p v-if="profileError" class="error-text">{{ profileError }}</p>
 
     <section class="menu-section app-surface">
       <h3 class="section-title">功能入口</h3>
@@ -23,19 +32,21 @@
     <section class="mock-note app-surface">
       <p class="eyebrow">Phase 1 Note</p>
       <p class="copy">
-        学生认证、预约、收藏、浏览记录和订单模块都保留入口，后续可以继续替换成真实接口和更完整的状态流转。
+        当前个人资料已经接入真实用户数据，并支持修改名称。头像、生日等资料后续可以继续在这个入口扩展。
       </p>
     </section>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { fetchCurrentUser } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const profileError = ref('')
 
 const menus = [
   { key: 'profile', label: '个人资料' },
@@ -50,12 +61,41 @@ const menus = [
   { key: 'feedback', label: '意见反馈' }
 ]
 
+const displayName = computed(() => authStore.profile?.name || '未命名用户')
+const displayPhone = computed(() => authStore.profile?.phone || '--')
+const accountStatus = computed(() => (authStore.isLoggedIn ? '已登录' : '未登录'))
+const statusDescription = computed(() =>
+  authStore.isLoggedIn ? '当前账号状态正常，可继续查看和修改基础资料。' : '当前未登录。'
+)
+
 const avatarText = computed(() => {
-  const name = authStore.profile?.name || 'U'
+  const name = displayName.value || 'U'
   return name.slice(0, 1).toUpperCase()
 })
 
+async function loadProfile() {
+  profileError.value = ''
+  try {
+    const profile = await fetchCurrentUser()
+    authStore.syncProfile({
+      userId: profile.id,
+      phone: profile.phone,
+      name: profile.name
+    })
+  } catch (error) {
+    profileError.value = error?.message || '用户资料加载失败'
+  }
+}
+
+function goProfile() {
+  router.push('/mine/profile')
+}
+
 function openModule(item) {
+  if (item.key === 'profile') {
+    goProfile()
+    return
+  }
   if (item.key === 'favorite') {
     router.push('/mine/favorites')
     return
@@ -76,6 +116,10 @@ function logout() {
   authStore.logout()
   router.replace('/login')
 }
+
+onMounted(() => {
+  loadProfile()
+})
 </script>
 
 <style scoped>
@@ -89,6 +133,16 @@ function logout() {
   display: grid;
   gap: 16px;
   padding: 24px;
+}
+
+.profile-main {
+  min-width: 0;
+}
+
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .avatar {
@@ -112,12 +166,31 @@ function logout() {
   color: var(--color-text-muted);
 }
 
+.name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
 .name {
   margin: 0;
   font-size: 30px;
 }
 
-.phone {
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(32, 120, 244, 0.12);
+  color: var(--color-accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.phone,
+.status-copy {
   margin: 10px 0 0;
   font-size: 14px;
   color: var(--color-text-muted);
@@ -126,6 +199,10 @@ function logout() {
 .menu-section,
 .mock-note {
   padding: 24px;
+}
+
+.section-title {
+  margin: 0 0 12px;
 }
 
 .menu {
@@ -157,6 +234,12 @@ function logout() {
   font-size: 14px;
   line-height: 1.8;
   color: var(--color-text-muted);
+}
+
+.error-text {
+  margin: 0;
+  color: #dc2626;
+  font-size: 14px;
 }
 
 @media (min-width: 1024px) {
