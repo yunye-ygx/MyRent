@@ -43,7 +43,6 @@ const menus = [
   { key: 'reservation', label: '我的预约' },
   { key: 'favorite', label: '我的收藏' },
   { key: 'history', label: '浏览记录' },
-  { key: 'consult', label: '我的咨询' },
   { key: 'contract', label: '我的合同 / 订单' },
   { key: 'setting', label: '设置' },
   { key: 'support', label: '客服与帮助' },
@@ -58,14 +57,6 @@ const avatarText = computed(() => {
 function openModule(item) {
   if (item.key === 'favorite') {
     router.push('/mine/favorites')
-    return
-  }
-  if (item.key === 'history') {
-    router.push('/mine/history')
-    return
-  }
-  if (item.key === 'consult') {
-    router.push('/mine/consults')
     return
   }
   if (item.key === 'contract') {
