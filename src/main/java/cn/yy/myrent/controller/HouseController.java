@@ -153,6 +153,7 @@ public class HouseController {
 
         house.setId(id);
         house.setPublisherUserId(dbHouse.getPublisherUserId());
+
         boolean updated = houseCommandService.updateHouseWithSync(id, house);
         if (!updated) {
             return Result.error("更新房源失败或房源不存在");

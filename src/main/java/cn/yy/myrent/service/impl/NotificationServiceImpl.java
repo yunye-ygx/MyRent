@@ -14,10 +14,12 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@Slf4j
 public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Notification> implements INotificationService {
 
     private static final int ACTIVE_STATUS = 1;
@@ -114,6 +116,7 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
         if (oldHouse.getPrice() != null
                 && newHouse.getPrice() != null
                 && !oldHouse.getPrice().equals(newHouse.getPrice())) {
+            log.info("房源价格发生变化 {}", oldHouse.getId());
             fanoutToFavoriteUsers(
                     oldHouse.getId(),
                     NotificationType.HOUSE_PRICE_CHANGED,
@@ -127,6 +130,7 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
 
         if (!equalsStatus(oldHouse.getStatus(), newHouse.getStatus())
                 && Integer.valueOf(HOUSE_STATUS_RENTED).equals(newHouse.getStatus())) {
+            log.info("房源状态发生变化 {}", oldHouse.getId());
             fanoutToFavoriteUsers(
                     oldHouse.getId(),
                     NotificationType.HOUSE_RENTED,
@@ -140,6 +144,7 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
 
         if (!equalsStatus(oldHouse.getStatus(), newHouse.getStatus())
                 && Integer.valueOf(HOUSE_STATUS_OFFLINE).equals(newHouse.getStatus())) {
+            log.info("房源状态发生变化 {}", oldHouse.getId());
             fanoutToFavoriteUsers(
                     oldHouse.getId(),
                     NotificationType.HOUSE_OFFLINE,

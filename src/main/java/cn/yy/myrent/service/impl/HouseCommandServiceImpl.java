@@ -69,6 +69,7 @@ public class HouseCommandServiceImpl extends ServiceImpl<HouseMapper, House> imp
 
         boolean updated = this.updateById(classificationResult.getUpdatePatch());
         if (!updated) {
+            log.info("房源修改失败，houseId={}", id);
             return false;
         }
 
@@ -85,8 +86,10 @@ public class HouseCommandServiceImpl extends ServiceImpl<HouseMapper, House> imp
                 classificationResult.isCoreChanged());
 
         if (classificationResult.isCoreChanged()) {
+            log.info("此次是核心字段更新，触发ES同步，插入本地表，houseId={}", id);
             dispatchCoreEvent(id, HouseSyncConstants.EVENT_HOUSE_ES_UPSERT, "house-update-core");
         } else {
+            log.info("此次是非核心字段更新，触发ES同步，houseId={}", id);
             dispatchNormalEventAfterCommit(id, HouseSyncConstants.EVENT_HOUSE_ES_UPSERT, "house-update-normal");
         }
         return true;
