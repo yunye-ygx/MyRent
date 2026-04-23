@@ -135,27 +135,27 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchHouseById } from '@/api/house'
 import { completeOrder, fetchMyOrderPage, repayOrder } from '@/api/order'
-import { applyPaymentRefund, fetchOrderRefundStatuses } from '@/api/payment'
+import { applyPaymentRefund } from '@/api/payment'
 import EmptyState from '@/components/EmptyState.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import { formatDateTime, formatPrice, formatRequestError, getOrderStatusText } from '@/utils/format'
 
 const PRIMARY_TABS = [
-  { key: 'UNPAID', label: 'UNPAID' },
-  { key: 'PAID', label: 'PAID' },
-  { key: 'CANCELLED', label: 'CANCELLED' },
-  { key: 'REVIEW', label: 'REVIEW' },
-  { key: 'REFUND', label: 'REFUND' }
+  { key: 'UNPAID', label: '待支付' },
+  { key: 'PAID', label: '支付成功' },
+  { key: 'CANCELLED', label: '已取消' },
+  { key: 'REVIEW', label: '评价' },
+  { key: 'REFUND', label: '退款' }
 ]
 
 const REVIEW_TABS = [
-  { key: 'PENDING_REVIEW', label: 'PENDING_REVIEW' },
-  { key: 'REVIEWED', label: 'REVIEWED' }
+  { key: 'PENDING_REVIEW', label: '待评价' },
+  { key: 'REVIEWED', label: '已评价' }
 ]
 
 const REFUND_TABS = [
-  { key: 'IN_PROGRESS', label: 'IN_PROGRESS' },
-  { key: 'FINISHED', label: 'FINISHED' }
+  { key: 'IN_PROGRESS', label: '退款中' },
+  { key: 'FINISHED', label: '退款成功' }
 ]
 
 const DEFAULT_PRIMARY_TAB = 'UNPAID'
@@ -257,6 +257,7 @@ const visibleOrders = computed(() => {
 const emptyStateConfig = computed(() => EMPTY_STATE_BY_TAB[activeTabKey.value] || EMPTY_STATE_BY_TAB.UNPAID)
 
 const houseCache = new Map()
+const houseRequestCache = new Map()
 
 async function attachHouseTitle(records = []) {
   if (!records.length) {
@@ -271,48 +272,36 @@ async function attachHouseTitle(records = []) {
       if (houseCache.has(order.houseId)) {
         return { ...order, houseTitle: houseCache.get(order.houseId) }
       }
+      if (houseRequestCache.has(order.houseId)) {
+        const houseTitle = await houseRequestCache.get(order.houseId)
+        return { ...order, houseTitle }
+      }
       try {
-        const house = await fetchHouseById(order.houseId)
-        const houseTitle = house?.title || `House ${order.houseId}`
+        const pendingTitle = fetchHouseById(order.houseId)
+          .then((house) => house?.title || `House ${order.houseId}`)
+          .catch(() => `House ${order.houseId}`)
+        houseRequestCache.set(order.houseId, pendingTitle)
+        const houseTitle = await pendingTitle
         houseCache.set(order.houseId, houseTitle)
+        houseRequestCache.delete(order.houseId)
         return { ...order, houseTitle }
       } catch {
         const houseTitle = `House ${order.houseId}`
         houseCache.set(order.houseId, houseTitle)
+        houseRequestCache.delete(order.houseId)
         return { ...order, houseTitle }
       }
     })
   )
 }
 
-async function attachRefundStatus(records = []) {
-  if (!records.length) {
-    return []
-  }
-
-  try {
-    const refundStatuses = await fetchOrderRefundStatuses(records.map((order) => order.orderNo))
-    const refundMap = new Map((refundStatuses || []).map((item) => [item.orderNo, item]))
-    return records.map((order) => ({
-      ...order,
-      latestRefundStatus: refundMap.has(order.orderNo)
-        ? refundMap.get(order.orderNo)?.status ?? null
-        : order.latestRefundStatus ?? null,
-      latestRefundNo: refundMap.has(order.orderNo)
-        ? refundMap.get(order.orderNo)?.refundNo || ''
-        : order.latestRefundNo || '',
-      latestRefundReasonCode: refundMap.has(order.orderNo)
-        ? refundMap.get(order.orderNo)?.reasonCode || ''
-        : order.latestRefundReasonCode || ''
-    }))
-  } catch {
-    return records.map((order) => ({
-      ...order,
-      latestRefundStatus: order.latestRefundStatus ?? null,
-      latestRefundNo: order.latestRefundNo || '',
-      latestRefundReasonCode: order.latestRefundReasonCode || ''
-    }))
-  }
+function normalizeOrders(records = []) {
+  return records.map((order) => ({
+    ...order,
+    latestRefundStatus: order?.latestRefundStatus ?? null,
+    latestRefundNo: order?.latestRefundNo || '',
+    latestRefundReasonCode: order?.latestRefundReasonCode || ''
+  }))
 }
 
 function resetOrderListState() {
@@ -334,8 +323,8 @@ async function loadOrders(reset = false) {
   loading.value = true
   try {
     const page = await fetchMyOrderPage({ current: current.value, size })
-    const withTitle = await attachHouseTitle(page?.records || [])
-    const records = await attachRefundStatus(withTitle)
+    const normalizedRecords = normalizeOrders(page?.records || [])
+    const records = await attachHouseTitle(normalizedRecords)
     orders.value = reset ? records : [...orders.value, ...records]
     const total = Number(page?.total || 0)
     hasMore.value = current.value * size < total
@@ -362,16 +351,16 @@ async function switchPrimaryTab(nextTab) {
   activePrimaryTab.value = nextTab
   activeReviewTab.value = DEFAULT_REVIEW_TAB
   activeRefundTab.value = DEFAULT_REFUND_TAB
-  await loadOrders(true)
+  error.value = ''
 }
 
-async function switchSecondaryTab(nextTab) {
+function switchSecondaryTab(nextTab) {
   if (activePrimaryTab.value === 'REVIEW') {
     if (activeReviewTab.value === nextTab) {
       return
     }
     activeReviewTab.value = nextTab
-    await loadOrders(true)
+    error.value = ''
     return
   }
 
@@ -380,7 +369,7 @@ async function switchSecondaryTab(nextTab) {
       return
     }
     activeRefundTab.value = nextTab
-    await loadOrders(true)
+    error.value = ''
   }
 }
 
@@ -443,7 +432,7 @@ function isRefundInProgressOrder(order) {
 }
 
 function isRefundFinishedOrder(order) {
-  return [2, 4, 6].includes(order?.latestRefundStatus)
+  return order?.status === 4 && order?.latestRefundStatus === 2
 }
 
 function canCompleteOrder(order) {
@@ -563,6 +552,12 @@ onMounted(() => {
 .status-tab.secondary {
   border-color: #cbd5e1;
   background: #f8fafc;
+}
+
+.status-tab.secondary.active {
+  border-color: #111827;
+  background: #111827;
+  color: #ffffff;
 }
 
 .order-card {
