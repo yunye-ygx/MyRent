@@ -99,6 +99,10 @@ function openModule(item) {
     router.push('/mine/favorites')
     return
   }
+  if (item.key === 'history') {
+    router.push('/mine/history')
+    return
+  }
   if (item.key === 'contract') {
     router.push('/mine/orders')
     return
