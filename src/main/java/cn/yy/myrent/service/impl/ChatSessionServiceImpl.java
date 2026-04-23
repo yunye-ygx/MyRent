@@ -13,6 +13,7 @@ import cn.yy.myrent.mapper.UserMapper;
 import cn.yy.myrent.service.IChatSessionService;
 import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.vo.ChatSessionSummaryVO;
+import cn.yy.myrent.vo.UnreadTotalVO;
 import cn.yy.myrent.websocket.ChatWebSocketSessionManager;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -30,9 +31,6 @@ import java.util.Collections;
 @Service
 @Slf4j
 public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatSession> implements IChatSessionService {
-
-    private static final int HOUSE_STATUS_AVAILABLE = 1;
-    private static final int HOUSE_STATUS_LOCKED = 2;
 
     @Autowired
     private ChatMessageMapper chatMessageMapper;
@@ -62,21 +60,20 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
 
         validateSendMessageRequest(senderId, receiverId, houseId, content);
 
+        String sessionId = buildSessionId(senderId, receiverId, houseId);
+        LocalDateTime now = LocalDateTime.now();
+
         House house = houseMapper.selectById(houseId);
-        validateHouseAndReceiver(senderId, receiverId, house);
+        ChatSession chatSession = this.lambdaQuery()
+                .eq(ChatSession::getSessionId, sessionId)
+                .one();
+        ChatSessionPermissionValidator.validate(house, senderId, receiverId, chatSession != null);
+        validateExistingSession(chatSession, senderId, receiverId, houseId);
 
         User receiver = userMapper.selectById(receiverId);
         if (receiver == null) {
             throw new RuntimeException("接收方不存在");
         }
-
-        String sessionId = buildSessionId(senderId, receiverId, houseId);
-        LocalDateTime now = LocalDateTime.now();
-
-        ChatSession chatSession = this.lambdaQuery()
-                .eq(ChatSession::getSessionId, sessionId)
-                .one();
-        validateExistingSession(chatSession, senderId, receiverId, houseId);
 
         if (chatSession == null) {
             long userId1 = Math.min(senderId, receiverId);
@@ -178,6 +175,13 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
         return page;
     }
 
+    @Override
+    public UnreadTotalVO buildUnreadTotal(Long userId) {
+        UnreadTotalVO vo = new UnreadTotalVO();
+        vo.setTotal(this.baseMapper.countUnreadMessages(userId));
+        return vo;
+    }
+
     private void validateSendMessageRequest(Long senderId, Long receiverId, Long houseId, String content) {
         if (senderId == null || receiverId == null || houseId == null || houseId <= 0L || !StringUtils.hasText(content)) {
             log.warn("invalid send chat params, senderId={}, receiverId={}, houseId={}, hasContent={}",
@@ -186,24 +190,6 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
         }
         if (senderId.equals(receiverId)) {
             throw new RuntimeException("不能给自己发送消息");
-        }
-    }
-
-    private void validateHouseAndReceiver(Long senderId, Long receiverId, House house) {
-        if (house == null) {
-            throw new RuntimeException("房源不存在");
-        }
-        if (!isChatEnabledHouseStatus(house.getStatus())) {
-            throw new RuntimeException("当前房源状态不允许聊天");
-        }
-        if (house.getPublisherUserId() == null) {
-            throw new RuntimeException("房源发布者信息缺失");
-        }
-        if (!receiverId.equals(house.getPublisherUserId())) {
-            throw new RuntimeException("只允许联系当前房源发布者");
-        }
-        if (senderId.equals(house.getPublisherUserId())) {
-            throw new RuntimeException("房源发布者不能主动发起会话");
         }
     }
 
@@ -220,10 +206,6 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
         if (invalid) {
             throw new RuntimeException("会话数据异常，无法发送消息");
         }
-    }
-
-    private boolean isChatEnabledHouseStatus(Integer status) {
-        return status != null && (status == HOUSE_STATUS_AVAILABLE || status == HOUSE_STATUS_LOCKED);
     }
 
     private String buildSessionId(Long userId1, Long userId2, Long houseId) {

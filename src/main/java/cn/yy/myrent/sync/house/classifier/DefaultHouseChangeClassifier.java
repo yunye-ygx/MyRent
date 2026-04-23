@@ -1,11 +1,13 @@
 package cn.yy.myrent.sync.house.classifier;
 
 import cn.yy.myrent.entity.House;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.Objects;
 
 @Component
+@Slf4j
 public class DefaultHouseChangeClassifier implements HouseChangeClassifier {
 
     @Override
@@ -21,6 +23,7 @@ public class DefaultHouseChangeClassifier implements HouseChangeClassifier {
             return result;
         }
 
+        log.info("判断是哪个字段发生了变化，并且是否是核心字段");
         applyTitleChange(oldHouse, newHouse, patch, result);
         applyRentTypeChange(oldHouse, newHouse, patch, result);
         applyPriceChange(oldHouse, newHouse, patch, result);

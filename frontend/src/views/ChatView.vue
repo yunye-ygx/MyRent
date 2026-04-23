@@ -90,6 +90,7 @@ import ChatBubble from '@/components/ChatBubble.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useMessageCenterStore } from '@/stores/messageCenter'
 import { formatPrice, getHouseStatusText } from '@/utils/format'
 import { getToken } from '@/utils/storage'
 
@@ -98,6 +99,7 @@ const quickActions = ['还在吗？', '能否周末看房', '押几付几', '是
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const messageCenterStore = useMessageCenterStore()
 
 const sessionId = computed(() => String(route.params.sessionId || ''))
 const peerId = computed(() => Number(route.query.peerId || 0))
@@ -224,16 +226,19 @@ async function syncVisibleReadState() {
   if (!pageActive || document.visibilityState !== 'visible') {
     return
   }
-  const upToMessageId = getMaxVisibleReadableMessageId()
+  const upToMessageId = getLastMessageId()
   if (!upToMessageId || upToMessageId <= lastReadUpToId.value) {
     return
   }
   try {
-    await markMessagesRead({
+    const updatedCount = await markMessagesRead({
       sessionId: sessionId.value,
       upToMessageId
     })
     lastReadUpToId.value = upToMessageId
+    if (updatedCount > 0) {
+      messageCenterStore.decrementChatUnread(updatedCount)
+    }
   } catch {
     // Ignore read receipt failures to keep the chat flow responsive.
   }

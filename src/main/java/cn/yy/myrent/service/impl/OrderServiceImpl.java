@@ -248,7 +248,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
                         .orderByDesc(Order::getId));
 
         List<Order> orderRecords = page == null || page.getRecords() == null ? Collections.emptyList() : page.getRecords();
+        log.info("获取订单号列表");
         List<String> orderNos = orderRecords.stream().map(Order::getOrderNo).toList();
+        log.info("获取订单评价列表");
         Map<String, Review> reviewMap = reviewService.mapByOrderNos(orderNos);
         Map<String, PaymentRefund> latestRefundMap = mapLatestRefundByOrderNo(userId, orderNos);
 
@@ -318,6 +320,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             if (refund == null || refund.getOrderNo() == null || latest.containsKey(refund.getOrderNo())) {
                 continue;
             }
+
             latest.put(refund.getOrderNo(), refund);
         }
         return latest;

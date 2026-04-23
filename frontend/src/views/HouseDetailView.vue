@@ -9,7 +9,11 @@
         :publisher-name="publisherName"
         :favorite-count="favoriteCountText"
         :status-text="statusText"
+        :publisher-follow-loading="publisherFollowLoading"
+        :publisher-follow-text="publisherFollowText"
+        :can-follow-publisher="canFollowPublisher"
         @back="goBack"
+        @publisher-follow="togglePublisherFollow"
       />
 
       <div class="detail-grid">
@@ -31,12 +35,12 @@
             <li v-for="item in reviewSummary.records" :key="item.reviewId" class="review-item">
               <div class="review-head">
                 <span>{{ item.reviewerName }}</span>
-                <span>{{ item.score }} 星</span>
+                <span>{{ item.score }} stars</span>
               </div>
               <p>{{ item.content }}</p>
             </li>
           </ul>
-          <p v-else class="copy">当前还没有评价，完成订单后的租客可以在“我的订单”中提交评价。</p>
+          <p v-else class="copy">There are no reviews yet.</p>
         </section>
 
         <HouseActionBar
@@ -72,6 +76,7 @@ import {
   unfavoriteHouse
 } from '@/api/house'
 import { createOrder } from '@/api/order'
+import { fetchPublisherFollowStatus, followPublisher, unfollowPublisher } from '@/api/publisherFollow'
 import { fetchUserById } from '@/api/user'
 import EmptyState from '@/components/EmptyState.vue'
 import LoadingState from '@/components/LoadingState.vue'
@@ -87,12 +92,17 @@ const authStore = useAuthStore()
 const loading = ref(false)
 const lockLoading = ref(false)
 const favoriteLoading = ref(false)
+const publisherFollowLoading = ref(false)
 const error = ref('')
 const house = ref(null)
 const publisher = ref(null)
 const favoriteStatus = ref({
   favorited: false,
   favoriteCount: 0
+})
+const publisherFollowStatus = ref({
+  publisherUserId: null,
+  following: false
 })
 const reviewSummary = ref({
   averageScore: 0,
@@ -111,6 +121,18 @@ const favoriteButtonText = computed(() => (
       : 'Favorite House'
 ))
 const favoriteCountText = computed(() => favoriteStatus.value?.favoriteCount ?? 0)
+const canFollowPublisher = computed(() => (
+  Boolean(authStore.userId)
+  && Boolean(house.value?.publisherUserId)
+  && String(authStore.userId) !== String(house.value?.publisherUserId)
+))
+const publisherFollowText = computed(() => (
+  publisherFollowLoading.value
+    ? 'Processing...'
+    : publisherFollowStatus.value?.following
+      ? 'Following'
+      : 'Follow'
+))
 
 function buildSessionId(firstUserId, secondUserId, houseId) {
   try {
@@ -159,6 +181,26 @@ async function loadFavoriteStatus() {
   }
 }
 
+async function loadPublisherFollowStatus() {
+  publisherFollowStatus.value = {
+    publisherUserId: house.value?.publisherUserId || null,
+    following: false
+  }
+
+  if (!canFollowPublisher.value) {
+    return
+  }
+
+  try {
+    publisherFollowStatus.value = await fetchPublisherFollowStatus(house.value.publisherUserId)
+  } catch {
+    publisherFollowStatus.value = {
+      publisherUserId: house.value.publisherUserId,
+      following: false
+    }
+  }
+}
+
 async function loadReviews() {
   if (!route.params.id) {
     reviewSummary.value = {
@@ -189,12 +231,17 @@ async function loadHouse() {
     await Promise.all([
       loadPublisher(),
       loadFavoriteStatus(),
+      loadPublisherFollowStatus(),
       loadReviews()
     ])
   } catch (err) {
     error.value = formatRequestError(err, 'House detail is temporarily unavailable.')
     house.value = null
     publisher.value = null
+    publisherFollowStatus.value = {
+      publisherUserId: null,
+      following: false
+    }
     reviewSummary.value = {
       averageScore: 0,
       reviewCount: 0,
@@ -227,6 +274,23 @@ async function toggleFavorite() {
     window.alert(formatRequestError(err, 'Favorite action failed.'))
   } finally {
     favoriteLoading.value = false
+  }
+}
+
+async function togglePublisherFollow() {
+  if (!canFollowPublisher.value || publisherFollowLoading.value) {
+    return
+  }
+
+  publisherFollowLoading.value = true
+  try {
+    publisherFollowStatus.value = publisherFollowStatus.value?.following
+      ? await unfollowPublisher(house.value.publisherUserId)
+      : await followPublisher(house.value.publisherUserId)
+  } catch (err) {
+    window.alert(formatRequestError(err, 'Publisher follow action failed.'))
+  } finally {
+    publisherFollowLoading.value = false
   }
 }
 

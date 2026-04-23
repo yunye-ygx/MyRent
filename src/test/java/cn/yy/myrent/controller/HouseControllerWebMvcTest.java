@@ -10,9 +10,11 @@ import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.mapper.LocalTaskMapper;
 import cn.yy.myrent.mapper.LocationDictMapper;
 import cn.yy.myrent.mapper.MockPayTradeMapper;
+import cn.yy.myrent.mapper.NotificationMapper;
 import cn.yy.myrent.mapper.OrderMapper;
 import cn.yy.myrent.mapper.PaymentMapper;
 import cn.yy.myrent.mapper.PaymentRefundMapper;
+import cn.yy.myrent.mapper.PublisherFollowMapper;
 import cn.yy.myrent.mapper.ReviewMapper;
 import cn.yy.myrent.mapper.UserMapper;
 import cn.yy.myrent.entity.House;
@@ -95,6 +97,9 @@ class HouseControllerWebMvcTest {
     private MockPayTradeMapper mockPayTradeMapper;
 
     @MockBean
+    private NotificationMapper notificationMapper;
+
+    @MockBean
     private OrderMapper orderMapper;
 
     @MockBean
@@ -102,6 +107,9 @@ class HouseControllerWebMvcTest {
 
     @MockBean
     private PaymentRefundMapper paymentRefundMapper;
+
+    @MockBean
+    private PublisherFollowMapper publisherFollowMapper;
 
     @MockBean
     private ReviewMapper reviewMapper;
