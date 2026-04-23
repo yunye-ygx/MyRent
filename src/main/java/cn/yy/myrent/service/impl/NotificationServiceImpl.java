@@ -43,13 +43,11 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
         long safeCurrent = Math.max(current == null ? 1L : current, 1L);
         long safeSize = Math.min(Math.max(size == null ? 10L : size, 1L), 50L);
         Page<Notification> page = new Page<>(safeCurrent, safeSize);
-        page.setRecords(notificationMapper.selectList(new QueryWrapper<Notification>()
-                .eq("user_id", userId)
+        page.setRecords(notificationMapper.selectList(visibleInboxQuery(userId)
                 .orderByDesc("create_time")
                 .orderByDesc("id")
                 .last("LIMIT " + page.offset() + "," + safeSize)));
-        page.setTotal(notificationMapper.selectCount(new QueryWrapper<Notification>()
-                .eq("user_id", userId)));
+        page.setTotal(notificationMapper.selectCount(visibleInboxQuery(userId)));
         return page;
     }
 
@@ -66,6 +64,20 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void markRead(Long notificationId, Long userId) {
+        Notification notification = notificationMapper.selectOne(new QueryWrapper<Notification>()
+                .select("id", "user_id", "type", "is_read")
+                .eq("id", notificationId)
+                .eq("user_id", userId)
+                .last("LIMIT 1"));
+        if (notification == null) {
+            return;
+        }
+        if (shouldRemoveAfterRead(notification.getType())) {
+            notificationMapper.delete(new QueryWrapper<Notification>()
+                    .eq("id", notificationId)
+                    .eq("user_id", userId));
+            return;
+        }
         notificationMapper.update(null, new UpdateWrapper<Notification>()
                 .eq("id", notificationId)
                 .eq("user_id", userId)
@@ -82,6 +94,9 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
                 .eq("is_read", 0)
                 .set("is_read", 1)
                 .setSql("read_time = NOW()"));
+        notificationMapper.delete(new QueryWrapper<Notification>()
+                .eq("user_id", userId)
+                .eq("type", NotificationType.PUBLISHER_NEW_HOUSE));
     }
 
     @Override
@@ -222,6 +237,18 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
 
     private boolean equalsStatus(Integer left, Integer right) {
         return left == null ? right == null : left.equals(right);
+    }
+
+    private QueryWrapper<Notification> visibleInboxQuery(Long userId) {
+        return new QueryWrapper<Notification>()
+                .eq("user_id", userId)
+                .and(wrapper -> wrapper.ne("type", NotificationType.PUBLISHER_NEW_HOUSE)
+                        .or(inner -> inner.eq("type", NotificationType.PUBLISHER_NEW_HOUSE)
+                                .eq("is_read", 0)));
+    }
+
+    private boolean shouldRemoveAfterRead(String type) {
+        return NotificationType.PUBLISHER_NEW_HOUSE.equals(type);
     }
 
     private int normalizeVersion(House house) {

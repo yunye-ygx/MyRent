@@ -101,6 +101,10 @@ const { loading, error, sessions, loadSessions } = useChatSessionList(fetchSessi
 const chatTabLabel = computed(() => `Chat (${messageCenterStore.chatUnreadTotal})`)
 const notificationTabLabel = computed(() => `Notifications (${messageCenterStore.notificationUnreadTotal})`)
 
+function shouldRemoveAfterRead(item) {
+  return item?.type === 'PUBLISHER_NEW_HOUSE'
+}
+
 async function loadNotifications() {
   notificationLoading.value = true
   notificationError.value = ''
@@ -126,12 +130,18 @@ async function openNotification(item) {
     messageCenterStore.decrementNotificationUnread()
   }
 
+  if (shouldRemoveAfterRead(item)) {
+    notifications.value = notifications.value.filter((current) => current.id !== item.id)
+  }
+
   router.push(`/house/${item.redirectTargetId}`)
 }
 
 async function markAllRead() {
   await markAllNotificationsRead()
-  notifications.value = notifications.value.map((item) => ({ ...item, isRead: 1 }))
+  notifications.value = notifications.value
+    .map((item) => ({ ...item, isRead: 1 }))
+    .filter((item) => !shouldRemoveAfterRead(item))
   messageCenterStore.setNotificationUnreadTotal(0)
 }
 
@@ -155,6 +165,7 @@ function refreshCurrentTab() {
 }
 
 onMounted(() => {
+  messageCenterStore.loadUnreadTotals()
   loadSessions()
   loadNotifications()
 })

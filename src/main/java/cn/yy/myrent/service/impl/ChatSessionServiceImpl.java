@@ -32,9 +32,6 @@ import java.util.Collections;
 @Slf4j
 public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatSession> implements IChatSessionService {
 
-    private static final int HOUSE_STATUS_AVAILABLE = 1;
-    private static final int HOUSE_STATUS_LOCKED = 2;
-
     @Autowired
     private ChatMessageMapper chatMessageMapper;
 
@@ -63,21 +60,20 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
 
         validateSendMessageRequest(senderId, receiverId, houseId, content);
 
+        String sessionId = buildSessionId(senderId, receiverId, houseId);
+        LocalDateTime now = LocalDateTime.now();
+
         House house = houseMapper.selectById(houseId);
-        validateHouseAndReceiver(senderId, receiverId, house);
+        ChatSession chatSession = this.lambdaQuery()
+                .eq(ChatSession::getSessionId, sessionId)
+                .one();
+        ChatSessionPermissionValidator.validate(house, senderId, receiverId, chatSession != null);
+        validateExistingSession(chatSession, senderId, receiverId, houseId);
 
         User receiver = userMapper.selectById(receiverId);
         if (receiver == null) {
             throw new RuntimeException("接收方不存在");
         }
-
-        String sessionId = buildSessionId(senderId, receiverId, houseId);
-        LocalDateTime now = LocalDateTime.now();
-
-        ChatSession chatSession = this.lambdaQuery()
-                .eq(ChatSession::getSessionId, sessionId)
-                .one();
-        validateExistingSession(chatSession, senderId, receiverId, houseId);
 
         if (chatSession == null) {
             long userId1 = Math.min(senderId, receiverId);
@@ -197,24 +193,6 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
         }
     }
 
-    private void validateHouseAndReceiver(Long senderId, Long receiverId, House house) {
-        if (house == null) {
-            throw new RuntimeException("房源不存在");
-        }
-        if (!isChatEnabledHouseStatus(house.getStatus())) {
-            throw new RuntimeException("当前房源状态不允许聊天");
-        }
-        if (house.getPublisherUserId() == null) {
-            throw new RuntimeException("房源发布者信息缺失");
-        }
-        if (!receiverId.equals(house.getPublisherUserId())) {
-            throw new RuntimeException("只允许联系当前房源发布者");
-        }
-        if (senderId.equals(house.getPublisherUserId())) {
-            throw new RuntimeException("房源发布者不能主动发起会话");
-        }
-    }
-
     private void validateExistingSession(ChatSession chatSession, Long senderId, Long receiverId, Long houseId) {
         if (chatSession == null) {
             return;
@@ -228,10 +206,6 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
         if (invalid) {
             throw new RuntimeException("会话数据异常，无法发送消息");
         }
-    }
-
-    private boolean isChatEnabledHouseStatus(Integer status) {
-        return status != null && (status == HOUSE_STATUS_AVAILABLE || status == HOUSE_STATUS_LOCKED);
     }
 
     private String buildSessionId(Long userId1, Long userId2, Long houseId) {

@@ -29,6 +29,9 @@ export const useMessageCenterStore = defineStore('messageCenter', {
     setChatUnreadTotal(total) {
       this.chatUnreadTotal = Number(total || 0)
     },
+    decrementChatUnread(count = 1) {
+      this.chatUnreadTotal = Math.max(0, Number(this.chatUnreadTotal || 0) - Number(count || 0))
+    },
     setNotificationUnreadTotal(total) {
       this.notificationUnreadTotal = Number(total || 0)
     },
