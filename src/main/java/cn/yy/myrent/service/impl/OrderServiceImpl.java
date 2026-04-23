@@ -279,6 +279,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
                     && review != null
                     && review.getEditCount() != null
                     && review.getEditCount() == 0);
+            item.setLatestRefundStatus(latestRefund == null ? null : latestRefund.getStatus());
+            item.setLatestRefundNo(latestRefund == null ? null : latestRefund.getRefundNo());
+            item.setLatestRefundReasonCode(latestRefund == null ? null : latestRefund.getReasonCode());
             return item;
         }).toList();
 

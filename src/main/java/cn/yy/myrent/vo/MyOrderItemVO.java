@@ -32,4 +32,10 @@ public class MyOrderItemVO {
     private Boolean canReview;
 
     private Boolean canEditReview;
+
+    private Integer latestRefundStatus;
+
+    private String latestRefundNo;
+
+    private String latestRefundReasonCode;
 }
