@@ -8,9 +8,12 @@
         @click="openToast(toast)"
       />
     </div>
-    <div class="app-container flex min-h-screen flex-col gap-6 py-5 lg:py-8">
-      <AppTopNav :items="topNavItems" :current-path="route.path" />
-      <main class="min-h-0 flex-1">
+    <div
+      class="app-container flex min-h-screen flex-col gap-6 py-5 lg:py-8"
+      :class="{ 'app-container--home': isHomeRoute }"
+    >
+      <AppTopNav :items="topNavItems" :current-path="route.path" :full-bleed="isHomeRoute" />
+      <main class="min-h-0 flex-1" :class="{ 'main--home': isHomeRoute }">
         <router-view />
       </main>
     </div>
@@ -19,7 +22,7 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppTabBar from '@/components/AppTabBar.vue'
 import OnlineMessageToast from '@/components/chat/OnlineMessageToast.vue'
@@ -35,6 +38,7 @@ const chatSessionStore = useChatSessionStore()
 const route = useRoute()
 const router = useRouter()
 const messageCenterStore = useMessageCenterStore()
+const isHomeRoute = computed(() => route.path === '/home')
 
 let ws = null
 let reconnectTimer = null
@@ -154,6 +158,18 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.app-container--home {
+  max-width: none;
+  gap: 0;
+  padding-top: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.main--home {
+  width: 100%;
+}
+
 main {
   min-width: 0;
 }
