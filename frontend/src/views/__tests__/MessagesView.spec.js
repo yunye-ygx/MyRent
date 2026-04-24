@@ -6,15 +6,49 @@ import MessagesView from '@/views/MessagesView.vue'
 vi.mock('@/api/chat', () => ({
   fetchSessionPage: vi.fn().mockResolvedValue({
     records: [
-      { sessionId: '1_9_7', peerId: 9, peerName: 'Landlord A', unreadCount: 2, houseId: 7, houseTitle: 'Tianhe One Bed' }
+      {
+        sessionId: '1_9_7',
+        peerId: 9,
+        peerName: '房东李女士',
+        unreadCount: 2,
+        houseId: 7,
+        houseTitle: '天河一居室',
+        lastMsgContent: '您好，房子还在的。',
+        updateTime: '2026-04-24T10:30:00.000Z'
+      }
     ]
+  }),
+  pullHistoryMessages: vi.fn().mockResolvedValue({
+    messages: [
+      {
+        id: 11,
+        senderId: 9,
+        content: '您好，房子还在的。',
+        createTime: '2026-04-24T10:30:00.000Z'
+      }
+    ]
+  }),
+  markMessagesRead: vi.fn().mockResolvedValue({}),
+  sendChatMessage: vi.fn().mockResolvedValue({
+    id: 12,
+    senderId: 1001,
+    content: '好的，我周六过去。',
+    createTime: '2026-04-24T10:35:00.000Z'
   })
 }))
 
 vi.mock('@/api/notification', () => ({
   fetchNotificationPage: vi.fn().mockResolvedValue({
     records: [
-      { id: 5, type: 'HOUSE_PRICE_CHANGED', title: 'Price changed', content: 'Monthly price is now 5000.', redirectTargetId: 7, isRead: 0 }
+      {
+        id: 5,
+        type: 'HOUSE_PRICE_CHANGED',
+        title: '价格变动',
+        content: '月租已调整为 5000 元。',
+        redirectTargetId: 7,
+        isRead: 0,
+        createTime: '2026-04-24T09:00:00.000Z'
+      }
     ]
   }),
   markNotificationRead: vi.fn().mockResolvedValue({}),
@@ -25,6 +59,9 @@ vi.mock('@/stores/messageCenter', () => ({
   useMessageCenterStore: () => ({
     chatUnreadTotal: 2,
     notificationUnreadTotal: 1,
+    totalUnread: 3,
+    loadUnreadTotals: vi.fn().mockResolvedValue({}),
+    decrementChatUnread: vi.fn(),
     decrementNotificationUnread: vi.fn(),
     setNotificationUnreadTotal: vi.fn()
   })
@@ -35,12 +72,12 @@ describe('MessagesView', () => {
     setActivePinia(createPinia())
   })
 
-  it('renders chat and notifications tabs with unread badges', async () => {
+  it('renders the three-column desk and can switch filters', async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
         { path: '/messages', component: MessagesView },
-        { path: '/chat/:sessionId', component: { template: '<div />' } }
+        { path: '/house/:id', component: { template: '<div />' } }
       ]
     })
     router.push('/messages')
@@ -52,11 +89,14 @@ describe('MessagesView', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Chat (2)')
-    expect(wrapper.text()).toContain('Notifications (1)')
-    expect(wrapper.text()).toContain('Landlord A')
+    expect(wrapper.text()).toContain('全部消息')
+    expect(wrapper.text()).toContain('房东李女士')
+    expect(wrapper.get('[data-thread-title]').text()).toContain('房东李女士')
 
-    await wrapper.get('[data-tab="notifications"]').trigger('click')
-    expect(wrapper.text()).toContain('Price changed')
+    await wrapper.get('[data-filter="system"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('价格变动')
+    expect(wrapper.get('[data-thread-title]').text()).toContain('系统通知')
   })
 })

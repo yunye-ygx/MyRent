@@ -7,8 +7,16 @@ vi.mock('@/stores/messageCenter', () => ({
   })
 }))
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    profile: {
+      name: '元气小圆同学'
+    }
+  })
+}))
+
 describe('AppTopNav', () => {
-  it('renders configured nav items, marks the current route, and shows the unread badge', () => {
+  it('renders configured nav items, active state, brand, and profile chip', () => {
     const wrapper = mount(AppTopNav, {
       props: {
         items: [
@@ -25,9 +33,10 @@ describe('AppTopNav', () => {
       }
     })
 
-    expect(wrapper.text()).toContain('我的租房')
+    expect(wrapper.text()).toContain('青禾租房')
     expect(wrapper.text()).toContain('首页')
     expect(wrapper.text()).toContain('找房')
+    expect(wrapper.text()).toContain('元气小圆同学')
     expect(wrapper.text()).toContain('5')
     expect(wrapper.get('[data-nav="/houses"]').classes()).toContain('is-active')
   })
