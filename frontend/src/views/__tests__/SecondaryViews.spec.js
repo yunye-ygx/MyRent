@@ -1,11 +1,19 @@
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { flushPromises, mount } from '@vue/test-utils'
-import LoginView from '@/views/auth/LoginView.vue'
 import MineView from '@/views/MineView.vue'
+import { fetchCurrentUser } from '@/api/user'
+
+const syncProfile = vi.fn()
+
+vi.mock('@/api/user', () => ({
+  fetchCurrentUser: vi.fn()
+}))
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
-    profile: { name: '娴嬭瘯鐢ㄦ埛', phone: '13800138000' },
+    profile: { name: '元气小圆同学', phone: '13800138000' },
+    isLoggedIn: true,
+    syncProfile,
     logout: vi.fn(),
     login: vi.fn(),
     register: vi.fn()
@@ -13,37 +21,21 @@ vi.mock('@/stores/auth', () => ({
 }))
 
 describe('secondary page shells', () => {
-  it('renders the new auth messaging and mine overview copy', async () => {
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/login', component: LoginView },
-        { path: '/register', component: { template: '<div />' } },
-        { path: '/mine', component: MineView }
-      ]
+  beforeEach(() => {
+    vi.clearAllMocks()
+    fetchCurrentUser.mockResolvedValue({
+      id: 7,
+      phone: '13800138000',
+      name: '元气小圆同学'
     })
-
-    router.push('/login')
-    await router.isReady()
-
-    const loginWrapper = mount(LoginView, {
-      global: { plugins: [router] }
-    })
-    const mineWrapper = mount(MineView, {
-      global: { plugins: [router] }
-    })
-
-    expect(loginWrapper.text()).toContain('登录 MyRent')
-    expect(mineWrapper.text()).toContain('功能入口')
-    expect(mineWrapper.text()).toContain('13800138000')
   })
 
-  it('routes the history menu item to /mine/history', async () => {
+  it('renders the refreshed mine dashboard shell', async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
         { path: '/mine', component: MineView },
-        { path: '/mine/history', component: { template: '<div>history page</div>' } }
+        { path: '/placeholder/:key', component: { template: '<div />' } }
       ]
     })
 
@@ -53,8 +45,60 @@ describe('secondary page shells', () => {
     const wrapper = mount(MineView, {
       global: { plugins: [router] }
     })
+    await flushPromises()
 
-    await wrapper.findAll('.menu-item')[4].trigger('click')
+    expect(wrapper.text()).toContain('我的租房管理')
+    expect(wrapper.text()).toContain('学生专享权益')
+    expect(wrapper.text()).toContain('我的优惠券')
+    expect(syncProfile).toHaveBeenCalledWith({
+      userId: 7,
+      phone: '13800138000',
+      name: '元气小圆同学'
+    })
+  })
+
+  it('routes the coupon service item to the placeholder page', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/mine', component: MineView },
+        { path: '/placeholder/:key', component: { template: '<div>placeholder</div>' } }
+      ]
+    })
+
+    router.push('/mine')
+    await router.isReady()
+
+    const wrapper = mount(MineView, {
+      global: { plugins: [router] }
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="service-coupon"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.params.key).toBe('coupon')
+    expect(router.currentRoute.value.query.title).toBe('我的优惠券')
+  })
+
+  it('routes the history overview card to the existing history page', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/mine', component: MineView },
+        { path: '/mine/history', component: { template: '<div>history</div>' } }
+      ]
+    })
+
+    router.push('/mine')
+    await router.isReady()
+
+    const wrapper = mount(MineView, {
+      global: { plugins: [router] }
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="overview-history"]').trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.fullPath).toBe('/mine/history')
