@@ -13,6 +13,7 @@ const userId = 1001
 const sockets = []
 const routeState = {
   path: '/home',
+  name: 'home',
   params: {}
 }
 
@@ -65,6 +66,7 @@ describe('MainLayout', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     routeState.path = '/home'
+    routeState.name = 'home'
     routeState.params = {}
     loadUnreadTotals.mockClear()
     dismissChatToast.mockClear()
@@ -107,7 +109,35 @@ describe('MainLayout', () => {
     expect(wrapper.find('[data-test="top-nav"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="tab-bar"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Landlord A')
+    expect(wrapper.find('.app-frame--mine').exists()).toBe(false)
     expect(setCurrentSessionId).toHaveBeenCalledWith(undefined)
+  })
+
+  it('expands the shell width for the mine overview page', () => {
+    routeState.path = '/mine'
+    routeState.name = 'mine'
+
+    const wrapper = mount(MainLayout, {
+      global: {
+        stubs: {
+          AppTopNav: {
+            template: '<div data-test="top-nav" />'
+          },
+          AppTabBar: {
+            template: '<div data-test="tab-bar" />'
+          },
+          OnlineMessageToast: {
+            props: ['toast'],
+            template: '<div data-test="chat-toast">{{ toast.senderName }}</div>'
+          },
+          RouterView: {
+            template: '<div data-test="page-view" />'
+          }
+        }
+      }
+    })
+
+    expect(wrapper.find('.app-frame--mine').exists()).toBe(true)
   })
 
   it('does not duplicate reconciliation on the first websocket open', () => {
@@ -133,6 +163,7 @@ describe('MainLayout', () => {
 
   it('refreshes unread totals and session summaries on websocket reconnect, then forwards messages to both stores', () => {
     routeState.path = '/messages'
+    routeState.name = 'messages'
 
     mount(MainLayout, {
       global: {

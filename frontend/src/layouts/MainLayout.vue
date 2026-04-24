@@ -12,7 +12,8 @@
       class="app-frame flex min-h-screen flex-col gap-6 py-5 lg:py-8"
       :class="{
         'app-frame--wide': isMessagesRoute,
-        'app-frame--home': isHomeRoute
+        'app-frame--home': isHomeRoute,
+        'app-frame--mine': isMineOverview
       }"
     >
       <AppTopNav :items="topNavItems" :current-path="route.path" :full-bleed="isHomeRoute" />
@@ -49,6 +50,7 @@ const router = useRouter()
 const messageCenterStore = useMessageCenterStore()
 const isHomeRoute = computed(() => route.path === '/home')
 const isMessagesRoute = computed(() => route.path.startsWith('/messages'))
+const isMineOverview = computed(() => route.name === 'mine')
 
 let ws = null
 let reconnectTimer = null
@@ -187,6 +189,10 @@ main {
   padding-right: 0;
 }
 
+.app-frame--mine {
+  width: min(100%, 1680px);
+}
+
 .app-frame--wide {
   width: 100%;
   max-width: none;
@@ -229,7 +235,9 @@ main {
 
 @media (max-width: 768px) {
   .app-frame,
-  .app-frame--wide {
+  .app-frame--wide,
+  .app-frame--mine {
+    width: 100%;
     padding-left: 12px;
     padding-right: 12px;
   }
