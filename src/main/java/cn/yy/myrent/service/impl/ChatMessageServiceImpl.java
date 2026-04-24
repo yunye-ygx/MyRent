@@ -55,6 +55,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         long nextCursor = cursor;
         if (!messages.isEmpty()) {
             nextCursor = messages.get(messages.size() - 1).getId();
+            log.info("获取下次拉取消息的游标，nextCursor={}", nextCursor);
         }
 
         ChatPullVO response = new ChatPullVO();

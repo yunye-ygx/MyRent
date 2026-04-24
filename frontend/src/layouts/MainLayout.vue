@@ -8,22 +8,9 @@
         @click="openToast(toast)"
       />
     </div>
-    <div
-      class="app-frame flex min-h-screen flex-col gap-6 py-5 lg:py-8"
-      :class="{
-        'app-frame--wide': isMessagesRoute,
-        'app-frame--home': isHomeRoute,
-        'app-frame--mine': isMineOverview
-      }"
-    >
-      <AppTopNav :items="topNavItems" :current-path="route.path" :full-bleed="isHomeRoute" />
-      <main
-        class="min-h-0 flex-1"
-        :class="{
-          'main--wide': isMessagesRoute,
-          'main--home': isHomeRoute
-        }"
-      >
+    <div class="app-frame flex min-h-screen flex-col">
+      <AppTopNav :items="topNavItems" :current-path="route.path" />
+      <main class="app-main min-h-0 flex-1">
         <router-view />
       </main>
     </div>
@@ -32,7 +19,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, watch } from 'vue'
+import { onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppTabBar from '@/components/AppTabBar.vue'
 import OnlineMessageToast from '@/components/chat/OnlineMessageToast.vue'
@@ -48,9 +35,6 @@ const chatSessionStore = useChatSessionStore()
 const route = useRoute()
 const router = useRouter()
 const messageCenterStore = useMessageCenterStore()
-const isHomeRoute = computed(() => route.path === '/home')
-const isMessagesRoute = computed(() => route.path.startsWith('/messages'))
-const isMineOverview = computed(() => route.name === 'mine')
 
 let ws = null
 let reconnectTimer = null
@@ -170,46 +154,24 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.app-shell {
+  min-height: 100vh;
+}
+
 main {
   min-width: 0;
 }
 
 .app-frame {
-  width: min(100%, var(--container-max));
+  width: calc(100% - clamp(16px, 1.6vw, 28px));
   margin: 0 auto;
-  padding-left: 24px;
-  padding-right: 24px;
-}
-
-.app-frame--home {
   max-width: none;
-  gap: 0;
-  padding-top: 0;
-  padding-left: 0;
-  padding-right: 0;
+  padding: clamp(10px, 1.2vw, 16px) 0 calc(72px + clamp(20px, 2vw, 28px));
+  gap: clamp(14px, 1.6vw, 20px);
 }
 
-.app-frame--mine {
-  width: min(100%, 1680px);
-}
-
-.app-frame--wide {
+.app-main {
   width: 100%;
-  max-width: none;
-  padding-left: 12px;
-  padding-right: 12px;
-}
-
-.main--home {
-  width: 100%;
-}
-
-.main--wide {
-  display: flex;
-}
-
-.main--wide :deep(.message-desk) {
-  flex: 1;
 }
 
 .toast-stack {
@@ -223,28 +185,15 @@ main {
 
 @media (min-width: 1024px) {
   .app-frame {
-    padding-left: 40px;
-    padding-right: 40px;
-  }
-
-  .app-frame--wide {
-    padding-left: 6px;
-    padding-right: 6px;
+    width: calc(100% - clamp(20px, 1.8vw, 32px));
   }
 }
 
 @media (max-width: 768px) {
-  .app-frame,
-  .app-frame--wide,
-  .app-frame--mine {
+  .app-frame {
     width: 100%;
-    padding-left: 12px;
-    padding-right: 12px;
-  }
-
-  .app-frame--home {
-    padding-left: 0;
-    padding-right: 0;
+    padding: 10px 12px 92px;
+    gap: 12px;
   }
 
   .toast-stack {

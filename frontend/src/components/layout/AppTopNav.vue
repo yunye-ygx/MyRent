@@ -1,5 +1,5 @@
 <template>
-  <header class="app-top-nav app-surface hidden lg:grid" :class="{ 'app-top-nav--full': fullBleed }">
+  <header class="app-top-nav app-surface hidden lg:grid">
     <div class="brand">
       <div class="brand-mark">青</div>
       <div class="brand-copy">
@@ -51,10 +51,6 @@ const props = defineProps({
   currentPath: {
     type: String,
     required: true
-  },
-  fullBleed: {
-    type: Boolean,
-    default: false
   }
 })
 
@@ -77,21 +73,14 @@ function isMessageItem(item) {
 
 <style scoped>
 .app-top-nav {
+  width: 100%;
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 28px;
-  padding: 16px 24px;
+  padding: 16px clamp(18px, 2vw, 28px);
   border-radius: 24px;
   border: 1px solid rgba(229, 231, 235, 0.92);
   box-shadow: 0 16px 36px rgba(148, 163, 184, 0.12);
-}
-
-.app-top-nav--full {
-  border-radius: 0;
-  border-left: 0;
-  border-right: 0;
-  padding-left: clamp(24px, 7vw, 160px);
-  padding-right: clamp(24px, 7vw, 160px);
 }
 
 .brand,
@@ -236,5 +225,11 @@ function isMessageItem(item) {
 .profile-name {
   font-size: 14px;
   font-weight: 600;
+}
+
+@media (max-width: 1280px) {
+  .app-top-nav {
+    gap: 18px;
+  }
 }
 </style>

@@ -109,35 +109,46 @@ describe('MainLayout', () => {
     expect(wrapper.find('[data-test="top-nav"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="tab-bar"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Landlord A')
-    expect(wrapper.find('.app-frame--mine').exists()).toBe(false)
+    expect(wrapper.find('.app-frame').exists()).toBe(true)
+    expect(wrapper.find('.app-main').exists()).toBe(true)
     expect(setCurrentSessionId).toHaveBeenCalledWith(undefined)
   })
 
-  it('expands the shell width for the mine overview page', () => {
-    routeState.path = '/mine'
-    routeState.name = 'mine'
+  it('keeps the same shared frame across the top-level navigation routes', () => {
+    const routes = [
+      { path: '/home', name: 'home' },
+      { path: '/houses', name: 'house-list' },
+      { path: '/messages', name: 'messages' },
+      { path: '/mine', name: 'mine' }
+    ]
 
-    const wrapper = mount(MainLayout, {
-      global: {
-        stubs: {
-          AppTopNav: {
-            template: '<div data-test="top-nav" />'
-          },
-          AppTabBar: {
-            template: '<div data-test="tab-bar" />'
-          },
-          OnlineMessageToast: {
-            props: ['toast'],
-            template: '<div data-test="chat-toast">{{ toast.senderName }}</div>'
-          },
-          RouterView: {
-            template: '<div data-test="page-view" />'
+    routes.forEach((item) => {
+      routeState.path = item.path
+      routeState.name = item.name
+
+      const wrapper = mount(MainLayout, {
+        global: {
+          stubs: {
+            AppTopNav: {
+              template: '<div data-test="top-nav" />'
+            },
+            AppTabBar: {
+              template: '<div data-test="tab-bar" />'
+            },
+            OnlineMessageToast: {
+              props: ['toast'],
+              template: '<div data-test="chat-toast">{{ toast.senderName }}</div>'
+            },
+            RouterView: {
+              template: '<div data-test="page-view" />'
+            }
           }
         }
-      }
-    })
+      })
 
-    expect(wrapper.find('.app-frame--mine').exists()).toBe(true)
+      expect(wrapper.find('.app-frame').exists()).toBe(true)
+      expect(wrapper.find('.app-main').exists()).toBe(true)
+    })
   })
 
   it('does not duplicate reconciliation on the first websocket open', () => {

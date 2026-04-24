@@ -46,9 +46,9 @@
     </section>
 
     <section class="feature-grid">
-      <article v-for="feature in featureCards" :key="feature.title" class="feature-card app-surface">
+      <article v-for="(feature, index) in featureCards" :key="feature.title" class="feature-card app-surface">
         <div class="feature-icon" :style="{ '--feature-tint': feature.tint }">
-          <span>{{ feature.icon }}</span>
+          <HomeFeatureIcon :index="index" />
         </div>
         <div>
           <h2 class="feature-title">{{ feature.title }}</h2>
@@ -112,7 +112,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, defineComponent, h, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchHotHousePage, searchNearbyHouse } from '@/api/house'
 import heroRoomImage from '@/assets/home/hero-room.jpg'
@@ -140,6 +140,59 @@ const featureCards = [
 ]
 
 const guideChecklist = ['进校攻略', '合同注意事项', '入住准备清单', '租房避坑说明']
+
+const featureIconPaths = [
+  [
+    { d: 'M12 4.4 4.7 10v8.7h5.1v-4.8h4.4v4.8h5.1V10L12 4.4Z', fill: 'currentColor' }
+  ],
+  [
+    { d: 'M9 4.8h6a3 3 0 0 1 3 3v5.35a4.35 4.35 0 0 1-4.35 4.35h-3.3A4.35 4.35 0 0 1 6 13.15V7.8a3 3 0 0 1 3-3Z', fill: 'currentColor' },
+    { d: 'M9.45 9.05a.7.7 0 1 1 0 1.4.7.7 0 0 1 0-1.4Z', fill: '#f4f8ee' },
+    { d: 'M14.55 9.05a.7.7 0 1 1 0 1.4.7.7 0 0 1 0-1.4Z', fill: '#f4f8ee' },
+    { d: 'M8.65 12.2h6.7v1.15h-6.7Z', fill: '#f4f8ee' },
+    { d: 'M9.4 17.2 8 19.2', fill: 'none', stroke: 'currentColor', width: '1.7' },
+    { d: 'M14.6 17.2 16 19.2', fill: 'none', stroke: 'currentColor', width: '1.7' }
+  ],
+  [
+    { d: 'M12 4.6 3.8 8.7 12 12.8l8.2-4.1L12 4.6Zm-4.7 6.64v2.94c0 .8 2 2.48 4.7 2.48s4.7-1.68 4.7-2.48v-2.94L12 13.58l-4.7-2.34Z', fill: 'currentColor' },
+    { d: 'M19.25 9.05v3.9', fill: 'none', stroke: 'currentColor', width: '1.5' }
+  ],
+  [
+    { d: 'M5.4 7.06V5.2h4.75L18.8 13.84l-5 4.96-8.4-8.39V7.06Zm2.82-.26a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Z', fill: 'currentColor' }
+  ]
+]
+
+const HomeFeatureIcon = defineComponent({
+  name: 'HomeFeatureIcon',
+  props: {
+    index: {
+      type: Number,
+      required: true
+    }
+  },
+  setup(props) {
+    return () =>
+      h(
+        'svg',
+        {
+          viewBox: '0 0 24 24',
+          fill: 'none',
+          class: 'feature-icon-svg',
+          'aria-hidden': 'true'
+        },
+        (featureIconPaths[props.index] || []).map((item) =>
+          h('path', {
+            d: item.d,
+            fill: item.fill || 'none',
+            stroke: item.stroke || 'none',
+            'stroke-linecap': 'round',
+            'stroke-linejoin': 'round',
+            'stroke-width': item.width || '1.8'
+          })
+        )
+      )
+  }
+})
 
 const listingImages = [listingImage1, listingImage1, listingImage2, listingImage4]
 
@@ -476,13 +529,17 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
-  background: var(--feature-tint);
-  color: #5d7d4b;
-  font-size: 18px;
-  font-weight: 700;
+  width: 50px;
+  height: 50px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(241, 246, 236, 0.96), rgba(236, 243, 229, 0.96));
+  box-shadow: inset 0 0 0 1px rgba(116, 137, 95, 0.06);
+  color: #708b57;
+}
+
+.feature-icon-svg {
+  width: 24px;
+  height: 24px;
 }
 
 .feature-title {
