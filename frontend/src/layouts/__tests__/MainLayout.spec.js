@@ -9,7 +9,7 @@ const handleIncomingChatMessage = vi.fn()
 const loadSessions = vi.fn()
 const upsertSessionFromMessage = vi.fn()
 const setCurrentSessionId = vi.fn()
-const userId = 1
+const userId = 1001
 const sockets = []
 const routeState = {
   path: '/home',
@@ -110,7 +110,7 @@ describe('MainLayout', () => {
     expect(setCurrentSessionId).toHaveBeenCalledWith(undefined)
   })
 
-  it('does not duplicate reconciliation on the first websocket open', async () => {
+  it('does not duplicate reconciliation on the first websocket open', () => {
     mount(MainLayout, {
       global: {
         stubs: {
@@ -131,7 +131,7 @@ describe('MainLayout', () => {
     expect(loadSessions).toHaveBeenCalledWith({ minFreshMs: 5000 })
   })
 
-  it('refreshes unread totals and session summaries on websocket reconnect, then forwards messages to both stores', async () => {
+  it('refreshes unread totals and session summaries on websocket reconnect, then forwards messages to both stores', () => {
     routeState.path = '/messages'
 
     mount(MainLayout, {

@@ -4,7 +4,8 @@ import AppTopNav from '@/components/layout/AppTopNav.vue'
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
     profile: {
-      name: '登录 / 注册'
+      name: '元气小圆同学',
+      city: '南京'
     }
   })
 }))
@@ -16,7 +17,7 @@ vi.mock('@/stores/messageCenter', () => ({
 }))
 
 describe('AppTopNav', () => {
-  it('renders configured nav items, marks the current route, and shows the unread badge', () => {
+  it('renders configured nav items, active state, city switcher, and profile chip', () => {
     const wrapper = mount(AppTopNav, {
       props: {
         items: [
@@ -36,7 +37,8 @@ describe('AppTopNav', () => {
     expect(wrapper.text()).toContain('青禾租房')
     expect(wrapper.text()).toContain('首页')
     expect(wrapper.text()).toContain('找房')
-    expect(wrapper.text()).toContain('登录 / 注册')
+    expect(wrapper.text()).toContain('南京')
+    expect(wrapper.text()).toContain('元气小圆同学')
     expect(wrapper.text()).toContain('5')
     expect(wrapper.get('[data-nav="/houses"]').classes()).toContain('is-active')
   })

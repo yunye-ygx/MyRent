@@ -9,11 +9,20 @@
       />
     </div>
     <div
-      class="app-container flex min-h-screen flex-col gap-6 py-5 lg:py-8"
-      :class="{ 'app-container--home': isHomeRoute }"
+      class="app-frame flex min-h-screen flex-col gap-6 py-5 lg:py-8"
+      :class="{
+        'app-frame--wide': isMessagesRoute,
+        'app-frame--home': isHomeRoute
+      }"
     >
       <AppTopNav :items="topNavItems" :current-path="route.path" :full-bleed="isHomeRoute" />
-      <main class="min-h-0 flex-1" :class="{ 'main--home': isHomeRoute }">
+      <main
+        class="min-h-0 flex-1"
+        :class="{
+          'main--wide': isMessagesRoute,
+          'main--home': isHomeRoute
+        }"
+      >
         <router-view />
       </main>
     </div>
@@ -39,6 +48,7 @@ const route = useRoute()
 const router = useRouter()
 const messageCenterStore = useMessageCenterStore()
 const isHomeRoute = computed(() => route.path === '/home')
+const isMessagesRoute = computed(() => route.path.startsWith('/messages'))
 
 let ws = null
 let reconnectTimer = null
@@ -158,7 +168,18 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.app-container--home {
+main {
+  min-width: 0;
+}
+
+.app-frame {
+  width: min(100%, var(--container-max));
+  margin: 0 auto;
+  padding-left: 24px;
+  padding-right: 24px;
+}
+
+.app-frame--home {
   max-width: none;
   gap: 0;
   padding-top: 0;
@@ -166,12 +187,23 @@ onUnmounted(() => {
   padding-right: 0;
 }
 
+.app-frame--wide {
+  width: 100%;
+  max-width: none;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
 .main--home {
   width: 100%;
 }
 
-main {
-  min-width: 0;
+.main--wide {
+  display: flex;
+}
+
+.main--wide :deep(.message-desk) {
+  flex: 1;
 }
 
 .toast-stack {
@@ -183,7 +215,30 @@ main {
   gap: 12px;
 }
 
+@media (min-width: 1024px) {
+  .app-frame {
+    padding-left: 40px;
+    padding-right: 40px;
+  }
+
+  .app-frame--wide {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+}
+
 @media (max-width: 768px) {
+  .app-frame,
+  .app-frame--wide {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .app-frame--home {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
   .toast-stack {
     top: 12px;
     right: 12px;

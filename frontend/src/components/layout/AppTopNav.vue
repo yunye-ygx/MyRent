@@ -1,10 +1,11 @@
 <template>
-  <header class="app-top-nav app-surface hidden lg:flex" :class="{ 'app-top-nav--full': fullBleed }">
-    <div class="brand-block">
-      <div class="brand-mark">
-        <span class="brand-mark-dot"></span>
+  <header class="app-top-nav app-surface hidden lg:grid" :class="{ 'app-top-nav--full': fullBleed }">
+    <div class="brand">
+      <div class="brand-mark">青</div>
+      <div class="brand-copy">
+        <div class="brand-name">青禾租房</div>
+        <div class="brand-subtitle">城市租住消息台</div>
       </div>
-      <div class="brand-text">青禾租房</div>
     </div>
 
     <nav class="nav-list">
@@ -24,13 +25,14 @@
     </nav>
 
     <div class="nav-actions">
-      <label class="city-pill">
+      <label class="action-chip city-chip">
         <select class="city-select" :value="activeCity" aria-label="切换城市">
           <option>{{ activeCity }}</option>
         </select>
       </label>
-      <RouterLink class="account-pill" to="/mine">
-        {{ authStore.profile?.name || '登录 / 注册' }}
+      <RouterLink class="profile-chip" to="/mine">
+        <span class="profile-avatar">{{ avatarText }}</span>
+        <span class="profile-name">{{ displayName }}</span>
       </RouterLink>
     </div>
   </header>
@@ -38,8 +40,8 @@
 
 <script setup>
 import { computed, toRefs } from 'vue'
-import { useMessageCenterStore } from '@/stores/messageCenter'
 import { useAuthStore } from '@/stores/auth'
+import { useMessageCenterStore } from '@/stores/messageCenter'
 
 const props = defineProps({
   items: {
@@ -62,6 +64,11 @@ const authStore = useAuthStore()
 const messageCenterStore = useMessageCenterStore()
 
 const activeCity = computed(() => authStore.profile?.city || '南京')
+const displayName = computed(() => authStore.profile?.name || '登录 / 注册')
+const avatarText = computed(() => {
+  const name = String(displayName.value || '').trim()
+  return name ? name.slice(0, 1) : '我'
+})
 
 function isMessageItem(item) {
   return item?.to === '/messages'
@@ -70,113 +77,101 @@ function isMessageItem(item) {
 
 <style scoped>
 .app-top-nav {
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 14px 22px;
-  border: 1px solid rgba(186, 172, 148, 0.16);
+  gap: 28px;
+  padding: 16px 24px;
+  border-radius: 24px;
+  border: 1px solid rgba(229, 231, 235, 0.92);
+  box-shadow: 0 16px 36px rgba(148, 163, 184, 0.12);
 }
 
 .app-top-nav--full {
   border-radius: 0;
   border-left: 0;
   border-right: 0;
-  box-shadow: 0 8px 24px rgba(49, 33, 23, 0.05);
   padding-left: clamp(24px, 7vw, 160px);
   padding-right: clamp(24px, 7vw, 160px);
 }
 
-.brand-block {
+.brand,
+.brand-copy,
+.nav-list,
+.nav-actions,
+.profile-chip,
+.nav-link {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 160px;
+}
+
+.brand {
+  gap: 12px;
 }
 
 .brand-mark {
-  position: relative;
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  background: linear-gradient(180deg, #f0f4ea, #dfead6);
-}
-
-.brand-mark::before,
-.brand-mark::after {
-  content: '';
-  position: absolute;
-  background: #5f7f4c;
-}
-
-.brand-mark::before {
-  left: 8px;
-  bottom: 7px;
-  width: 14px;
-  height: 10px;
-  border-radius: 2px;
-}
-
-.brand-mark::after {
-  left: 6px;
-  top: 7px;
-  width: 18px;
-  height: 12px;
-  clip-path: polygon(50% 0, 100% 45%, 100% 100%, 0 100%, 0 45%);
-}
-
-.brand-mark-dot {
-  position: absolute;
-  top: 6px;
-  right: 5px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #7fa165;
-}
-
-.brand-text {
-  font-size: 22px;
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #98b47a, #5e7f42);
+  color: #fff;
+  font-size: 16px;
   font-weight: 700;
-  color: #325235;
-  letter-spacing: 0.02em;
+}
+
+.brand-copy {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.brand-name {
+  color: #365032;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.brand-subtitle {
+  color: #98a1ab;
+  font-size: 12px;
 }
 
 .nav-list {
-  display: flex;
-  align-items: center;
-  gap: 26px;
+  justify-content: center;
+  gap: 8px;
 }
 
 .nav-link {
+  gap: 8px;
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 0;
-  color: #70695f;
+  border-radius: 999px;
+  padding: 10px 16px;
+  color: #667085;
   font-size: 14px;
   font-weight: 600;
+  transition: color 0.2s ease, background 0.2s ease;
 }
 
-.nav-link::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: 0;
-  height: 3px;
-  border-radius: 999px;
-  background: #7e9d63;
-  transform: translateX(-50%);
-  transition: width 0.2s ease;
+.nav-link:hover {
+  background: #f7f7f3;
 }
 
 .nav-link.is-active {
-  color: #39352f;
+  color: #2f4b28;
+  background: #f3f7ed;
 }
 
 .nav-link.is-active::after {
-  width: 24px;
+  content: '';
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 6px;
+  height: 3px;
+  border-radius: 999px;
+  background: #8da56f;
 }
 
 .nav-badge {
@@ -187,33 +182,30 @@ function isMessageItem(item) {
   align-items: center;
   justify-content: center;
   padding: 0 5px;
-  background: #ff7d42;
+  background: #ff6f3c;
   color: #fff;
   font-size: 11px;
   font-weight: 700;
 }
 
 .nav-actions {
-  display: flex;
-  align-items: center;
   gap: 10px;
-  min-width: 210px;
-  justify-content: flex-end;
 }
 
-.city-pill,
-.account-pill {
+.action-chip,
+.profile-chip {
   display: inline-flex;
   align-items: center;
-  min-height: 38px;
+  min-height: 44px;
+  border: 1px solid #ece7db;
+  background: #fffdf8;
+  color: #5f6670;
   border-radius: 999px;
-  border: 1px solid rgba(196, 187, 173, 0.55);
-  background: rgba(255, 255, 255, 0.78);
-  color: #695f54;
+  padding: 8px 14px;
 }
 
-.city-pill {
-  padding: 0 10px;
+.city-chip {
+  padding-right: 10px;
 }
 
 .city-select {
@@ -223,9 +215,26 @@ function isMessageItem(item) {
   color: inherit;
 }
 
-.account-pill {
-  padding: 0 16px;
+.profile-chip {
+  gap: 10px;
+  padding-right: 12px;
+}
+
+.profile-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #d3b79d;
+  color: #fff;
   font-size: 13px;
+  font-weight: 700;
+}
+
+.profile-name {
+  font-size: 14px;
   font-weight: 600;
 }
 </style>
