@@ -353,6 +353,7 @@ onMounted(() => {
 .mine-dashboard {
   display: grid;
   gap: 20px;
+  width: 100%;
 }
 
 .profile-column,
@@ -682,8 +683,32 @@ onMounted(() => {
 
 @media (min-width: 1024px) {
   .mine-dashboard {
-    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-columns: 312px minmax(0, 1fr);
     align-items: start;
+    gap: 24px;
+  }
+
+  .profile-column,
+  .content-column {
+    gap: 20px;
+  }
+
+  .overview-panel {
+    padding: 24px 26px;
+  }
+
+  .overview-grid {
+    gap: 16px;
+  }
+
+  .detail-grid {
+    grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.95fr);
+    gap: 20px;
+  }
+
+  .task-panel,
+  .service-panel {
+    padding: 22px 24px;
   }
 }
 

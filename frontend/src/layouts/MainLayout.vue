@@ -8,7 +8,10 @@
         @click="openToast(toast)"
       />
     </div>
-    <div class="app-container flex min-h-screen flex-col gap-6 py-5 lg:py-8">
+    <div
+      class="app-container flex min-h-screen flex-col gap-6 py-5 lg:py-8"
+      :class="{ 'app-container-wide': isMineOverview }"
+    >
       <AppTopNav :items="topNavItems" :current-path="route.path" />
       <main class="min-h-0 flex-1">
         <router-view />
@@ -19,7 +22,7 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppTabBar from '@/components/AppTabBar.vue'
 import OnlineMessageToast from '@/components/chat/OnlineMessageToast.vue'
@@ -35,6 +38,7 @@ const chatSessionStore = useChatSessionStore()
 const route = useRoute()
 const router = useRouter()
 const messageCenterStore = useMessageCenterStore()
+const isMineOverview = computed(() => route.name === 'mine')
 
 let ws = null
 let reconnectTimer = null
@@ -154,6 +158,10 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.app-container-wide {
+  max-width: 1680px;
+}
+
 main {
   min-width: 0;
 }
@@ -168,6 +176,10 @@ main {
 }
 
 @media (max-width: 768px) {
+  .app-container-wide {
+    max-width: none;
+  }
+
   .toast-stack {
     top: 12px;
     right: 12px;
