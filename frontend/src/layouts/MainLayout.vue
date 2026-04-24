@@ -8,9 +8,12 @@
         @click="openToast(toast)"
       />
     </div>
-    <div class="app-container flex min-h-screen flex-col gap-6 py-5 lg:py-8">
+    <div
+      class="app-frame flex min-h-screen flex-col gap-6 py-5 lg:py-8"
+      :class="{ 'app-frame--wide': isMessagesRoute }"
+    >
       <AppTopNav :items="topNavItems" :current-path="route.path" />
-      <main class="min-h-0 flex-1">
+      <main class="min-h-0 flex-1" :class="{ 'main--wide': isMessagesRoute }">
         <router-view />
       </main>
     </div>
@@ -19,7 +22,7 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppTabBar from '@/components/AppTabBar.vue'
 import OnlineMessageToast from '@/components/chat/OnlineMessageToast.vue'
@@ -35,6 +38,7 @@ const chatSessionStore = useChatSessionStore()
 const route = useRoute()
 const router = useRouter()
 const messageCenterStore = useMessageCenterStore()
+const isMessagesRoute = computed(() => route.path.startsWith('/messages'))
 
 let ws = null
 let reconnectTimer = null
@@ -158,6 +162,28 @@ main {
   min-width: 0;
 }
 
+.app-frame {
+  width: min(100%, var(--container-max));
+  margin: 0 auto;
+  padding-left: 24px;
+  padding-right: 24px;
+}
+
+.app-frame--wide {
+  width: 100%;
+  max-width: none;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.main--wide {
+  display: flex;
+}
+
+.main--wide :deep(.message-desk) {
+  flex: 1;
+}
+
 .toast-stack {
   position: fixed;
   top: 18px;
@@ -167,7 +193,25 @@ main {
   gap: 12px;
 }
 
+@media (min-width: 1024px) {
+  .app-frame {
+    padding-left: 40px;
+    padding-right: 40px;
+  }
+
+  .app-frame--wide {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+}
+
 @media (max-width: 768px) {
+  .app-frame,
+  .app-frame--wide {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
   .toast-stack {
     top: 12px;
     right: 12px;

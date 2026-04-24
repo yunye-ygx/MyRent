@@ -23,6 +23,20 @@ vi.mock('@/stores/messageCenter', () => ({
   })
 }))
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    userId: 1001
+  })
+}))
+
+vi.mock('@/stores/chatSession', () => ({
+  useChatSessionStore: () => ({
+    loadSessions: vi.fn(),
+    setCurrentSessionId: vi.fn(),
+    upsertSessionFromMessage: vi.fn()
+  })
+}))
+
 describe('MainLayout', () => {
   it('renders the top nav, mobile tab bar, and global chat toast stack', () => {
     const wrapper = mount(MainLayout, {
