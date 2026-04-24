@@ -11,8 +11,8 @@ describe('HomeQuickLinks', () => {
       }
     })
 
-    expect(wrapper.text()).toContain('通勤找房')
-    expect(wrapper.text()).toContain('地图找房')
+    expect(wrapper.text()).toContain('智能找房')
+    expect(wrapper.text()).toContain('区域筛选')
     expect(wrapper.text()).toContain('查看全部房源')
     expect(wrapper.text()).not.toContain('打开结果页')
     expect(wrapper.findAllComponents(RouterLinkStub)).toHaveLength(3)
