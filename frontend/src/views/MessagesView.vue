@@ -29,7 +29,13 @@
         <button v-if="activeTab === 'notifications'" class="ghost-btn" @click="markAllRead">
           Mark all read
         </button>
-        <button class="ghost-btn" @click="refreshCurrentTab">Refresh</button>
+        <button
+          data-action="refresh-current-tab"
+          class="ghost-btn"
+          @click="refreshCurrentTab"
+        >
+          Refresh
+        </button>
       </div>
     </section>
 
@@ -80,24 +86,25 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchSessionPage } from '@/api/chat'
 import { fetchNotificationPage, markAllNotificationsRead, markNotificationRead } from '@/api/notification'
 import EmptyState from '@/components/EmptyState.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import NotificationInboxItem from '@/components/NotificationInboxItem.vue'
 import SessionItem from '@/components/SessionItem.vue'
-import { useChatSessionList } from '@/composables/useChatSessionList'
+import { useChatSessionStore } from '@/stores/chatSession'
 import { useMessageCenterStore } from '@/stores/messageCenter'
 
 const router = useRouter()
+const chatSessionStore = useChatSessionStore()
 const messageCenterStore = useMessageCenterStore()
 const activeTab = ref('chat')
 const notificationLoading = ref(false)
 const notificationError = ref('')
 const notifications = ref([])
 
-const { loading, error, sessions, loadSessions } = useChatSessionList(fetchSessionPage)
-
+const loading = computed(() => chatSessionStore.loading)
+const error = computed(() => chatSessionStore.error)
+const sessions = computed(() => chatSessionStore.sessions)
 const chatTabLabel = computed(() => `Chat (${messageCenterStore.chatUnreadTotal})`)
 const notificationTabLabel = computed(() => `Notifications (${messageCenterStore.notificationUnreadTotal})`)
 
@@ -161,12 +168,12 @@ function refreshCurrentTab() {
     loadNotifications()
     return
   }
-  loadSessions()
+  chatSessionStore.loadSessions()
 }
 
 onMounted(() => {
-  messageCenterStore.loadUnreadTotals()
-  loadSessions()
+  messageCenterStore.loadUnreadTotals({ minFreshMs: 5000 })
+  chatSessionStore.loadSessions({ minFreshMs: 5000 })
   loadNotifications()
 })
 </script>

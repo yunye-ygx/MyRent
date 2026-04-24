@@ -87,6 +87,7 @@ public class ChatMessageController {
             return Result.error("参数不能为空");
         }
         if (!hasSessionPermission(reqDTO.getSessionId(), userId)) {
+
             return Result.error(403, "无权操作该会话");
         }
 

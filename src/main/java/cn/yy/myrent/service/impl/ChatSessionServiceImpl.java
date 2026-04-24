@@ -19,6 +19,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -88,27 +89,31 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
             newSession.setCreateTime(now);
             newSession.setUpdateTime(now);
 
-            boolean savedSession = this.save(newSession);
-            if (!savedSession) {
-                log.error("create chat session failed, sessionId={}, senderId={}, receiverId={}, houseId={}",
+            try {
+                boolean savedSession = this.save(newSession);
+                if (!savedSession) {
+                    log.error("create chat session failed, sessionId={}, senderId={}, receiverId={}, houseId={}",
+                            sessionId, senderId, receiverId, houseId);
+                    throw new RuntimeException("创建会话失败");
+                }
+                log.info("create chat session success, sessionId={}, userId1={}, userId2={}, houseId={}",
+                        sessionId, userId1, userId2, houseId);
+            } catch (DuplicateKeyException ex) {
+                log.warn("create chat session hit duplicate key, fallback to existing session, sessionId={}, senderId={}, receiverId={}, houseId={}",
                         sessionId, senderId, receiverId, houseId);
-                throw new RuntimeException("创建会话失败");
+                chatSession = this.lambdaQuery()
+                        .eq(ChatSession::getSessionId, sessionId)
+                        .one();
+                if (chatSession == null) {
+                    log.error("chat session duplicate key fallback failed, session not found, sessionId={}, senderId={}, receiverId={}, houseId={}",
+                            sessionId, senderId, receiverId, houseId, ex);
+                    throw new RuntimeException("创建会话失败", ex);
+                }
+                validateExistingSession(chatSession, senderId, receiverId, houseId);
+                updateExistingSession(sessionId, houseId, content, now, senderId, receiverId);
             }
-            log.info("create chat session success, sessionId={}, userId1={}, userId2={}, houseId={}",
-                    sessionId, userId1, userId2, houseId);
         } else {
-            boolean updatedSession = this.lambdaUpdate()
-                    .set(ChatSession::getHouseId, houseId)
-                    .set(ChatSession::getLastMsgContent, content)
-                    .set(ChatSession::getUpdateTime, now)
-                    .eq(ChatSession::getSessionId, sessionId)
-                    .update();
-            if (!updatedSession) {
-                log.error("update chat session failed, sessionId={}, senderId={}, receiverId={}, houseId={}",
-                        sessionId, senderId, receiverId, houseId);
-                throw new RuntimeException("更新会话失败");
-            }
-            log.debug("update chat session success, sessionId={}, houseId={}", sessionId, houseId);
+            updateExistingSession(sessionId, houseId, content, now, senderId, receiverId);
         }
 
         ChatMessage chatMessage = new ChatMessage()
@@ -163,7 +168,6 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
         long safeCurrent = Math.max(current == null ? 1L : current, 1L);
         long safeSize = Math.min(Math.max(size == null ? 10L : size, 1L), 100L);
         long offset = (safeCurrent - 1) * safeSize;
-
         long total = this.baseMapper.countSessionSummaries(userId);
         Page<ChatSessionSummaryVO> page = new Page<>(safeCurrent, safeSize, total);
         if (total <= 0L) {
@@ -206,6 +210,22 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
         if (invalid) {
             throw new RuntimeException("会话数据异常，无法发送消息");
         }
+    }
+
+    private void updateExistingSession(String sessionId, Long houseId, String content, LocalDateTime now,
+                                       Long senderId, Long receiverId) {
+        boolean updatedSession = this.lambdaUpdate()
+                .set(ChatSession::getHouseId, houseId)
+                .set(ChatSession::getLastMsgContent, content)
+                .set(ChatSession::getUpdateTime, now)
+                .eq(ChatSession::getSessionId, sessionId)
+                .update();
+        if (!updatedSession) {
+            log.error("update chat session failed, sessionId={}, senderId={}, receiverId={}, houseId={}",
+                    sessionId, senderId, receiverId, houseId);
+            throw new RuntimeException("更新会话失败");
+        }
+        log.debug("update chat session success, sessionId={}, houseId={}", sessionId, houseId);
     }
 
     private String buildSessionId(Long userId1, Long userId2, Long houseId) {

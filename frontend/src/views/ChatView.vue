@@ -212,21 +212,33 @@ function clearReadSyncTimer() {
   }
 }
 
-function getMaxVisibleReadableMessageId() {
-  let maxId = 0
-  visibleInboundMessageIds.forEach((item) => {
-    if (item > maxId) {
-      maxId = item
+function getNextVisibleReadableWatermark() {
+  const currentUser = currentUserId.value
+  let watermark = 0
+
+  for (const message of messages.value) {
+    const messageId = toNumericId(message.id)
+    if (
+      messageId === null ||
+      messageId <= lastReadUpToId.value ||
+      Number(message.receiverId) !== currentUser
+    ) {
+      continue
     }
-  })
-  return maxId
+    if (!visibleInboundMessageIds.has(messageId)) {
+      break
+    }
+    watermark = messageId
+  }
+
+  return watermark
 }
 
 async function syncVisibleReadState() {
   if (!pageActive || document.visibilityState !== 'visible') {
     return
   }
-  const upToMessageId = getLastMessageId()
+  const upToMessageId = getNextVisibleReadableWatermark()
   if (!upToMessageId || upToMessageId <= lastReadUpToId.value) {
     return
   }

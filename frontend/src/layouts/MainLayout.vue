@@ -25,9 +25,13 @@ import AppTabBar from '@/components/AppTabBar.vue'
 import OnlineMessageToast from '@/components/chat/OnlineMessageToast.vue'
 import AppTopNav from '@/components/layout/AppTopNav.vue'
 import { topNavItems } from '@/design/site'
+import { useAuthStore } from '@/stores/auth'
+import { useChatSessionStore } from '@/stores/chatSession'
 import { useMessageCenterStore } from '@/stores/messageCenter'
 import { getToken } from '@/utils/storage'
 
+const authStore = useAuthStore()
+const chatSessionStore = useChatSessionStore()
 const route = useRoute()
 const router = useRouter()
 const messageCenterStore = useMessageCenterStore()
@@ -35,6 +39,7 @@ const messageCenterStore = useMessageCenterStore()
 let ws = null
 let reconnectTimer = null
 let active = false
+let hasOpenedWs = false
 
 function buildWsUrl() {
   const token = getToken()
@@ -75,6 +80,20 @@ function connectWs() {
   closeWs()
   ws = new WebSocket(buildWsUrl())
 
+  ws.onopen = () => {
+    if (!active) {
+      return
+    }
+    const isReconnect = hasOpenedWs
+    hasOpenedWs = true
+    if (!isReconnect) {
+      chatSessionStore.loadSessions({ minFreshMs: 5000 })
+      return
+    }
+    messageCenterStore.loadUnreadTotals()
+    chatSessionStore.loadSessions({ force: true })
+  }
+
   ws.onmessage = (event) => {
     if (!active) {
       return
@@ -82,6 +101,7 @@ function connectWs() {
     try {
       const payload = JSON.parse(event.data)
       messageCenterStore.handleIncomingChatMessage(payload)
+      chatSessionStore.upsertSessionFromMessage(payload, authStore.userId)
     } catch {
       // Ignore malformed websocket payloads.
     }
@@ -113,18 +133,21 @@ watch(
   () => route.params.sessionId,
   (sessionId) => {
     messageCenterStore.setCurrentChatSession(sessionId)
+    chatSessionStore.setCurrentSessionId(sessionId)
   },
   { immediate: true }
 )
 
 onMounted(() => {
   active = true
+  hasOpenedWs = false
   messageCenterStore.loadUnreadTotals()
   connectWs()
 })
 
 onUnmounted(() => {
   active = false
+  hasOpenedWs = false
   clearReconnectTimer()
   closeWs()
 })

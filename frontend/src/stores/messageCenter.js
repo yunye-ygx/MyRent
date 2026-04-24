@@ -7,7 +7,10 @@ export const useMessageCenterStore = defineStore('messageCenter', {
     chatUnreadTotal: 0,
     notificationUnreadTotal: 0,
     currentChatSessionId: '',
-    chatToasts: []
+    chatToasts: [],
+    hasLoadedUnreadTotals: false,
+    lastLoadedUnreadAt: 0,
+    pendingUnreadLoad: null
   }),
   getters: {
     totalUnread(state) {
@@ -15,13 +18,42 @@ export const useMessageCenterStore = defineStore('messageCenter', {
     }
   },
   actions: {
-    async loadUnreadTotals() {
-      const [chat, notification] = await Promise.all([
-        fetchChatUnreadTotal(),
-        fetchNotificationUnreadTotal()
-      ])
-      this.chatUnreadTotal = Number(chat?.total || 0)
-      this.notificationUnreadTotal = Number(notification?.total || 0)
+    async loadUnreadTotals(options = {}) {
+      const { force = false, minFreshMs = 0 } = options
+      const loadedRecently = this.hasLoadedUnreadTotals &&
+        Date.now() - Number(this.lastLoadedUnreadAt || 0) < minFreshMs
+
+      if (!force && loadedRecently) {
+        return {
+          chatUnreadTotal: this.chatUnreadTotal,
+          notificationUnreadTotal: this.notificationUnreadTotal
+        }
+      }
+
+      if (this.pendingUnreadLoad) {
+        return this.pendingUnreadLoad
+      }
+
+      this.pendingUnreadLoad = (async () => {
+        const [chat, notification] = await Promise.all([
+          fetchChatUnreadTotal(),
+          fetchNotificationUnreadTotal()
+        ])
+        this.chatUnreadTotal = Number(chat?.total || 0)
+        this.notificationUnreadTotal = Number(notification?.total || 0)
+        this.hasLoadedUnreadTotals = true
+        this.lastLoadedUnreadAt = Date.now()
+        return {
+          chatUnreadTotal: this.chatUnreadTotal,
+          notificationUnreadTotal: this.notificationUnreadTotal
+        }
+      })()
+
+      try {
+        return await this.pendingUnreadLoad
+      } finally {
+        this.pendingUnreadLoad = null
+      }
     },
     setCurrentChatSession(sessionId) {
       this.currentChatSessionId = String(sessionId || '')
