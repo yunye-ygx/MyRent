@@ -6,6 +6,41 @@
         select * from house where id = #{id} for update
     </select>
 
+    <select id="selectListFilterPage" resultType="cn.yy.myrent.entity.House">
+        select *
+        from house
+        where status = 1
+          <if test="city != null and city != ''">
+              and city = #{city}
+          </if>
+          <if test="region != null and region != ''">
+              and region = #{region}
+          </if>
+          <if test="rentType != null">
+              and rent_type = #{rentType}
+          </if>
+          <if test="minPriceCent != null">
+              and price <![CDATA[ >= ]]> #{minPriceCent}
+          </if>
+          <if test="maxPriceCent != null">
+              and price <![CDATA[ <= ]]> #{maxPriceCent}
+          </if>
+          <if test="nearSubway != null and nearSubway">
+              and near_subway = 1
+          </if>
+          <if test="privateBathroom != null and privateBathroom">
+              and private_bathroom = 1
+          </if>
+          <if test="hasBalcony != null and hasBalcony">
+              and has_balcony = 1
+          </if>
+          <if test="civilWaterElectric != null and civilWaterElectric">
+              and civil_water_electric = 1
+          </if>
+        order by create_time desc, id desc
+        limit #{offset}, #{size}
+    </select>
+
     <select id="selectSmartGuideCandidateIds" resultType="java.lang.Long">
         select id
         from house

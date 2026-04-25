@@ -25,6 +25,24 @@ public class HouseDoc {
     @Field(type = FieldType.Text, analyzer = "ik_max_word")
     private String title;
 
+    @Field(type = FieldType.Keyword)
+    private String city;
+
+    @Field(type = FieldType.Keyword)
+    private String region;
+
+    @Field(type = FieldType.Boolean)
+    private Boolean nearSubway;
+
+    @Field(type = FieldType.Boolean)
+    private Boolean privateBathroom;
+
+    @Field(type = FieldType.Boolean)
+    private Boolean hasBalcony;
+
+    @Field(type = FieldType.Boolean)
+    private Boolean civilWaterElectric;
+
     @Field(type = FieldType.Integer)
     private Integer rentType;
 

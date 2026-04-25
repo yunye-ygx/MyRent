@@ -1,16 +1,21 @@
+import { reactive } from 'vue'
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import HouseListView from '@/views/HouseListView.vue'
-import { fetchHotHousePage, smartGuideHouse } from '@/api/house'
+import { fetchHouseListFilter } from '@/api/house'
 import { fetchUserById } from '@/api/user'
+import { useAuthStore } from '@/stores/auth'
 
 vi.mock('@/api/house', () => ({
-  fetchHotHousePage: vi.fn(),
-  smartGuideHouse: vi.fn()
+  fetchHouseListFilter: vi.fn()
 }))
 
 vi.mock('@/api/user', () => ({
   fetchUserById: vi.fn()
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: vi.fn()
 }))
 
 async function flushPromises() {
@@ -20,40 +25,38 @@ async function flushPromises() {
 }
 
 describe('HouseListView', () => {
+  const authStore = reactive({
+    currentCity: '广州',
+    switchCity: vi.fn()
+  })
+
   beforeEach(() => {
     vi.useFakeTimers()
+    authStore.currentCity = '广州'
+    authStore.switchCity.mockReset()
+    useAuthStore.mockReturnValue(authStore)
 
-    fetchHotHousePage.mockResolvedValue({
-      houses: [
-        {
-          id: 1,
-          title: '天河公园精装一居',
-          price: 2800,
-          region: '天河区',
-          area: 26,
-          rentalType: '整租',
-          status: 1,
-          publisherUserId: 9
-        }
-      ],
-      tipMessage: '已加载热门房源'
-    })
-
-    smartGuideHouse.mockResolvedValue({
-      tipMessage: '智能推荐已更新',
-      recommendations: [
-        {
-          houseId: 101,
-          publisherUserId: 9,
-          title: '珠江新城地铁口两居',
-          price: 4200,
-          status: 1,
-          distanceToMetroKm: 0.4,
-          estimatedCommuteMinutes: 16,
-          reasons: ['近地铁', '采光好']
-        }
-      ]
-    })
+    fetchHouseListFilter.mockImplementation((payload = {}) =>
+      Promise.resolve({
+        tipMessage: '结构化筛选已更新',
+        records: [
+          {
+            id: 101,
+            publisherUserId: 9,
+            title: '珠江新城地铁口两居',
+            price: 4200,
+            city: payload.city || '广州',
+            region: payload.region || '天河',
+            rentType: payload.rentType || 1,
+            nearSubway: payload.nearSubway ?? true,
+            privateBathroom: payload.privateBathroom ?? true,
+            hasBalcony: payload.hasBalcony ?? false,
+            civilWaterElectric: payload.civilWaterElectric ?? true,
+            status: 1
+          }
+        ]
+      })
+    )
 
     fetchUserById.mockResolvedValue({ name: '房东A' })
   })
@@ -85,7 +88,8 @@ describe('HouseListView', () => {
             template: '<div data-test="loading">{{ text }}</div>'
           },
           EmptyState: {
-            template: '<div data-test="empty-state" />'
+            props: ['title', 'description'],
+            template: '<div data-test="empty-state">{{ title }}{{ description }}</div>'
           }
         }
       }
@@ -95,36 +99,51 @@ describe('HouseListView', () => {
     return wrapper
   }
 
-  it('renders featured houses on first load', async () => {
+  it('renders only the four kept feature options', async () => {
     const wrapper = await mountView()
 
-    expect(fetchHotHousePage).toHaveBeenCalledWith({ page: 1, size: 8 })
-    expect(wrapper.get('[data-test="result-count"]').text()).toContain('共找到 1 套房源')
-    expect(wrapper.text()).toContain('天河公园精装一居')
-    expect(wrapper.text()).toContain('真实接口')
+    const text = wrapper.text()
+    expect(text).toContain('近地铁')
+    expect(text).toContain('独立卫浴')
+    expect(text).toContain('带阳台')
+    expect(text).toContain('民水民电')
+    expect(text).not.toContain('采光好')
+    expect(text).not.toContain('可做饭')
   })
 
-  it('auto requests smart guide data once location, price, and rent mode are selected', async () => {
+  it('renders real feature tags from backend fields', async () => {
     const wrapper = await mountView()
 
-    await wrapper.get('[data-test="house-location-select"]').setValue('天河区')
-    await wrapper.get('[data-test="house-price-select"]').setValue('3500-5000')
-    await wrapper.get('[data-test="house-rent-mode-select"]').setValue('WHOLE')
+    expect(wrapper.text()).toContain('近地铁')
+    expect(wrapper.text()).toContain('独立卫浴')
+    expect(wrapper.text()).toContain('民水民电')
+    expect(wrapper.text()).not.toContain('家庭友好')
+    expect(wrapper.text()).not.toContain('随时看房')
+  })
 
+  it('requests backend data when feature flags change', async () => {
+    const wrapper = await mountView()
+
+    fetchHouseListFilter.mockClear()
+
+    const checkboxes = wrapper.findAll('input[type="checkbox"]')
+    await checkboxes[0].setValue(true)
+    await checkboxes[1].setValue(true)
     vi.advanceTimersByTime(300)
     await flushPromises()
 
-    expect(smartGuideHouse).toHaveBeenCalledWith({
-      budgetYuan: 5000,
-      budgetScope: 'RENT_ONLY',
-      rentMode: 'WHOLE',
-      locationName: '天河区',
-      commuteMetroStation: '天河区',
+    expect(fetchHouseListFilter).toHaveBeenCalledWith({
+      city: '广州',
+      region: '',
+      rentType: null,
+      minPriceYuan: null,
+      maxPriceYuan: null,
+      nearSubway: true,
+      privateBathroom: true,
+      hasBalcony: false,
+      civilWaterElectric: false,
       page: 1,
       size: 10
     })
-    expect(wrapper.get('[data-test="result-count"]').text()).toContain('共找到 1 套房源')
-    expect(wrapper.text()).toContain('珠江新城地铁口两居')
-    expect(wrapper.text()).toContain('智能搜房')
   })
 })

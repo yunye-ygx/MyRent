@@ -18,6 +18,18 @@ public class HouseVO {
 
     private String title;
 
+    private String city;
+
+    private String region;
+
+    private Boolean nearSubway;
+
+    private Boolean privateBathroom;
+
+    private Boolean hasBalcony;
+
+    private Boolean civilWaterElectric;
+
     private BigDecimal price;
 
     private BigDecimal depositAmount;

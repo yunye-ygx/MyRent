@@ -18,6 +18,18 @@ public interface HouseMapper extends BaseMapper<House> {
 
     House selectForUpdateById(Long id);
 
+    List<House> selectListFilterPage(@Param("city") String city,
+                                     @Param("region") String region,
+                                     @Param("rentType") Integer rentType,
+                                     @Param("minPriceCent") Integer minPriceCent,
+                                     @Param("maxPriceCent") Integer maxPriceCent,
+                                     @Param("nearSubway") Boolean nearSubway,
+                                     @Param("privateBathroom") Boolean privateBathroom,
+                                     @Param("hasBalcony") Boolean hasBalcony,
+                                     @Param("civilWaterElectric") Boolean civilWaterElectric,
+                                     @Param("offset") Integer offset,
+                                     @Param("size") Integer size);
+
     List<Long> selectSmartGuideCandidateIds(@Param("candidateIds") List<Long> candidateIds,
                                             @Param("availableStatus") Integer availableStatus,
                                             @Param("rentType") Integer rentType,

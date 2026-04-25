@@ -1,6 +1,7 @@
 package cn.yy.myrent.service;
 
 import cn.yy.myrent.dto.HouseSuggestReqDTO;
+import cn.yy.myrent.dto.HouseListFilterReqDTO;
 import cn.yy.myrent.dto.SearchHouseReqDTO;
 import cn.yy.myrent.dto.SmartGuideReqDTO;
 import cn.yy.myrent.entity.House;
@@ -20,4 +21,6 @@ public interface IHouseService extends IService<House> {
     SmartGuideResultVO smartGuide(SmartGuideReqDTO reqDTO);
 
     List<HouseSuggestItemVO> suggest(HouseSuggestReqDTO reqDTO);
+
+    HouseSearchResultVO filterList(HouseListFilterReqDTO reqDTO);
 }

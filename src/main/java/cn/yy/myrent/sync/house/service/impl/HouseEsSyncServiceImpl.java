@@ -183,6 +183,12 @@ public class HouseEsSyncServiceImpl implements HouseEsSyncService {
         return Objects.equals(expectedDoc.getId(), esDoc.getId())
                 && Objects.equals(expectedDoc.getPublisherUserId(), esDoc.getPublisherUserId())
                 && Objects.equals(expectedDoc.getTitle(), esDoc.getTitle())
+                && Objects.equals(expectedDoc.getCity(), esDoc.getCity())
+                && Objects.equals(expectedDoc.getRegion(), esDoc.getRegion())
+                && Objects.equals(expectedDoc.getNearSubway(), esDoc.getNearSubway())
+                && Objects.equals(expectedDoc.getPrivateBathroom(), esDoc.getPrivateBathroom())
+                && Objects.equals(expectedDoc.getHasBalcony(), esDoc.getHasBalcony())
+                && Objects.equals(expectedDoc.getCivilWaterElectric(), esDoc.getCivilWaterElectric())
                 && Objects.equals(expectedDoc.getRentType(), esDoc.getRentType())
                 && Objects.equals(expectedDoc.getPrice(), esDoc.getPrice())
                 && Objects.equals(expectedDoc.getDepositAmount(), esDoc.getDepositAmount())
@@ -206,6 +212,12 @@ public class HouseEsSyncServiceImpl implements HouseEsSyncService {
         doc.setId(house.getId());
         doc.setPublisherUserId(house.getPublisherUserId());
         doc.setTitle(house.getTitle());
+        doc.setCity(house.getCity());
+        doc.setRegion(house.getRegion());
+        doc.setNearSubway(house.getNearSubway() != null && house.getNearSubway() == 1);
+        doc.setPrivateBathroom(house.getPrivateBathroom() != null && house.getPrivateBathroom() == 1);
+        doc.setHasBalcony(house.getHasBalcony() != null && house.getHasBalcony() == 1);
+        doc.setCivilWaterElectric(house.getCivilWaterElectric() != null && house.getCivilWaterElectric() == 1);
         doc.setRentType(house.getRentType());
         doc.setPrice(house.getPrice());
         doc.setDepositAmount(house.getDepositAmount());

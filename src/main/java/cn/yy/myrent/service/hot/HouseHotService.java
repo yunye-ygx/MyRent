@@ -270,6 +270,12 @@ public class HouseHotService {
         vo.setId(house.getId());
         vo.setPublisherUserId(house.getPublisherUserId());
         vo.setTitle(house.getTitle());
+        vo.setCity(house.getCity());
+        vo.setRegion(house.getRegion());
+        vo.setNearSubway(house.getNearSubway() != null && house.getNearSubway() == 1);
+        vo.setPrivateBathroom(house.getPrivateBathroom() != null && house.getPrivateBathroom() == 1);
+        vo.setHasBalcony(house.getHasBalcony() != null && house.getHasBalcony() == 1);
+        vo.setCivilWaterElectric(house.getCivilWaterElectric() != null && house.getCivilWaterElectric() == 1);
         vo.setStatus(house.getStatus());
         if (house.getPrice() != null) {
             vo.setPrice(BigDecimal.valueOf(house.getPrice())

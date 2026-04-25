@@ -2,6 +2,7 @@ package cn.yy.myrent.controller;
 
 import cn.yy.myrent.common.Result;
 import cn.yy.myrent.common.UserContext;
+import cn.yy.myrent.dto.HouseListFilterReqDTO;
 import cn.yy.myrent.dto.HouseSuggestReqDTO;
 import cn.yy.myrent.dto.SearchHouseReqDTO;
 import cn.yy.myrent.dto.SmartGuideReqDTO;
@@ -78,6 +79,12 @@ public class HouseController {
     @Operation(summary = "智能找房引导", description = "先做 ES 预筛选，再由 DB 完成最终过滤和排序")
     public Result<SmartGuideResultVO> smartGuide(@Valid @RequestBody SmartGuideReqDTO reqDTO) {
         return Result.success(houseService.smartGuide(reqDTO));
+    }
+
+    @PostMapping("/list-filter")
+    @Operation(summary = "房源列表筛选", description = "按城市、区域、租住方式和价格区间筛选房源列表")
+    public Result<HouseSearchResultVO> listFilter(@RequestBody HouseListFilterReqDTO reqDTO) {
+        return Result.success(houseService.filterList(reqDTO));
     }
 
     @GetMapping("/{id}")

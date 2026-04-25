@@ -1,7 +1,9 @@
 package cn.yy.myrent.controller;
 
 import cn.yy.myrent.common.JwtTokenUtil;
+import cn.yy.myrent.dto.HouseListFilterReqDTO;
 import cn.yy.myrent.dto.HouseSuggestReqDTO;
+import cn.yy.myrent.entity.House;
 import cn.yy.myrent.mapper.ChatMessageMapper;
 import cn.yy.myrent.mapper.ChatSessionMapper;
 import cn.yy.myrent.mapper.HouseFavoriteMapper;
@@ -17,14 +19,15 @@ import cn.yy.myrent.mapper.PaymentRefundMapper;
 import cn.yy.myrent.mapper.PublisherFollowMapper;
 import cn.yy.myrent.mapper.ReviewMapper;
 import cn.yy.myrent.mapper.UserMapper;
-import cn.yy.myrent.entity.House;
 import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IHouseHistoryService;
 import cn.yy.myrent.service.IHouseService;
 import cn.yy.myrent.service.IReviewService;
 import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.sync.house.service.HouseEsSyncService;
+import cn.yy.myrent.vo.HouseSearchResultVO;
 import cn.yy.myrent.vo.HouseSuggestItemVO;
+import cn.yy.myrent.vo.HouseVO;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,8 +39,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -121,8 +124,7 @@ class HouseControllerWebMvcTest {
     void rebuildHotCacheShouldInvokeHotService() throws Exception {
         given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
 
-        mockMvc.perform(post("/house/hot/rebuild")
-                        .header("token", "test-token"))
+        mockMvc.perform(post("/house/hot/rebuild").header("token", "test-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
 
@@ -140,8 +142,8 @@ class HouseControllerWebMvcTest {
     void suggestShouldDefaultSizeTo5AndReturnItems() throws Exception {
         given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
         given(houseService.suggest(any(HouseSuggestReqDTO.class))).willReturn(List.of(
-                new HouseSuggestItemVO(1L, "整租 1 室 1 厅", 3000),
-                new HouseSuggestItemVO(2L, "合租 次卧", 1800)
+                new HouseSuggestItemVO(1L, "\u6574\u79df 1 \u5ba4 1 \u5385", 3000),
+                new HouseSuggestItemVO(2L, "\u5408\u79df \u6b21\u5367", 1800)
         ));
 
         mockMvc.perform(post("/house/suggest")
@@ -151,7 +153,7 @@ class HouseControllerWebMvcTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data[0].id").value(1))
-                .andExpect(jsonPath("$.data[0].title").value("整租 1 室 1 厅"))
+                .andExpect(jsonPath("$.data[0].title").value("\u6574\u79df 1 \u5ba4 1 \u5385"))
                 .andExpect(jsonPath("$.data[0].price").value(3000));
 
         ArgumentCaptor<HouseSuggestReqDTO> captor = ArgumentCaptor.forClass(HouseSuggestReqDTO.class);
@@ -180,6 +182,7 @@ class HouseControllerWebMvcTest {
     @Test
     void suggestShouldRequireKeyword() throws Exception {
         given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
+
         mockMvc.perform(post("/house/suggest")
                         .header("token", "test-token")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -187,6 +190,52 @@ class HouseControllerWebMvcTest {
                 .andExpect(status().isBadRequest());
 
         verifyNoInteractions(houseService);
+    }
+
+    @Test
+    void listFilterShouldAcceptFeatureFlags() throws Exception {
+        given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
+
+        HouseVO item = new HouseVO();
+        item.setId(1L);
+        item.setTitle("\u59d1\u82cf\u533a\u5730\u94c1\u53e3\u4e00\u5c45");
+        item.setCity("\u82cf\u5dde");
+        item.setRegion("\u59d1\u82cf");
+        item.setNearSubway(true);
+        item.setPrivateBathroom(true);
+        item.setHasBalcony(true);
+        item.setCivilWaterElectric(true);
+
+        HouseSearchResultVO result = new HouseSearchResultVO();
+        result.setHouses(List.of(item));
+
+        given(houseService.filterList(any(HouseListFilterReqDTO.class))).willReturn(result);
+
+        mockMvc.perform(post("/house/list-filter")
+                        .header("token", "test-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "city": "苏州",
+                                  "region": "姑苏",
+                                  "rentType": 1,
+                                  "maxPriceYuan": 3500,
+                                  "nearSubway": true,
+                                  "privateBathroom": true,
+                                  "hasBalcony": true,
+                                  "civilWaterElectric": true,
+                                  "page": 1,
+                                  "size": 8
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.houses[0].city").value("苏州"))
+                .andExpect(jsonPath("$.data.houses[0].region").value("姑苏"))
+                .andExpect(jsonPath("$.data.houses[0].nearSubway").value(true))
+                .andExpect(jsonPath("$.data.houses[0].privateBathroom").value(true))
+                .andExpect(jsonPath("$.data.houses[0].hasBalcony").value(true))
+                .andExpect(jsonPath("$.data.houses[0].civilWaterElectric").value(true));
     }
 
     @Test
@@ -198,8 +247,7 @@ class HouseControllerWebMvcTest {
         given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
         given(houseService.getById(7L)).willReturn(house);
 
-        mockMvc.perform(get("/house/7")
-                        .header("token", "test-token"))
+        mockMvc.perform(get("/house/7").header("token", "test-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.id").value(7));

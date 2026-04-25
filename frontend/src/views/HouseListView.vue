@@ -9,24 +9,40 @@
             data-test="house-keyword"
             class="search-input"
             type="text"
-            placeholder="小区 / 地铁 / 商圈 / 学校"
+            placeholder="小区 / 地铁站 / 商圈 / 学校"
           />
         </label>
         <button
           data-test="house-search-submit"
           class="search-submit"
           type="button"
-          :disabled="loading || !readyForGuide"
-          @click="submitSmartSearch({ auto: false })"
+          :disabled="loading"
+          @click="submitFilterSearch({ force: true })"
         >
-          {{ loading && readyForGuide ? '搜索中' : '搜索' }}
+          {{ loading ? '搜索中' : '搜索' }}
         </button>
       </div>
 
       <div class="toolbar-row">
         <label class="toolbar-pill">
+          <span>城市</span>
+          <select
+            :value="currentCity"
+            data-test="house-city-select"
+            class="toolbar-select"
+            @change="handleCityChange"
+          >
+            <option v-for="item in cityOptions" :key="item.name" :value="item.name">{{ item.name }}</option>
+          </select>
+        </label>
+
+        <label class="toolbar-pill">
           <span>区域</span>
-          <select v-model="filters.locationName" data-test="house-location-select" class="toolbar-select">
+          <select
+            v-model="filters.locationName"
+            data-test="house-location-select"
+            class="toolbar-select"
+          >
             <option value="">不限</option>
             <option v-for="item in locationOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
           </select>
@@ -48,30 +64,6 @@
           </select>
         </label>
 
-        <label class="toolbar-pill">
-          <span>户型</span>
-          <select v-model="filters.layout" class="toolbar-select">
-            <option value="">不限</option>
-            <option v-for="item in layoutOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
-          </select>
-        </label>
-
-        <label class="toolbar-pill">
-          <span>朝向</span>
-          <select v-model="filters.orientation" class="toolbar-select">
-            <option value="">不限</option>
-            <option v-for="item in orientationOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
-          </select>
-        </label>
-
-        <label class="toolbar-pill">
-          <span>更多</span>
-          <select v-model="filters.primaryFeature" class="toolbar-select">
-            <option value="">不限</option>
-            <option v-for="item in featureOptions" :key="item" :value="item">{{ item }}</option>
-          </select>
-        </label>
-
         <button class="toolbar-reset" type="button" @click="resetFilters">清空筛选</button>
       </div>
 
@@ -89,7 +81,7 @@
         <section class="side-section">
           <div class="side-head">
             <h3>区域</h3>
-            <span>全城区</span>
+            <span>{{ currentCity }}</span>
           </div>
           <div class="district-grid">
             <button
@@ -98,7 +90,7 @@
               class="district-chip"
               :class="{ active: filters.locationName === item.value }"
               type="button"
-              @click="filters.locationName = filters.locationName === item.value ? '' : item.value"
+              @click="toggleRegion(item.value)"
             >
               {{ item.label }}
             </button>
@@ -116,7 +108,7 @@
           </div>
           <div class="budget-points">
             <span>800</span>
-            <span>3000+</span>
+            <span>5000+</span>
           </div>
         </section>
 
@@ -134,24 +126,12 @@
 
         <section class="side-section">
           <div class="side-head">
-            <h3>户型</h3>
-          </div>
-          <div class="check-list two-columns">
-            <label v-for="item in layoutOptions" :key="item.value" class="check-item">
-              <input v-model="filters.layout" type="radio" name="layout-mode" :value="item.value" />
-              <span>{{ item.label }}</span>
-            </label>
-          </div>
-        </section>
-
-        <section class="side-section">
-          <div class="side-head">
             <h3>更多条件</h3>
           </div>
           <div class="check-list two-columns">
-            <label v-for="item in featureOptions" :key="item" class="check-item">
-              <input :checked="selectedFeatures.includes(item)" type="checkbox" @change="toggleFeature(item)" />
-              <span>{{ item }}</span>
+            <label v-for="item in featureOptions" :key="item.key" class="check-item">
+              <input v-model="filters[item.key]" type="checkbox" />
+              <span>{{ item.label }}</span>
             </label>
           </div>
         </section>
@@ -164,12 +144,12 @@
             <p class="summary-copy">{{ resultSummaryText }}</p>
           </div>
           <div class="summary-meta">
-            <span class="mode-tag" :class="{ mock: usingMock }">{{ sourceLabel }}</span>
+            <span class="mode-tag">真实接口</span>
             <span class="mode-tag">{{ currentModeLabel }}</span>
           </div>
         </div>
 
-        <LoadingState v-if="loading && !filteredHouses.length" text="正在为你匹配房源..." />
+        <LoadingState v-if="loading && !filteredHouses.length" text="正在为你加载房源..." />
 
         <EmptyState
           v-else-if="!filteredHouses.length"
@@ -200,7 +180,7 @@
                   <button class="favorite-btn" type="button" @click.stop>♡</button>
                 </div>
 
-                <div class="tag-row">
+                <div v-if="house.tags.length" class="tag-row">
                   <span v-for="tag in house.tags" :key="tag" class="info-tag">{{ tag }}</span>
                 </div>
               </div>
@@ -220,7 +200,7 @@
             <p class="map-title">地图找房</p>
             <p class="map-copy">{{ mapCopyText }}</p>
           </div>
-          <button class="ghost-map-btn" type="button">刷新范围</button>
+          <button class="ghost-map-btn" type="button" @click="submitFilterSearch({ force: true })">刷新范围</button>
         </div>
 
         <div class="map-board">
@@ -239,9 +219,7 @@
           </div>
         </div>
 
-        <p class="map-note">
-          {{ usingMock ? '地图点位当前为 mock 占位，列表优先展示真实接口返回。' : '右侧点位随当前结果联动，方便对照价格分布。' }}
-        </p>
+        <p class="map-note">地图点位跟随当前接口返回结果变化，便于对照房源价格分布。</p>
       </aside>
     </section>
   </div>
@@ -250,51 +228,20 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchHotHousePage, smartGuideHouse } from '@/api/house'
-import { fetchUserById } from '@/api/user'
+import { fetchHouseListFilter } from '@/api/house'
+import { DEFAULT_CITY, HOT_CITY_OPTIONS, getRegionsByCity } from '@/config/cityFilters'
+import { useAuthStore } from '@/stores/auth'
 import EmptyState from '@/components/EmptyState.vue'
 import LoadingState from '@/components/LoadingState.vue'
 
-const router = useRouter()
-const publisherCache = new Map()
-
-const locationOptions = [
-  { label: '天河区', value: '天河区' },
-  { label: '越秀区', value: '越秀区' },
-  { label: '海珠区', value: '海珠区' },
-  { label: '番禺区', value: '番禺区' },
-  { label: '白云区', value: '白云区' },
-  { label: '黄埔区', value: '黄埔区' }
+const FEATURE_OPTIONS = [
+  { key: 'nearSubway', label: '\u8fd1\u5730\u94c1' },
+  { key: 'privateBathroom', label: '\u72ec\u7acb\u536b\u6d74' },
+  { key: 'hasBalcony', label: '\u5e26\u9633\u53f0' },
+  { key: 'civilWaterElectric', label: '\u6c11\u6c34\u6c11\u7535' }
 ]
 
-const priceOptions = [
-  { label: '1500以下', value: '0-1500', budget: 1500 },
-  { label: '1500-2500', value: '1500-2500', budget: 2500 },
-  { label: '2500-3500', value: '2500-3500', budget: 3500 },
-  { label: '3500-5000', value: '3500-5000', budget: 5000 },
-  { label: '5000以上', value: '5000+', budget: 6500 }
-]
-
-const rentModeOptions = [
-  { label: '整租', value: 'WHOLE' },
-  { label: '合租', value: 'SHARED' }
-]
-
-const layoutOptions = [
-  { label: '一居', value: '1室' },
-  { label: '两居', value: '2室' },
-  { label: '三居', value: '3室+' }
-]
-
-const orientationOptions = [
-  { label: '朝南', value: '朝南' },
-  { label: '东南', value: '东南' },
-  { label: '南北通透', value: '南北通透' }
-]
-
-const featureOptions = ['近地铁', '独立卫浴', '带阳台', '采光好', '民水民电', '可做饭']
-
-const mapPinPositions = [
+const CITY_PLACEHOLDER_COORDS = [
   { left: '58%', top: '19%' },
   { left: '70%', top: '30%' },
   { left: '48%', top: '37%' },
@@ -303,118 +250,155 @@ const mapPinPositions = [
   { left: '35%', top: '72%' }
 ]
 
+const priceOptions = [
+  { label: '1500以下', value: '0-1500', min: 0, max: 1500, budget: 1500 },
+  { label: '1500-2500', value: '1500-2500', min: 1500, max: 2500, budget: 2500 },
+  { label: '2500-3500', value: '2500-3500', min: 2500, max: 3500, budget: 3500 },
+  { label: '3500-5000', value: '3500-5000', min: 3500, max: 5000, budget: 5000 },
+  { label: '5000以上', value: '5000+', min: 5000, max: null, budget: 6500 }
+]
+
+const rentModeOptions = [
+  { label: '整租', value: 'WHOLE' },
+  { label: '合租', value: 'SHARED' }
+]
+
+const router = useRouter()
+const authStore = useAuthStore()
+
+const cityOptions = HOT_CITY_OPTIONS
+const featureOptions = FEATURE_OPTIONS
+
 const filters = reactive({
   keyword: '',
   locationName: '',
   pricePreset: '',
   rentMode: '',
-  layout: '',
-  orientation: '',
-  primaryFeature: '',
-  features: []
+  nearSubway: false,
+  privateBathroom: false,
+  hasBalcony: false,
+  civilWaterElectric: false
 })
 
 const houses = ref([])
 const loading = ref(false)
-const usingMock = ref(false)
-const resultMessage = ref('先按区域、租金和租住方式组合筛选，系统会自动调用智能搜房。')
-const currentMode = ref('featured')
-const lastGuidePayload = ref(null)
+const loadError = ref('')
+const resultMessage = ref('切换城市、区域、租金、租住方式或标签后，会自动刷新房源。')
+const currentMode = ref('filter')
+const lastFilterPayload = ref(null)
+const lastRequestKey = ref('')
 let autoSearchTimer = null
 
+const currentCity = computed(() => authStore.currentCity || DEFAULT_CITY)
+const cityConfig = computed(() => cityOptions.find((item) => item.name === currentCity.value) || cityOptions[0])
+const locationOptions = computed(() =>
+  cityConfig.value.regions.map((region) => ({
+    label: region,
+    value: region
+  }))
+)
 const selectedPriceOption = computed(() => priceOptions.find((item) => item.value === filters.pricePreset) || null)
-const readyForGuide = computed(() => Boolean(filters.locationName && filters.pricePreset && filters.rentMode))
-const selectedFeatures = computed(() => {
-  const values = [...filters.features]
-  if (filters.primaryFeature && !values.includes(filters.primaryFeature)) {
-    values.push(filters.primaryFeature)
-  }
-  return values
-})
+const activeFeatureLabels = computed(() =>
+  featureOptions.filter((item) => filters[item.key]).map((item) => item.label)
+)
 
 const filteredHouses = computed(() => {
   const keyword = filters.keyword.trim().toLowerCase()
-  const featureValues = selectedFeatures.value
+  if (!keyword) {
+    return houses.value
+  }
 
   return houses.value.filter((house) => {
-    if (filters.locationName && house.region !== filters.locationName) {
-      return false
-    }
-    if (filters.rentMode && house.rentMode !== filters.rentMode) {
-      return false
-    }
-    if (filters.layout && house.layout !== filters.layout) {
-      return false
-    }
-    if (filters.orientation && house.orientation !== filters.orientation) {
-      return false
-    }
-    if (featureValues.length && !featureValues.every((item) => house.tags.includes(item))) {
-      return false
-    }
-    if (!keyword) {
-      return true
-    }
-    const haystack = [house.title, house.region, house.publisherName, ...house.tags].join(' ').toLowerCase()
+    const haystack = [house.title, house.city, house.region, house.publisherName, ...house.tags]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
     return haystack.includes(keyword)
   })
 })
 
 const guideStatusText = computed(() => {
-  if (loading && readyForGuide.value) {
-    return '智能搜房正在匹配中，筛选条件会自动回写到列表。'
+  if (loading.value) {
+    return '结构化筛选查询中，结果会按当前城市和筛选条件自动刷新。'
   }
   return resultMessage.value
 })
 
-const budgetRangeLabel = computed(() => selectedPriceOption.value?.label || '800 - 3000+')
+const budgetRangeLabel = computed(() => selectedPriceOption.value?.label || '800 - 5000+')
 const budgetTrackWidth = computed(() => {
   const budget = Number(selectedPriceOption.value?.budget || 3000)
   const ratio = Math.max(0.12, Math.min(budget / 6500, 1))
   return `${Math.round(ratio * 100)}%`
 })
-
-const currentModeLabel = computed(() => (currentMode.value === 'smart' ? '智能搜房' : '精选房源'))
-const sourceLabel = computed(() => (usingMock.value ? 'Mock 数据' : '真实接口'))
+const currentModeLabel = computed(() => (currentMode.value === 'filter' ? '结构化筛选' : '房源列表'))
 const emptyDescription = computed(() => {
-  if (readyForGuide.value) {
-    return '当前筛选比较严格，可以放宽租金、切换租住方式，或者清空附加条件再试。'
+  if (loadError.value) {
+    return loadError.value
   }
-  return '先选择区域、租金和租住方式，系统会回写一批智能推荐结果。'
+  if (filters.keyword) {
+    return '可尝试更换关键词，或者放宽区域、价格与标签条件。'
+  }
+  return '当前筛选条件下暂无房源，可放宽区域、价格、租住方式或标签条件。'
 })
-
 const resultSummaryText = computed(() => {
-  if (currentMode.value === 'smart' && lastGuidePayload.value) {
-    return `${lastGuidePayload.value.locationName} · ${selectedPriceOption.value?.label || '不限预算'} · ${rentModeText(lastGuidePayload.value.rentMode)}`
+  const payload = lastFilterPayload.value
+  if (!payload) {
+    return `${currentCity.value} 房源列表`
   }
-  return '当前先展示精选房源，补齐核心条件后会自动切换为智能搜房结果。'
+
+  const pieces = [payload.city]
+  pieces.push(payload.region || '全城')
+  pieces.push(selectedPriceOption.value?.label || '不限租金')
+  pieces.push(rentModeText(payload.rentType))
+  if (activeFeatureLabels.value.length) {
+    pieces.push(activeFeatureLabels.value.join(' / '))
+  }
+  return pieces.join(' · ')
 })
-
-const mapCopyText = computed(() => lastGuidePayload.value?.locationName || filters.locationName || '当前城市热区')
-
+const mapCopyText = computed(() => {
+  const payload = lastFilterPayload.value
+  if (!payload) {
+    return `${currentCity.value} 房源分布`
+  }
+  return `${payload.city}${payload.region ? ` · ${payload.region}` : ''}`
+})
 const mapPins = computed(() =>
-  filteredHouses.value.slice(0, mapPinPositions.length).map((house, index) => ({
+  filteredHouses.value.slice(0, CITY_PLACEHOLDER_COORDS.length).map((house, index) => ({
     id: house.id,
     price: house.price,
     accent: index === 0,
-    left: mapPinPositions[index].left,
-    top: mapPinPositions[index].top
+    left: CITY_PLACEHOLDER_COORDS[index].left,
+    top: CITY_PLACEHOLDER_COORDS[index].top
   }))
 )
 
 watch(
-  () => [filters.locationName, filters.pricePreset, filters.rentMode],
+  () => [
+    filters.locationName,
+    filters.pricePreset,
+    filters.rentMode,
+    filters.nearSubway,
+    filters.privateBathroom,
+    filters.hasBalcony,
+    filters.civilWaterElectric
+  ],
   () => {
-    if (!readyForGuide.value) {
-      clearAutoSearchTimer()
-      return
-    }
     queueAutoSearch()
   }
 )
 
+watch(
+  currentCity,
+  () => {
+    if (!getRegionsByCity(currentCity.value).includes(filters.locationName)) {
+      filters.locationName = ''
+    }
+    queueAutoSearch({ force: true })
+  }
+)
+
 onMounted(() => {
-  loadFeaturedHouses()
+  submitFilterSearch({ force: true })
 })
 
 onBeforeUnmount(() => {
@@ -428,203 +412,189 @@ function clearAutoSearchTimer() {
   }
 }
 
-function queueAutoSearch() {
+function queueAutoSearch(options = {}) {
   clearAutoSearchTimer()
   autoSearchTimer = setTimeout(() => {
-    submitSmartSearch({ auto: true })
+    submitFilterSearch(options)
   }, 260)
 }
 
-async function loadFeaturedHouses() {
-  loading.value = true
-  currentMode.value = 'featured'
-  usingMock.value = false
-
-  try {
-    const result = await fetchHotHousePage({ page: 1, size: 8 })
-    const records = await enrichPublisherNames(normalizeFeaturedHouses(result?.houses || []))
-    houses.value = records.length ? records : buildMockFeaturedHouses()
-    usingMock.value = !records.length
-    resultMessage.value = result?.tipMessage || '已为你加载当前热门房源。'
-  } catch {
-    houses.value = buildMockFeaturedHouses()
-    usingMock.value = true
-    resultMessage.value = '热门房源接口暂不可用，当前使用 mock 数据占位。'
-  } finally {
-    loading.value = false
-  }
+function handleCityChange(event) {
+  authStore.switchCity(event.target.value)
 }
 
-async function submitSmartSearch({ auto = false } = {}) {
-  if (!readyForGuide.value) {
+function toggleRegion(region) {
+  filters.locationName = filters.locationName === region ? '' : region
+}
+
+async function submitFilterSearch({ force = false } = {}) {
+  const payload = buildFilterPayload()
+  const requestKey = JSON.stringify(payload)
+  if (!force && lastRequestKey.value === requestKey) {
     return
   }
 
-  const payload = buildGuidePayload()
+  lastRequestKey.value = requestKey
   loading.value = true
-  currentMode.value = 'smart'
+  loadError.value = ''
+  currentMode.value = 'filter'
 
   try {
-    const result = await smartGuideHouse(payload)
-    const records = await enrichPublisherNames(normalizeSmartGuideHouses(result?.recommendations || [], payload))
-    houses.value = records.length ? records : buildMockSmartGuideHouses(payload)
-    usingMock.value = !records.length
-    lastGuidePayload.value = payload
-    resultMessage.value = result?.tipMessage || `已按 ${payload.locationName} 为你刷新智能推荐。`
-  } catch {
-    houses.value = buildMockSmartGuideHouses(payload)
-    usingMock.value = true
-    lastGuidePayload.value = payload
-    resultMessage.value = auto
-      ? '智能搜房接口暂不可用，已自动回退到 mock 结果。'
-      : '智能搜房接口暂不可用，已展示 mock 推荐。'
+    const result = await fetchHouseListFilter(payload)
+    houses.value = normalizeHouseRecords(extractRecords(result))
+    lastFilterPayload.value = payload
+    resultMessage.value = result?.tipMessage || `已按 ${payload.city}${payload.region ? ` ${payload.region}` : ''} 刷新房源`
+  } catch (error) {
+    houses.value = []
+    lastRequestKey.value = ''
+    lastFilterPayload.value = payload
+    loadError.value = error?.message || '房源筛选接口暂时不可用，请稍后重试。'
+    resultMessage.value = loadError.value
   } finally {
     loading.value = false
   }
 }
 
-function buildGuidePayload() {
+function buildFilterPayload() {
+  const { min, max } = parsePricePreset(filters.pricePreset)
+
   return {
-    budgetYuan: Number(selectedPriceOption.value?.budget || 3000),
-    budgetScope: 'RENT_ONLY',
-    rentMode: filters.rentMode,
-    locationName: filters.locationName,
-    commuteMetroStation: filters.locationName,
+    city: currentCity.value,
+    region: filters.locationName,
+    rentType: mapRentModeToCode(filters.rentMode),
+    minPriceYuan: min,
+    maxPriceYuan: max,
+    nearSubway: filters.nearSubway,
+    privateBathroom: filters.privateBathroom,
+    hasBalcony: filters.hasBalcony,
+    civilWaterElectric: filters.civilWaterElectric,
     page: 1,
     size: 10
   }
 }
 
-function normalizeFeaturedHouses(records) {
-  return records.map((item, index) => normalizeHouseRecord(item, index, { source: 'featured' }))
+function parsePricePreset(value) {
+  const option = priceOptions.find((item) => item.value === value)
+  return {
+    min: option?.min ?? null,
+    max: option?.max ?? null
+  }
 }
 
-function normalizeSmartGuideHouses(records, payload) {
-  return records.map((item, index) =>
-    normalizeHouseRecord(item, index, {
-      source: 'smart',
-      locationName: payload.locationName,
-      rentMode: payload.rentMode
-    })
-  )
+function mapRentModeToCode(value) {
+  if (value === 'WHOLE') {
+    return 1
+  }
+  if (value === 'SHARED') {
+    return 2
+  }
+  return null
 }
 
-function normalizeHouseRecord(item, index, context = {}) {
-  const seed = Number(item?.houseId || item?.id || index + 1)
-  const rentMode = normalizeRentMode(item?.rentMode || item?.rentalType || context.rentMode)
-  const layout = normalizeLayout(item?.layout, seed)
-  const orientation = normalizeOrientation(item?.orientation, seed)
-  const price = Number(item?.price || item?.rentPrice || derivePrice(seed, context.source === 'smart'))
-  const area = Number(item?.area || deriveArea(layout, seed))
-  const region = item?.region || context.locationName || locationOptions[seed % locationOptions.length].value
-  const publisherName = item?.publisherName || fallbackPublisherName(seed)
-  const commuteMinutes = Number(item?.estimatedCommuteMinutes || 12 + (seed % 6) * 4)
-  const distanceKm = Number(item?.distanceToMetroKm || ((seed % 6) * 0.35 + 0.3).toFixed(1))
-  const tags = uniqueCompact([
-    item?.status === 2 ? '近成交' : '近地铁',
-    rentMode === 'SHARED' ? '拎包入住' : '独门独户',
-    orientation,
-    ...(Array.isArray(item?.reasons) ? item.reasons : []),
-    layout === '3室+' ? '家庭友好' : '随时看房'
-  ]).slice(0, 4)
+function rentModeText(value) {
+  const normalized = normalizeRentMode(value)
+  if (normalized === 'SHARED') {
+    return '合租'
+  }
+  if (normalized === 'WHOLE') {
+    return '整租'
+  }
+  return '不限方式'
+}
+
+function normalizeRentMode(value) {
+  if (value === 2 || value === '2' || value === 'SHARED' || value === '合租') {
+    return 'SHARED'
+  }
+  if (value === 1 || value === '1' || value === 'WHOLE' || value === '整租') {
+    return 'WHOLE'
+  }
+  return ''
+}
+
+function extractRecords(result) {
+  if (Array.isArray(result?.records)) {
+    return result.records
+  }
+  if (Array.isArray(result?.houses)) {
+    return result.houses
+  }
+  if (Array.isArray(result?.list)) {
+    return result.list
+  }
+  if (Array.isArray(result?.items)) {
+    return result.items
+  }
+  return []
+}
+
+function normalizeHouseRecords(records) {
+  return records.map((item, index) => normalizeHouseRecord(item, index))
+}
+
+function normalizeHouseRecord(item, index) {
+  const id = item?.id ?? item?.houseId ?? `house-${index + 1}`
+  const city = item?.city || currentCity.value
+  const region = item?.region || ''
+  const publisherName = item?.publisherName || '未知发布者'
+  const rentMode = normalizeRentMode(item?.rentType || item?.rentMode)
+  const tags = buildHouseTags(item)
+  const price = toAmount(item?.price)
+  const depositAmount = toAmount(item?.depositAmount)
 
   return {
-    id: String(item?.houseId || item?.id || `${context.source || 'house'}-${seed}`),
-    publisherUserId: item?.publisherUserId,
-    title: item?.title || `${region}${layout}温馨房源`,
+    id: String(id),
+    title: item?.title || `${city}${region}品质房源`,
+    city,
     region,
     rentMode,
-    layout,
-    orientation,
-    area,
     price,
     publisherName,
-    roomSummary: `${layout} · ${rentModeText(rentMode)} · ${area}㎡`,
-    metaLine: `距地铁 ${formatDistance(distanceKm)} · ${commuteMinutes}分钟通勤 · ${publisherName}`,
     tags,
-    cover: `https://picsum.photos/seed/myrent-house-${seed}/240/168`,
-    status: Number(item?.status || 1)
+    cover: item?.cover || `https://picsum.photos/seed/myrent-house-${id}/240/168`,
+    roomSummary: [rentModeText(rentMode), city, region].filter(Boolean).join(' · '),
+    metaLine: buildMetaLine({ publisherName, depositAmount, city, region })
   }
 }
 
-async function enrichPublisherNames(records) {
-  if (!records.length) {
-    return []
+function buildMetaLine({ publisherName, depositAmount, city, region }) {
+  const pieces = [publisherName]
+  if (city || region) {
+    pieces.push([city, region].filter(Boolean).join(' · '))
   }
-
-  const resolved = await Promise.all(
-    records.map(async (item) => {
-      if (!item.publisherUserId) {
-        return item
-      }
-
-      const cacheKey = String(item.publisherUserId)
-      if (publisherCache.has(cacheKey)) {
-        return {
-          ...item,
-          publisherName: publisherCache.get(cacheKey),
-          metaLine: item.metaLine.replace(item.publisherName, publisherCache.get(cacheKey))
-        }
-      }
-
-      try {
-        const user = await fetchUserById(item.publisherUserId)
-        const name = user?.name || item.publisherName
-        publisherCache.set(cacheKey, name)
-        return {
-          ...item,
-          publisherName: name,
-          metaLine: item.metaLine.replace(item.publisherName, name)
-        }
-      } catch {
-        publisherCache.set(cacheKey, item.publisherName)
-        return item
-      }
-    })
-  )
-
-  return resolved
+  if (Number.isFinite(depositAmount) && depositAmount > 0) {
+    pieces.push(`押金 ¥${formatAmount(depositAmount)}`)
+  }
+  return pieces.join(' · ')
 }
 
-function buildMockFeaturedHouses() {
-  return [2, 5, 8, 11, 14].map((seed, index) =>
-    normalizeHouseRecord(
-      {
-        id: seed,
-        title: `${locationOptions[index % locationOptions.length].label}精装公寓`,
-        price: 1980 + index * 420,
-        region: locationOptions[index % locationOptions.length].value,
-        rentalType: index % 2 === 0 ? '整租' : '合租',
-        status: 1
-      },
-      index,
-      { source: 'featured' }
-    )
-  )
+function buildHouseTags(item) {
+  const tags = []
+  if (isTruthyFlag(item?.nearSubway)) {
+    tags.push('\u8fd1\u5730\u94c1')
+  }
+  if (isTruthyFlag(item?.privateBathroom)) {
+    tags.push('\u72ec\u7acb\u536b\u6d74')
+  }
+  if (isTruthyFlag(item?.hasBalcony)) {
+    tags.push('\u5e26\u9633\u53f0')
+  }
+  if (isTruthyFlag(item?.civilWaterElectric)) {
+    tags.push('\u6c11\u6c34\u6c11\u7535')
+  }
+  return tags
 }
 
-function buildMockSmartGuideHouses(payload) {
-  return [21, 24, 28, 32, 36].map((seed, index) =>
-    normalizeHouseRecord(
-      {
-        houseId: seed,
-        title: `${payload.locationName}${index % 2 === 0 ? '地铁口' : '品质社区'}${index + 1}号房`,
-        price: Math.max(1200, Number(payload.budgetYuan) - 300 + index * 180),
-        publisherUserId: seed,
-        status: index === 3 ? 2 : 1,
-        reasons: [
-          payload.rentMode === 'SHARED' ? '合租成本更稳' : '整租空间更完整',
-          '通勤更省时'
-        ]
-      },
-      index,
-      {
-        source: 'smart',
-        locationName: payload.locationName,
-        rentMode: payload.rentMode
-      }
-    )
-  )
+function isTruthyFlag(value) {
+  return value === true || value === 1 || value === '1'
+}
+
+function toAmount(value) {
+  const amount = Number(value)
+  if (!Number.isFinite(amount)) {
+    return 0
+  }
+  return amount
 }
 
 function resetFilters() {
@@ -633,20 +603,11 @@ function resetFilters() {
   filters.locationName = ''
   filters.pricePreset = ''
   filters.rentMode = ''
-  filters.layout = ''
-  filters.orientation = ''
-  filters.primaryFeature = ''
-  filters.features = []
-  lastGuidePayload.value = null
-  loadFeaturedHouses()
-}
-
-function toggleFeature(feature) {
-  if (filters.features.includes(feature)) {
-    filters.features = filters.features.filter((item) => item !== feature)
-    return
-  }
-  filters.features = [...filters.features, feature]
+  filters.nearSubway = false
+  filters.privateBathroom = false
+  filters.hasBalcony = false
+  filters.civilWaterElectric = false
+  submitFilterSearch({ force: true })
 }
 
 function toDetail(id) {
@@ -659,62 +620,6 @@ function formatAmount(value) {
     return '--'
   }
   return Math.round(amount).toLocaleString('zh-CN')
-}
-
-function formatDistance(value) {
-  const amount = Number(value)
-  if (!Number.isFinite(amount)) {
-    return '--'
-  }
-  return `${amount.toFixed(amount >= 1 ? 1 : 2)}km`
-}
-
-function rentModeText(value) {
-  return value === 'SHARED' ? '合租' : '整租'
-}
-
-function normalizeRentMode(value) {
-  if (value === 'SHARED' || value === '合租') {
-    return 'SHARED'
-  }
-  return 'WHOLE'
-}
-
-function normalizeLayout(value, seed) {
-  if (value && ['1室', '2室', '3室+'].includes(value)) {
-    return value
-  }
-  return layoutOptions[seed % layoutOptions.length].value
-}
-
-function normalizeOrientation(value, seed) {
-  if (value && orientationOptions.some((item) => item.value === value)) {
-    return value
-  }
-  return orientationOptions[seed % orientationOptions.length].value
-}
-
-function derivePrice(seed, smartMode) {
-  return (smartMode ? 2200 : 1800) + (seed % 5) * 360
-}
-
-function deriveArea(layout, seed) {
-  if (layout === '1室') {
-    return 18 + (seed % 5) * 2
-  }
-  if (layout === '2室') {
-    return 38 + (seed % 4) * 3
-  }
-  return 58 + (seed % 4) * 4
-}
-
-function fallbackPublisherName(seed) {
-  const names = ['青禾管家', '青寓直租', '安心房东', '同城优居', '青年社区']
-  return names[seed % names.length]
-}
-
-function uniqueCompact(values) {
-  return [...new Set(values.filter(Boolean))]
 }
 </script>
 
@@ -847,19 +752,22 @@ function uniqueCompact(values) {
   border: 1px solid #e6ece6;
   border-radius: 12px;
   background: #fff;
-  color: #6b766c;
+  color: #5d6d5b;
   padding: 8px 12px;
-  font-size: 12px;
+  cursor: pointer;
 }
 
 .view-pill.is-active {
-  background: #edf3ea;
-  color: #55714d;
+  border-color: #5b7550;
+  background: rgba(91, 117, 80, 0.1);
+  color: #385232;
 }
 
 .results-shell {
   display: grid;
-  gap: 16px;
+  grid-template-columns: 280px minmax(0, 1fr) 300px;
+  gap: 18px;
+  align-items: start;
 }
 
 .filter-sidebar,
@@ -868,30 +776,30 @@ function uniqueCompact(values) {
   padding: 18px;
 }
 
-.filter-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.side-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.side-section + .side-section {
+  margin-top: 18px;
 }
 
 .side-head {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  color: #728172;
-  font-size: 12px;
+  align-items: baseline;
+  margin-bottom: 12px;
 }
 
-.side-head h3 {
+.side-head h3,
+.map-title {
   margin: 0;
-  color: #2a392c;
-  font-size: 14px;
+  font-size: 16px;
+  color: #223224;
+}
+
+.side-head span,
+.map-copy,
+.map-note,
+.summary-copy {
+  color: #839081;
+  font-size: 12px;
 }
 
 .district-grid {
@@ -901,32 +809,31 @@ function uniqueCompact(values) {
 }
 
 .district-chip {
-  border: 1px solid #e5ece4;
-  border-radius: 10px;
+  border: 1px solid #e4ebe2;
+  border-radius: 999px;
   background: #fff;
-  color: #526151;
-  padding: 7px 10px;
-  font-size: 12px;
+  color: #445441;
+  padding: 8px 12px;
   cursor: pointer;
 }
 
 .district-chip.active {
-  border-color: #87a276;
-  background: #f0f6eb;
-  color: #42603b;
+  border-color: #5b7550;
+  background: rgba(91, 117, 80, 0.1);
+  color: #385232;
 }
 
 .budget-track {
   position: relative;
-  height: 6px;
+  height: 8px;
   border-radius: 999px;
-  background: #edf2ec;
+  background: #eef3ec;
 }
 
 .budget-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #87ae75, #5e8251);
+  background: linear-gradient(90deg, #7f9774, #5b7550);
 }
 
 .budget-thumb {
@@ -934,17 +841,17 @@ function uniqueCompact(values) {
   top: 50%;
   width: 14px;
   height: 14px;
-  border: 2px solid #fff;
   border-radius: 50%;
-  background: #5e8251;
+  background: #5b7550;
+  box-shadow: 0 0 0 4px rgba(91, 117, 80, 0.14);
   transform: translate(-50%, -50%);
-  box-shadow: 0 4px 10px rgba(72, 103, 62, 0.24);
 }
 
 .budget-points {
   display: flex;
   justify-content: space-between;
-  color: #98a199;
+  margin-top: 10px;
+  color: #8a9688;
   font-size: 12px;
 }
 
@@ -961,126 +868,108 @@ function uniqueCompact(values) {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #4d5c4d;
-  font-size: 13px;
-}
-
-.result-column {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  color: #425242;
+  font-size: 14px;
 }
 
 .result-summary {
   display: flex;
-  align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .summary-count {
-  margin: 0;
-  color: #253225;
-  font-size: 15px;
+  margin: 0 0 4px;
+  font-size: 20px;
   font-weight: 700;
+  color: #223224;
 }
 
 .summary-copy {
-  margin: 8px 0 0;
-  color: #99a49a;
-  font-size: 12px;
+  margin: 0;
 }
 
 .summary-meta {
-  display: flex;
+  display: inline-flex;
   gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  align-items: center;
 }
 
 .mode-tag {
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
+  padding: 8px 10px;
   border-radius: 999px;
-  padding: 0 12px;
-  background: #eef4ea;
-  color: #56714b;
+  background: #f1f6ef;
+  color: #4d6445;
   font-size: 12px;
 }
 
-.mode-tag.mock {
-  background: #fff5ea;
-  color: #b76d2a;
-}
-
 .result-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 14px;
 }
 
 .result-card {
   display: grid;
-  grid-template-columns: 152px minmax(0, 1fr);
-  gap: 14px;
-  padding: 10px;
-  border: 1px solid #edf2ec;
-  border-radius: 16px;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid #edf1eb;
+  border-radius: 18px;
   cursor: pointer;
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
 .result-card:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 22px rgba(43, 59, 42, 0.08);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(31, 42, 32, 0.08);
 }
 
 .result-cover {
   width: 100%;
-  height: 114px;
+  height: 168px;
   object-fit: cover;
-  border-radius: 12px;
-  background: #edf1eb;
+  border-radius: 14px;
+  background: #eef3ec;
 }
 
 .result-body {
   display: flex;
-  align-items: stretch;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
 }
 
 .result-main {
-  flex: 1;
   min-width: 0;
+  flex: 1;
 }
 
 .card-head {
   display: flex;
-  align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
 }
 
 .card-title {
   margin: 0;
-  color: #1f2d20;
-  font-size: 16px;
+  color: #223224;
+  font-size: 20px;
 }
 
 .card-subtitle,
 .card-meta {
-  margin: 6px 0 0;
-  color: #6f7f71;
-  font-size: 12px;
+  margin: 8px 0 0;
+  color: #667764;
+  font-size: 13px;
 }
 
 .favorite-btn {
-  border: 0;
-  background: transparent;
-  color: #c5ccc4;
-  font-size: 18px;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #e5ece3;
+  border-radius: 50%;
+  background: #fff;
+  color: #71856b;
   cursor: pointer;
 }
 
@@ -1088,177 +977,162 @@ function uniqueCompact(values) {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 14px;
 }
 
 .info-tag {
-  border-radius: 8px;
-  padding: 4px 8px;
-  background: #f1f5ef;
-  color: #60705f;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f4f8f2;
+  color: #51664b;
   font-size: 12px;
 }
 
 .price-block {
   display: flex;
+  flex-direction: column;
   align-items: flex-end;
-  gap: 4px;
-  white-space: nowrap;
+  justify-content: center;
+  min-width: 110px;
 }
 
 .price {
-  color: #ff6e2f;
+  color: #d86f2d;
   font-size: 28px;
   font-weight: 700;
-  line-height: 1;
 }
 
 .price-unit {
-  color: #7e897f;
+  color: #8a9688;
   font-size: 13px;
-  padding-bottom: 4px;
-}
-
-.map-column {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
 }
 
 .map-head {
   display: flex;
-  align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
-}
-
-.map-title {
-  margin: 0;
-  color: #273527;
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.map-copy {
-  margin: 8px 0 0;
-  color: #8f9a90;
-  font-size: 12px;
+  gap: 12px;
+  align-items: flex-start;
 }
 
 .ghost-map-btn {
-  border: 1px solid #e8ede7;
+  border: 1px solid #e4ebe2;
   border-radius: 12px;
   background: #fff;
-  color: #60705d;
+  color: #556953;
   padding: 8px 12px;
-  font-size: 12px;
+  cursor: pointer;
 }
 
 .map-board {
   position: relative;
-  min-height: 480px;
   overflow: hidden;
+  margin-top: 16px;
+  height: 360px;
   border-radius: 18px;
   background:
-    radial-gradient(circle at 20% 18%, rgba(157, 202, 182, 0.38), transparent 24%),
-    radial-gradient(circle at 82% 74%, rgba(158, 210, 186, 0.32), transparent 28%),
-    linear-gradient(135deg, #eaf3f8 0%, #f4f8fb 52%, #eef5f9 100%);
+    radial-gradient(circle at top left, rgba(157, 188, 142, 0.28), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(251, 214, 141, 0.3), transparent 30%),
+    #f6faf4;
+}
+
+.map-grid,
+.map-road {
+  position: absolute;
+  inset: 0;
 }
 
 .map-grid {
-  position: absolute;
-  inset: 0;
   background-image:
-    linear-gradient(rgba(190, 207, 216, 0.4) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(190, 207, 216, 0.4) 1px, transparent 1px);
-  background-size: 68px 68px;
-  opacity: 0.28;
+    linear-gradient(rgba(102, 118, 100, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(102, 118, 100, 0.07) 1px, transparent 1px);
+  background-size: 34px 34px;
 }
 
-.map-road {
+.map-road::before {
+  content: '';
   position: absolute;
-  background: rgba(255, 255, 255, 0.96);
+  background: rgba(91, 117, 80, 0.16);
   border-radius: 999px;
-  box-shadow: 0 0 0 8px rgba(250, 252, 255, 0.65);
 }
 
-.road-one {
-  top: 8%;
-  left: 18%;
-  width: 70%;
-  height: 16px;
-  transform: rotate(18deg);
-}
-
-.road-two {
-  top: 26%;
-  left: 8%;
-  width: 88%;
+.road-one::before {
+  width: 300px;
   height: 18px;
-  transform: rotate(-48deg);
+  top: 72px;
+  left: 16px;
+  transform: rotate(22deg);
 }
 
-.road-three {
-  top: 56%;
-  left: 20%;
-  width: 62%;
-  height: 14px;
-  transform: rotate(10deg);
+.road-two::before {
+  width: 220px;
+  height: 16px;
+  top: 172px;
+  right: -10px;
+  transform: rotate(-28deg);
+}
+
+.road-three::before {
+  width: 20px;
+  height: 300px;
+  left: 138px;
+  top: 32px;
 }
 
 .map-pin {
   position: absolute;
-  z-index: 1;
-  min-width: 54px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: #5b7651;
-  color: #fff;
+  transform: translate(-50%, -50%);
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #fff;
+  color: #40533c;
   font-size: 12px;
   font-weight: 600;
-  text-align: center;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 12px 18px rgba(72, 101, 61, 0.22);
+  box-shadow: 0 10px 18px rgba(54, 77, 47, 0.12);
 }
 
 .map-pin.accent {
-  background: #90b46f;
+  background: #5b7550;
+  color: #fff;
 }
 
 .map-note {
-  margin: 0;
-  color: #93a093;
-  font-size: 12px;
+  margin: 16px 0 0;
   line-height: 1.7;
 }
 
-@media (min-width: 1100px) {
+@media (max-width: 1200px) {
   .results-shell {
-    grid-template-columns: 242px minmax(0, 1fr) 330px;
-    align-items: start;
+    grid-template-columns: 260px minmax(0, 1fr);
   }
 
-  .filter-sidebar,
   .map-column {
-    position: sticky;
-    top: 18px;
+    grid-column: 1 / -1;
   }
 }
 
-@media (max-width: 1099px) {
-  .map-board {
-    min-height: 320px;
+@media (max-width: 900px) {
+  .results-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .result-card {
+    grid-template-columns: 1fr;
+  }
+
+  .result-cover {
+    height: 220px;
+  }
+
+  .result-body {
+    flex-direction: column;
+  }
+
+  .price-block {
+    align-items: flex-start;
   }
 }
 
-@media (max-width: 767px) {
-  .search-shell,
-  .filter-sidebar,
-  .result-column,
-  .map-column {
-    border-radius: 16px;
-  }
-
+@media (max-width: 640px) {
   .search-row {
     grid-template-columns: 1fr;
   }
@@ -1267,23 +1141,11 @@ function uniqueCompact(values) {
   .result-summary,
   .map-head {
     flex-direction: column;
-    align-items: stretch;
+    align-items: flex-start;
   }
 
-  .result-card {
+  .check-list.two-columns {
     grid-template-columns: 1fr;
-  }
-
-  .result-cover {
-    height: 180px;
-  }
-
-  .result-body {
-    flex-direction: column;
-  }
-
-  .price-block {
-    justify-content: flex-start;
   }
 }
 </style>

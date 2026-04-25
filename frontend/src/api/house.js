@@ -24,6 +24,10 @@ export function smartGuideHouse(payload) {
   return http.post('/house/smart-guide', payload)
 }
 
+export function fetchHouseListFilter(payload) {
+  return http.post('/house/list-filter', payload)
+}
+
 export function fetchHouseSuggest(payload) {
   return http.post('/house/suggest', payload)
 }

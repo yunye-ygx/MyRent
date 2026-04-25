@@ -26,8 +26,15 @@
 
     <div class="nav-actions">
       <label class="action-chip city-chip">
-        <select class="city-select" :value="activeCity" aria-label="切换城市">
-          <option>{{ activeCity }}</option>
+        <select
+          class="city-select"
+          :value="activeCity"
+          aria-label="切换城市"
+          @change="handleCityChange"
+        >
+          <option v-for="city in HOT_CITY_OPTIONS" :key="city.name" :value="city.name">
+            {{ city.name }}
+          </option>
         </select>
       </label>
       <RouterLink class="profile-chip" to="/mine">
@@ -40,6 +47,7 @@
 
 <script setup>
 import { computed, toRefs } from 'vue'
+import { HOT_CITY_OPTIONS } from '@/config/cityFilters'
 import { useAuthStore } from '@/stores/auth'
 import { useMessageCenterStore } from '@/stores/messageCenter'
 
@@ -59,7 +67,7 @@ const { items, currentPath } = toRefs(props)
 const authStore = useAuthStore()
 const messageCenterStore = useMessageCenterStore()
 
-const activeCity = computed(() => authStore.profile?.city || '南京')
+const activeCity = computed(() => authStore.currentCity || authStore.profile?.city || HOT_CITY_OPTIONS[0].name)
 const displayName = computed(() => authStore.profile?.name || '登录 / 注册')
 const avatarText = computed(() => {
   const name = String(displayName.value || '').trim()
@@ -68,6 +76,10 @@ const avatarText = computed(() => {
 
 function isMessageItem(item) {
   return item?.to === '/messages'
+}
+
+function handleCityChange(event) {
+  authStore.switchCity(event.target.value)
 }
 </script>
 

@@ -1,6 +1,7 @@
 package cn.yy.myrent.service.impl;
 
 import cn.yy.myrent.document.HouseDoc;
+import cn.yy.myrent.dto.HouseListFilterReqDTO;
 import cn.yy.myrent.dto.HouseSuggestReqDTO;
 import cn.yy.myrent.dto.SearchHouseReqDTO;
 import cn.yy.myrent.dto.SmartGuideReqDTO;
@@ -182,6 +183,35 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         return smartGuideRecommendationService.recommend(reqDTO);
     }
 
+    @Override
+    public HouseSearchResultVO filterList(HouseListFilterReqDTO reqDTO) {
+        int page = reqDTO == null || reqDTO.getPage() == null ? 1 : reqDTO.getPage();
+        int size = reqDTO == null || reqDTO.getSize() == null ? 8 : reqDTO.getSize();
+        page = Math.max(page, 1);
+        size = Math.min(Math.max(size, 1), 50);
+        int offset = (page - 1) * size;
+
+        List<House> records = baseMapper.selectListFilterPage(
+                reqDTO == null ? null : reqDTO.getCity(),
+                reqDTO == null ? null : reqDTO.getRegion(),
+                reqDTO == null ? null : reqDTO.getRentType(),
+                yuanToCent(reqDTO == null ? null : reqDTO.getMinPriceYuan()),
+                yuanToCent(reqDTO == null ? null : reqDTO.getMaxPriceYuan()),
+                reqDTO == null ? null : reqDTO.getNearSubway(),
+                reqDTO == null ? null : reqDTO.getPrivateBathroom(),
+                reqDTO == null ? null : reqDTO.getHasBalcony(),
+                reqDTO == null ? null : reqDTO.getCivilWaterElectric(),
+                offset,
+                size
+        );
+
+        List<HouseVO> houses = new ArrayList<>();
+        for (House house : records) {
+            houses.add(convertHouseToVo(house));
+        }
+        return buildSearchResult(houses, false, "DB_FILTER", null);
+    }
+
     private HouseSearchResultVO searchWhenEsUnavailable(String city, int pageIndex, int pageSize) {
         try {
             List<HouseVO> redisRecommended = searchHotFromRedis(city, pageIndex, pageSize);
@@ -348,6 +378,12 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         vo.setId(doc.getId());
         vo.setPublisherUserId(doc.getPublisherUserId());
         vo.setTitle(doc.getTitle());
+        vo.setCity(doc.getCity());
+        vo.setRegion(doc.getRegion());
+        vo.setNearSubway(Boolean.TRUE.equals(doc.getNearSubway()));
+        vo.setPrivateBathroom(Boolean.TRUE.equals(doc.getPrivateBathroom()));
+        vo.setHasBalcony(Boolean.TRUE.equals(doc.getHasBalcony()));
+        vo.setCivilWaterElectric(Boolean.TRUE.equals(doc.getCivilWaterElectric()));
         vo.setStatus(doc.getStatus());
         if (doc.getPrice() != null) {
             BigDecimal priceYuan = BigDecimal.valueOf(doc.getPrice())
@@ -367,6 +403,12 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         vo.setId(house.getId());
         vo.setPublisherUserId(house.getPublisherUserId());
         vo.setTitle(house.getTitle());
+        vo.setCity(house.getCity());
+        vo.setRegion(house.getRegion());
+        vo.setNearSubway(house.getNearSubway() != null && house.getNearSubway() == 1);
+        vo.setPrivateBathroom(house.getPrivateBathroom() != null && house.getPrivateBathroom() == 1);
+        vo.setHasBalcony(house.getHasBalcony() != null && house.getHasBalcony() == 1);
+        vo.setCivilWaterElectric(house.getCivilWaterElectric() != null && house.getCivilWaterElectric() == 1);
         vo.setStatus(house.getStatus());
         if (house.getPrice() != null) {
             BigDecimal priceYuan = BigDecimal.valueOf(house.getPrice())
@@ -399,6 +441,13 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         }
         BigDecimal km = BigDecimal.valueOf(meters).divide(BigDecimal.valueOf(1000), 1, RoundingMode.HALF_UP);
         return km + "km";
+    }
+
+    private Integer yuanToCent(Integer yuan) {
+        if (yuan == null) {
+            return null;
+        }
+        return Math.max(yuan, 0) * 100;
     }
 
     private record SearchPoint(double latitude, double longitude) {

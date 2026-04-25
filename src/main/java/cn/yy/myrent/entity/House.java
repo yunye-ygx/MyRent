@@ -38,6 +38,22 @@ public class House implements Serializable {
      */
     private String title;
 
+    private String city;
+
+    private String region;
+
+    @TableField("near_subway")
+    private Integer nearSubway;
+
+    @TableField("private_bathroom")
+    private Integer privateBathroom;
+
+    @TableField("has_balcony")
+    private Integer hasBalcony;
+
+    @TableField("civil_water_electric")
+    private Integer civilWaterElectric;
+
     @TableField("rent_type")
     private Integer rentType;
 
