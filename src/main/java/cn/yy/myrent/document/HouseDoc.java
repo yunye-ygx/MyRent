@@ -58,6 +58,15 @@ public class HouseDoc {
     @Field(type = FieldType.Integer)
     private Integer status;
 
+    @Field(type = FieldType.Integer)
+    private Integer version;
+
+    @Field(type = FieldType.Double)
+    private Double longitude;
+
+    @Field(type = FieldType.Double)
+    private Double latitude;
+
     @ValueConverter(HouseCreateTimeValueConverter.class)
     @Field(type = FieldType.Date, format = {DateFormat.strict_date_optional_time, DateFormat.strict_date})
     private LocalDateTime createTime;

@@ -59,6 +59,8 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
     private static final String FALLBACK_SOURCE_ES = "ES";
     private static final String FALLBACK_SOURCE_REDIS_HOT = "REDIS_HOT";
     private static final String FALLBACK_SOURCE_DB_HOT = "DB_HOT";
+    private static final String FILTER_SOURCE_ES = "ES_FILTER";
+    private static final String FILTER_SOURCE_DB = "DB_FILTER";
 
     private static final String TIP_ES_DOWN = "附近房源加载异常，已为你展示热门房源";
     private static final String TIP_OUT_OF_RANGE = "当前范围内暂无可租房源";
@@ -189,27 +191,18 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         int size = reqDTO == null || reqDTO.getSize() == null ? 8 : reqDTO.getSize();
         page = Math.max(page, 1);
         size = Math.min(Math.max(size, 1), 50);
+        int pageIndex = page - 1;
         int offset = (page - 1) * size;
 
-        List<House> records = baseMapper.selectListFilterPage(
-                reqDTO == null ? null : reqDTO.getCity(),
-                reqDTO == null ? null : reqDTO.getRegion(),
-                reqDTO == null ? null : reqDTO.getRentType(),
-                yuanToCent(reqDTO == null ? null : reqDTO.getMinPriceYuan()),
-                yuanToCent(reqDTO == null ? null : reqDTO.getMaxPriceYuan()),
-                reqDTO == null ? null : reqDTO.getNearSubway(),
-                reqDTO == null ? null : reqDTO.getPrivateBathroom(),
-                reqDTO == null ? null : reqDTO.getHasBalcony(),
-                reqDTO == null ? null : reqDTO.getCivilWaterElectric(),
-                offset,
-                size
-        );
-
-        List<HouseVO> houses = new ArrayList<>();
-        for (House house : records) {
-            houses.add(convertHouseToVo(house));
+        log.info("根据条件筛选房源，优先查询 ES");
+        try {
+            List<HouseVO> houses = searchFilterInEs(reqDTO, pageIndex, size);
+            return buildSearchResult(houses, false, FILTER_SOURCE_ES, null);
+        } catch (Exception e) {
+            log.warn("ES filter query failed, fallback to DB, page={}, size={}", page, size, e);
         }
-        return buildSearchResult(houses, false, "DB_FILTER", null);
+
+        return buildSearchResult(filterListFromDb(reqDTO, offset, size), true, FILTER_SOURCE_DB, null);
     }
 
     private HouseSearchResultVO searchWhenEsUnavailable(String city, int pageIndex, int pageSize) {
@@ -338,6 +331,63 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         return voList;
     }
 
+    private List<HouseVO> searchFilterInEs(HouseListFilterReqDTO reqDTO, int pageIndex, int pageSize) {
+        Integer minPriceCent = yuanToCent(reqDTO == null ? null : reqDTO.getMinPriceYuan());
+        Integer maxPriceCent = yuanToCent(reqDTO == null ? null : reqDTO.getMaxPriceYuan());
+
+        Query boolQuery = Query.of(q -> q.bool(b -> {
+            b.filter(f -> f.term(t -> t.field("status").value(HOUSE_STATUS_AVAILABLE)));
+            if (reqDTO != null) {
+                if (StringUtils.hasText(reqDTO.getCity())) {
+                    b.filter(f -> f.term(t -> t.field("city").value(reqDTO.getCity())));
+                }
+                if (StringUtils.hasText(reqDTO.getRegion())) {
+                    b.filter(f -> f.term(t -> t.field("region").value(reqDTO.getRegion())));
+                }
+                if (reqDTO.getRentType() != null) {
+                    b.filter(f -> f.term(t -> t.field("rentType").value(reqDTO.getRentType())));
+                }
+                if (minPriceCent != null) {
+                    b.filter(f -> f.range(r -> r.number(n -> n.field("price").gte((double) minPriceCent))));
+                }
+                if (maxPriceCent != null) {
+                    b.filter(f -> f.range(r -> r.number(n -> n.field("price").lte((double) maxPriceCent))));
+                }
+                if (Boolean.TRUE.equals(reqDTO.getNearSubway())) {
+                    b.filter(f -> f.term(t -> t.field("nearSubway").value(true)));
+                }
+                if (Boolean.TRUE.equals(reqDTO.getPrivateBathroom())) {
+                    b.filter(f -> f.term(t -> t.field("privateBathroom").value(true)));
+                }
+                if (Boolean.TRUE.equals(reqDTO.getHasBalcony())) {
+                    b.filter(f -> f.term(t -> t.field("hasBalcony").value(true)));
+                }
+                if (Boolean.TRUE.equals(reqDTO.getCivilWaterElectric())) {
+                    b.filter(f -> f.term(t -> t.field("civilWaterElectric").value(true)));
+                }
+            }
+            return b;
+        }));
+
+        NativeQuery nativeQuery = NativeQuery.builder()
+                .withQuery(boolQuery)
+                .withSort(SortOptions.of(s -> s.field(f -> f.field("createTime").order(SortOrder.Desc))))
+                .withSort(SortOptions.of(s -> s.field(f -> f.field("id").order(SortOrder.Desc))))
+                .withPageable(PageRequest.of(pageIndex, pageSize))
+                .build();
+
+        SearchHits<HouseDoc> hits = elasticsearchOperations.search(nativeQuery, HouseDoc.class);
+        List<HouseVO> voList = new ArrayList<>();
+        for (SearchHit<HouseDoc> hit : hits) {
+            HouseDoc doc = hit.getContent();
+            if (doc != null) {
+                voList.add(convertDocToVo(doc));
+            }
+        }
+        log.info("ES filter query success, count={}, pageIndex={}, pageSize={}", voList.size(), pageIndex, pageSize);
+        return voList;
+    }
+
     private List<HouseVO> searchHotFromRedis(String city, int pageIndex, int pageSize) {
         if (stringRedisTemplate.getConnectionFactory() == null) {
             throw new IllegalStateException("Redis connection factory is not configured");
@@ -371,6 +421,28 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         log.info("DB hot fallback finished, pageIndex={}, pageSize={}, count={}",
                 pageIndex, pageSize, voList.size());
         return voList;
+    }
+
+    private List<HouseVO> filterListFromDb(HouseListFilterReqDTO reqDTO, int offset, int size) {
+        List<House> records = baseMapper.selectListFilterPage(
+                reqDTO == null ? null : reqDTO.getCity(),
+                reqDTO == null ? null : reqDTO.getRegion(),
+                reqDTO == null ? null : reqDTO.getRentType(),
+                yuanToCent(reqDTO == null ? null : reqDTO.getMinPriceYuan()),
+                yuanToCent(reqDTO == null ? null : reqDTO.getMaxPriceYuan()),
+                reqDTO == null ? null : reqDTO.getNearSubway(),
+                reqDTO == null ? null : reqDTO.getPrivateBathroom(),
+                reqDTO == null ? null : reqDTO.getHasBalcony(),
+                reqDTO == null ? null : reqDTO.getCivilWaterElectric(),
+                offset,
+                size
+        );
+
+        List<HouseVO> houses = new ArrayList<>();
+        for (House house : records) {
+            houses.add(convertHouseToVo(house));
+        }
+        return houses;
     }
 
     private HouseVO convertDocToVo(HouseDoc doc) {

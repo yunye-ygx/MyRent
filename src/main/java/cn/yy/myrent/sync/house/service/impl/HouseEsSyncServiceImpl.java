@@ -194,6 +194,9 @@ public class HouseEsSyncServiceImpl implements HouseEsSyncService {
                 && Objects.equals(expectedDoc.getDepositAmount(), esDoc.getDepositAmount())
                 && Objects.equals(expectedDoc.getTotalCost(), esDoc.getTotalCost())
                 && Objects.equals(expectedDoc.getStatus(), esDoc.getStatus())
+                && Objects.equals(expectedDoc.getVersion(), esDoc.getVersion())
+                && Objects.equals(expectedDoc.getLongitude(), esDoc.getLongitude())
+                && Objects.equals(expectedDoc.getLatitude(), esDoc.getLatitude())
                 && Objects.equals(expectedDoc.getCreateTime(), esDoc.getCreateTime())
                 && isLocationConsistent(expectedDoc.getLocation(), esDoc.getLocation());
     }
@@ -223,6 +226,9 @@ public class HouseEsSyncServiceImpl implements HouseEsSyncService {
         doc.setDepositAmount(house.getDepositAmount());
         doc.setTotalCost(house.getTotalCost());
         doc.setStatus(house.getStatus());
+        doc.setVersion(house.getVersion());
+        doc.setLongitude(house.getLongitude() == null ? null : house.getLongitude().doubleValue());
+        doc.setLatitude(house.getLatitude() == null ? null : house.getLatitude().doubleValue());
         doc.setCreateTime(house.getCreateTime());
         if (house.getLatitude() != null && house.getLongitude() != null) {
             doc.setLocation(new GeoPoint(house.getLatitude().doubleValue(), house.getLongitude().doubleValue()));
