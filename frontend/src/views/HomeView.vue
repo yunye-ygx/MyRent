@@ -72,10 +72,14 @@
             v-for="listing in displayListings"
             :key="listing.id"
             class="listing-card"
+            @mousemove="handleListingPointerMove"
+            @mouseleave="handleListingPointerLeave"
             @click="toDetail(listing.id)"
           >
             <div class="listing-cover-wrap">
               <img class="listing-cover" :src="listing.image" :alt="listing.title" />
+              <div class="listing-hover-layer" aria-hidden="true"></div>
+              <span class="listing-cta">查看房源</span>
               <span class="listing-badge">{{ listing.badge }}</span>
             </div>
 
@@ -287,6 +291,40 @@ function submitSearch() {
 function applyPreset(keyword) {
   searchKeyword.value = keyword
   handleSearch(keyword)
+}
+
+function handleListingPointerMove(event) {
+  const card = event.currentTarget
+  if (!card) {
+    return
+  }
+
+  const rect = card.getBoundingClientRect()
+  const x = ((event.clientX - rect.left) / rect.width) * 100
+  const y = ((event.clientY - rect.top) / rect.height) * 100
+  const offsetX = (event.clientX - rect.left) / rect.width - 0.5
+  const offsetY = (event.clientY - rect.top) / rect.height - 0.5
+
+  card.style.setProperty('--pointer-x', `${x}%`)
+  card.style.setProperty('--pointer-y', `${y}%`)
+  card.style.setProperty('--rotate-y', `${(offsetX * 10).toFixed(2)}deg`)
+  card.style.setProperty('--rotate-x', `${(offsetY * -10).toFixed(2)}deg`)
+  card.style.setProperty('--media-shift-x', `${(offsetX * 14).toFixed(2)}px`)
+  card.style.setProperty('--media-shift-y', `${(offsetY * 10).toFixed(2)}px`)
+}
+
+function handleListingPointerLeave(event) {
+  const card = event.currentTarget
+  if (!card) {
+    return
+  }
+
+  card.style.setProperty('--pointer-x', '50%')
+  card.style.setProperty('--pointer-y', '50%')
+  card.style.setProperty('--rotate-x', '0deg')
+  card.style.setProperty('--rotate-y', '0deg')
+  card.style.setProperty('--media-shift-x', '0px')
+  card.style.setProperty('--media-shift-y', '0px')
 }
 
 function toDetail(id) {
@@ -599,21 +637,69 @@ onMounted(() => {
 }
 
 .listing-card {
+  --pointer-x: 50%;
+  --pointer-y: 50%;
+  --rotate-x: 0deg;
+  --rotate-y: 0deg;
+  --media-shift-x: 0px;
+  --media-shift-y: 0px;
+  position: relative;
+  isolation: isolate;
   overflow: hidden;
   border: 1px solid rgba(205, 193, 175, 0.42);
   border-radius: 20px;
   background: #fffdfa;
   cursor: pointer;
-  transition: transform 0.22s ease, box-shadow 0.22s ease;
+  transform-style: preserve-3d;
+  will-change: transform, box-shadow;
+  transition:
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.35s ease;
+}
+
+.listing-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(circle at var(--pointer-x) var(--pointer-y), rgba(255, 255, 255, 0.48), transparent 30%),
+    linear-gradient(180deg, rgba(255, 249, 241, 0), rgba(255, 245, 232, 0.72));
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
 }
 
 .listing-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 18px 34px rgba(95, 72, 40, 0.1);
+  transform:
+    perspective(1200px)
+    translateY(-10px)
+    rotateX(var(--rotate-x))
+    rotateY(var(--rotate-y));
+  border-color: rgba(172, 151, 116, 0.4);
+  box-shadow: 0 26px 44px rgba(95, 72, 40, 0.14);
+}
+
+.listing-card:hover::before {
+  opacity: 1;
 }
 
 .listing-cover-wrap {
   position: relative;
+  overflow: hidden;
+}
+
+.listing-hover-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    radial-gradient(circle at var(--pointer-x) var(--pointer-y), rgba(255, 255, 255, 0.28), transparent 24%),
+    linear-gradient(180deg, rgba(28, 25, 20, 0.02), rgba(28, 25, 20, 0.18));
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
 }
 
 .listing-cover {
@@ -621,22 +707,85 @@ onMounted(() => {
   aspect-ratio: 1.42;
   object-fit: cover;
   background: #eee5d9;
+  will-change: transform, filter;
+  transition:
+    transform 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 0.45s ease;
+}
+
+.listing-card:hover .listing-cover {
+  transform:
+    scale(1.09)
+    translate3d(var(--media-shift-x), var(--media-shift-y), 0);
+  filter: saturate(1.06) contrast(1.02);
+}
+
+.listing-card:hover .listing-hover-layer {
+  opacity: 1;
+}
+
+.listing-cta {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  height: 34px;
+  border-radius: 999px;
+  padding: 0 14px;
+  background: rgba(255, 252, 246, 0.94);
+  color: #4d6240;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  box-shadow: 0 14px 24px rgba(74, 58, 32, 0.16);
+  opacity: 0;
+  transform: translateY(-10px);
+  transition:
+    opacity 0.28s ease,
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.listing-card:hover .listing-cta {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .listing-badge {
   position: absolute;
   left: 12px;
   bottom: 12px;
+  z-index: 2;
   border-radius: 999px;
   padding: 6px 10px;
   background: rgba(74, 102, 58, 0.88);
   color: #fff;
   font-size: 12px;
   font-weight: 600;
+  transition:
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.25s ease;
+}
+
+.listing-card:hover .listing-badge {
+  transform: translateY(-4px);
+  background: rgba(64, 89, 48, 0.94);
 }
 
 .listing-body {
+  position: relative;
+  z-index: 1;
   padding: 14px 14px 12px;
+  transform: translateZ(0);
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.listing-card:hover .listing-body {
+  transform: translate3d(0, -3px, 20px);
 }
 
 .listing-title {
@@ -644,6 +793,11 @@ onMounted(() => {
   font-size: 18px;
   line-height: 1.4;
   color: #2b2621;
+  transition: color 0.25s ease;
+}
+
+.listing-card:hover .listing-title {
+  color: #1f2f1f;
 }
 
 .listing-meta {
@@ -666,6 +820,14 @@ onMounted(() => {
   color: #f36d39;
   font-size: 28px;
   font-weight: 700;
+  transition:
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.25s ease;
+}
+
+.listing-card:hover .listing-price {
+  transform: translateX(2px);
+  color: #ef6a31;
 }
 
 .listing-price-unit {
@@ -683,6 +845,40 @@ onMounted(() => {
   color: #bdb3a6;
   font-size: 18px;
   cursor: pointer;
+  transition:
+    transform 0.28s ease,
+    background-color 0.25s ease,
+    color 0.25s ease;
+}
+
+.listing-card:hover .listing-favorite {
+  transform: scale(1.08);
+  background: #f2e8da;
+  color: #9d8d76;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .listing-card,
+  .listing-card::before,
+  .listing-hover-layer,
+  .listing-cover,
+  .listing-cta,
+  .listing-badge,
+  .listing-body,
+  .listing-title,
+  .listing-price,
+  .listing-favorite {
+    transition: none;
+  }
+
+  .listing-card:hover {
+    transform: translateY(-6px);
+  }
+
+  .listing-card:hover .listing-cover,
+  .listing-card:hover .listing-body {
+    transform: none;
+  }
 }
 
 .guide-panel {

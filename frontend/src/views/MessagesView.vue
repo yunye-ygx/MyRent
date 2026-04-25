@@ -21,8 +21,8 @@
         </button>
       </div>
 
-      <p class="sidebar-footnote">
-        优先展示真实消息；接口暂无返回时，右侧会自动补演示内容。
+      <p class="sidebar-footnote" :class="{ error: listErrorMessage }">
+        {{ listErrorMessage || '消息列表仅展示真实聊天记录和系统通知。' }}
       </p>
     </aside>
 
@@ -88,7 +88,6 @@
             <div class="thread-copy">
               <div class="thread-title-row">
                 <h2 data-thread-title>{{ selectedEntry.title }}</h2>
-                <span v-if="threadUsesMockData" class="thread-pill">演示数据</span>
               </div>
               <p>{{ selectedEntry.headerSubtitle }}</p>
             </div>
@@ -110,30 +109,38 @@
           <LoadingState v-if="threadLoading" text="正在加载会话内容..." />
 
           <template v-else>
-            <p v-if="threadHint" class="thread-hint">{{ threadHint }}</p>
+            <EmptyState
+              v-if="!selectedMessages.length"
+              title="暂无会话内容"
+              :description="threadHint || '当前会话还没有产生消息。'"
+            />
 
-            <div
-              v-for="message in selectedMessages"
-              :key="message.id"
-              class="thread-message-row"
-              :class="{ self: message.side === 'self' }"
-            >
-              <div v-if="message.side !== 'self'" class="message-avatar">
-                {{ message.avatarText }}
-              </div>
+            <template v-else>
+              <p v-if="threadHint" class="thread-hint">{{ threadHint }}</p>
 
-              <div class="message-column">
-                <div v-if="message.side !== 'self'" class="message-name">{{ message.name }}</div>
-                <div class="message-bubble" :class="{ self: message.side === 'self' }">
-                  {{ message.content }}
+              <div
+                v-for="message in selectedMessages"
+                :key="message.id"
+                class="thread-message-row"
+                :class="{ self: message.side === 'self' }"
+              >
+                <div v-if="message.side !== 'self'" class="message-avatar">
+                  {{ message.avatarText }}
                 </div>
-                <div class="message-time">{{ message.timeText }}</div>
-              </div>
 
-              <div v-if="message.side === 'self'" class="message-avatar self">
-                {{ message.avatarText }}
+                <div class="message-column">
+                  <div v-if="message.side !== 'self'" class="message-name">{{ message.name }}</div>
+                  <div class="message-bubble" :class="{ self: message.side === 'self' }">
+                    {{ message.content }}
+                  </div>
+                  <div class="message-time">{{ message.timeText }}</div>
+                </div>
+
+                <div v-if="message.side === 'self'" class="message-avatar self">
+                  {{ message.avatarText }}
+                </div>
               </div>
-            </div>
+            </template>
           </template>
         </div>
 
@@ -198,7 +205,6 @@ const composer = ref('')
 const sending = ref(false)
 const threadLoading = ref(false)
 const threadHint = ref('')
-const threadUsesMockData = ref(false)
 const threadScroller = ref(null)
 
 let selectionLoadId = 0
@@ -214,55 +220,12 @@ function minutesAgo(minutes) {
   return new Date(Date.now() - minutes * 60 * 1000).toISOString()
 }
 
-const mockSessions = [
-  {
-    sessionId: 'mock-chat-1',
-    peerId: 101,
-    peerName: '房东·李女士',
-    houseId: 7001,
-    houseTitle: '海淀区 青禾公寓 1室1厅',
-    lastMsgContent: '您好，房子还在的，方便约个时间可以看房吗？',
-    unreadCount: 2,
-    updateTime: minutesAgo(8),
-    price: 1280
-  },
-  {
-    sessionId: 'mock-chat-2',
-    peerId: 102,
-    peerName: '房东·王女士',
-    houseId: 7002,
-    houseTitle: '回龙观 阳光次卧',
-    lastMsgContent: '好的，我到楼下给您发定位～',
-    unreadCount: 0,
-    updateTime: minutesAgo(24),
-    price: 1680
-  }
-]
-
-const mockNotifications = [
-  {
-    id: 'mock-notice-1',
-    type: 'APPOINTMENT_REMINDER',
-    title: '预约提醒',
-    content: '你有一条新的带看预约，系统已为你锁定明天上午 10:00 的空档。',
-    redirectTargetId: 7001,
-    isRead: 0,
-    createTime: minutesAgo(14)
-  },
-  {
-    id: 'mock-notice-2',
-    type: 'HOUSE_PRICE_CHANGED',
-    title: '系统通知',
-    content: '你关注的房源本周价格下调 200 元，建议尽快确认是否预约。',
-    redirectTargetId: 7002,
-    isRead: 0,
-    createTime: minutesAgo(40)
-  }
-]
-
 const currentUserId = computed(() => Number(authStore.userId || 9001))
 const currentUserName = computed(() => authStore.profile?.name || '元气小圆同学')
 const loadingSessions = computed(() => chatSessionStore.loading || notificationLoading.value)
+const listErrorMessage = computed(() =>
+  [chatSessionStore.error, notificationError.value].filter(Boolean).join(' ')
+)
 
 function getInitial(text, fallback = '租') {
   const value = String(text || '').trim()
@@ -343,12 +306,8 @@ function normalizeNotificationEntry(item = {}, source = 'server') {
 }
 
 const allEntries = computed(() => {
-  const sessionEntries = chatSessionStore.sessions.length
-    ? chatSessionStore.sessions.map((item) => normalizeChatEntry(item, 'server'))
-    : mockSessions.map((item) => normalizeChatEntry(item, 'mock'))
-  const notificationEntries = notifications.value.length
-    ? notifications.value.map((item) => normalizeNotificationEntry(item, 'server'))
-    : mockNotifications.map((item) => normalizeNotificationEntry(item, 'mock'))
+  const sessionEntries = chatSessionStore.sessions.map((item) => normalizeChatEntry(item, 'server'))
+  const notificationEntries = notifications.value.map((item) => normalizeNotificationEntry(item, 'server'))
 
   return [...sessionEntries, ...notificationEntries].sort(
     (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
@@ -415,40 +374,6 @@ function buildThreadMessage({ id, side, name, content, timeText }) {
     timeText,
     avatarText: getInitial(name, side === 'self' ? '我' : '房')
   }
-}
-
-function buildMockChatThread(entry) {
-  const peerName = entry.peerName || entry.title
-  return [
-    buildThreadMessage({
-      id: `${entry.id}-m1`,
-      side: 'peer',
-      name: peerName,
-      content: '您好，房子还在的，方便约个时间可以看房吗？',
-      timeText: '10:30'
-    }),
-    buildThreadMessage({
-      id: `${entry.id}-m2`,
-      side: 'self',
-      name: currentUserName.value,
-      content: '您好，请问周六上午十点左右可以看吗？',
-      timeText: '10:32'
-    }),
-    buildThreadMessage({
-      id: `${entry.id}-m3`,
-      side: 'peer',
-      name: peerName,
-      content: '可以的，周六上午 10 点方便看房。',
-      timeText: '10:33'
-    }),
-    buildThreadMessage({
-      id: `${entry.id}-m4`,
-      side: 'self',
-      name: currentUserName.value,
-      content: '好的，那周六上午 10 点见！',
-      timeText: '10:34'
-    })
-  ]
 }
 
 function buildNotificationThread(entry) {
@@ -538,7 +463,6 @@ async function loadThread(entry) {
 
   composer.value = ''
   threadHint.value = ''
-  threadUsesMockData.value = entry.source === 'mock'
   threadLoading.value = true
   const currentLoadId = ++selectionLoadId
 
@@ -566,20 +490,17 @@ async function loadThread(entry) {
     const records = Array.isArray(result?.messages) ? result.messages : []
     if (records.length) {
       selectedMessages.value = records.map((message) => normalizeHistoryMessage(entry, message))
-      threadUsesMockData.value = false
       threadHint.value = ''
     } else {
-      selectedMessages.value = buildMockChatThread(entry)
-      threadUsesMockData.value = true
-      threadHint.value = '当前会话暂无历史消息，已补充演示内容保持版式完整。'
+      selectedMessages.value = []
+      threadHint.value = '当前会话暂无历史消息。'
     }
   } catch (error) {
     if (currentLoadId !== selectionLoadId) {
       return
     }
-    selectedMessages.value = buildMockChatThread(entry)
-    threadUsesMockData.value = true
-    threadHint.value = formatRequestError(error, '聊天记录暂时不可用，已展示演示数据。')
+    selectedMessages.value = []
+    threadHint.value = formatRequestError(error, '聊天记录暂时不可用。')
   } finally {
     if (currentLoadId === selectionLoadId) {
       threadLoading.value = false
@@ -595,7 +516,7 @@ async function loadNotifications() {
     const page = await fetchNotificationPage({ current: 1, size: 20 })
     notifications.value = Array.isArray(page?.records) ? page.records : []
   } catch (error) {
-    notificationError.value = formatRequestError(error, '通知暂时不可用，已回落到演示数据。')
+    notificationError.value = formatRequestError(error, '通知暂时不可用。')
     notifications.value = []
   } finally {
     notificationLoading.value = false
@@ -646,8 +567,9 @@ async function handleSend() {
 
   const canUseApi = Number(entry.peerId || 0) > 0 && Number(entry.houseId || 0) > 0
   if (!canUseApi) {
-    threadUsesMockData.value = true
-    threadHint.value = '当前会话缺少发送参数，已使用演示发送保留交互效果。'
+    selectedMessages.value = selectedMessages.value.filter((item) => item.id !== optimisticMessage.id)
+    composer.value = text
+    threadHint.value = '当前会话缺少必要参数，暂时无法发送消息。'
     sending.value = false
     return
   }
@@ -670,11 +592,12 @@ async function handleSend() {
       ...selectedMessages.value.filter((item) => item.id !== optimisticMessage.id),
       normalized
     ]
-    threadUsesMockData.value = false
     threadHint.value = ''
-  } catch {
-    threadUsesMockData.value = true
-    threadHint.value = '发送接口暂时不可用，消息已按演示模式保留在当前界面。'
+    chatSessionStore.loadSessions({ force: true }).catch(() => {})
+  } catch (error) {
+    selectedMessages.value = selectedMessages.value.filter((item) => item.id !== optimisticMessage.id)
+    composer.value = text
+    threadHint.value = formatRequestError(error, '发送失败，请稍后重试。')
   } finally {
     sending.value = false
     await scrollThreadToBottom()
@@ -814,6 +737,10 @@ onMounted(async () => {
   font-size: 12px;
   line-height: 1.7;
   color: #9aa3af;
+}
+
+.sidebar-footnote.error {
+  color: #c76856;
 }
 
 .desk-list,
@@ -965,8 +892,7 @@ onMounted(async () => {
 }
 
 .status-chip,
-.price-pill,
-.thread-pill {
+.price-pill {
   border-radius: 999px;
   padding: 4px 10px;
   font-size: 12px;
@@ -1010,11 +936,6 @@ onMounted(async () => {
 .price-pill {
   background: #fff4ec;
   color: #d97745;
-}
-
-.thread-pill {
-  background: #eef3e6;
-  color: #56703c;
 }
 
 .thread-body {

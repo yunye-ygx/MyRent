@@ -7,10 +7,10 @@
           <div class="profile-copy">
             <div class="name-row">
               <h2 class="profile-name" data-testid="mine-name">{{ displayName }}</h2>
-              <span class="verified-chip">学生认证已通过</span>
+              <span class="verified-chip">当前账号</span>
             </div>
-            <p class="school-copy">{{ schoolName }}</p>
-            <p class="school-copy">{{ gradeCopy }}</p>
+            <p class="school-copy">{{ phoneCopy }}</p>
+            <p class="school-copy">{{ registerCopy }}</p>
           </div>
         </div>
 
@@ -20,26 +20,31 @@
 
       <section class="benefit-card">
         <div class="benefit-copy">
-          <p class="benefit-title">学生专享权益</p>
+          <p class="benefit-title">待办速览</p>
           <div class="benefit-grid">
-            <div v-for="item in benefitItems" :key="item.label" class="benefit-item">
+            <div v-for="item in quickStats" :key="item.label" class="benefit-item">
               <div class="benefit-icon">
                 <MineIcon :name="item.icon" />
               </div>
+              <strong class="benefit-value">{{ item.value }}</strong>
               <span>{{ item.label }}</span>
             </div>
           </div>
         </div>
 
-        <button class="benefit-btn" type="button" @click="openPlaceholder('benefit', '查看我的权益')">
-          查看我的权益
+        <button class="benefit-btn" type="button" @click="openModule('messages', '消息中心')">
+          进入消息中心
         </button>
       </section>
     </aside>
 
     <section class="content-column">
       <section class="overview-panel app-surface">
-        <h3 class="panel-title">我的租房管理</h3>
+        <div class="panel-head">
+          <h3 class="panel-title">我的租房管理</h3>
+          <span v-if="dashboardLoading" class="panel-caption">正在同步真实数据...</span>
+        </div>
+        <p v-if="dashboardError" class="profile-tip">{{ dashboardError }}</p>
         <div class="overview-grid">
           <button
             v-for="item in overviewItems"
@@ -69,27 +74,35 @@
             <h3 class="panel-title">待处理事项</h3>
           </div>
 
-          <article
-            v-for="item in todoItems"
-            :key="item.key"
-            class="task-item"
-            :data-testid="`todo-${item.key}`"
-          >
-            <div class="task-icon">
-              <MineIcon :name="item.icon" />
-            </div>
-            <div class="task-copy">
-              <div class="task-title-row">
-                <h4>{{ item.title }}</h4>
-                <span v-if="item.hot" class="hot-dot" />
+          <template v-if="todoItems.length">
+            <article
+              v-for="item in todoItems"
+              :key="item.key"
+              class="task-item"
+              :data-testid="`todo-${item.key}`"
+            >
+              <div class="task-icon">
+                <MineIcon :name="item.icon" />
               </div>
-              <p>{{ item.detail }}</p>
-              <p>{{ item.subDetail }}</p>
-            </div>
-            <button class="task-btn" type="button" @click="openModule(item.actionKey, item.actionLabel)">
-              {{ item.actionLabel }}
-            </button>
-          </article>
+              <div class="task-copy">
+                <div class="task-title-row">
+                  <h4>{{ item.title }}</h4>
+                  <span v-if="item.hot" class="hot-dot" />
+                </div>
+                <p>{{ item.detail }}</p>
+                <p>{{ item.subDetail }}</p>
+              </div>
+              <button class="task-btn" type="button" @click="openModule(item.actionKey, item.actionLabel)">
+                {{ item.actionLabel }}
+              </button>
+            </article>
+          </template>
+
+          <EmptyState
+            v-else
+            title="暂无待处理事项"
+            description="当前没有需要立即处理的消息或订单。"
+          />
         </section>
 
         <section class="service-panel app-surface">
@@ -125,74 +138,137 @@
 <script setup>
 import { computed, defineComponent, h, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { fetchMyBrowseHistory } from '@/api/history'
+import { fetchMyFavoritePage } from '@/api/house'
+import { fetchMyOrderPage } from '@/api/order'
 import { fetchCurrentUser } from '@/api/user'
+import EmptyState from '@/components/EmptyState.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useMessageCenterStore } from '@/stores/messageCenter'
+import { formatDateTime, formatRequestError } from '@/utils/format'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const messageCenterStore = useMessageCenterStore()
+
 const profileError = ref('')
+const dashboardLoading = ref(false)
+const dashboardError = ref('')
+const currentUser = ref(null)
+const favoriteTotal = ref(0)
+const historyTotal = ref(0)
+const orders = ref([])
 
-const schoolName = '南京大学'
-const gradeCopy = '商学院 · 本科在读'
-
-const benefitItems = [
-  { label: '求职补贴', icon: 'spark' },
-  { label: '专属券包', icon: 'ticket' },
-  { label: '免中介费', icon: 'bag' },
-  { label: '安心保障', icon: 'shield' }
-]
-
-const overviewItems = [
-  { key: 'favorite', label: '我的收藏', value: 12, unit: '套', icon: 'star' },
-  { key: 'history', label: '浏览记录', value: 28, unit: '条', icon: 'clock' },
-  { key: 'reservation', label: '我的预约', value: 3, unit: '个', icon: 'calendar' },
-  { key: 'contract', label: '我的合同', value: 1, unit: '份', icon: 'document' }
-]
-
-const todoItems = [
-  {
-    key: 'reservation-confirm',
-    icon: 'calendar-check',
-    title: '预约待确认',
-    detail: '预约人：林星晚（李女士）',
-    subDetail: '预约时间：周六 10:00',
-    actionKey: 'reservation',
-    actionLabel: '查看详情',
-    hot: true
-  },
-  {
-    key: 'contract-sign',
-    icon: 'document-pen',
-    title: '合同待签署',
-    detail: '南京 · 鼓楼天誉（情侣主）',
-    subDetail: '请尽快完成电子合同签署',
-    actionKey: 'contract',
-    actionLabel: '去签署'
-  },
-  {
-    key: 'student-verify',
-    icon: 'badge',
-    title: '学生认证待完善',
-    detail: '认证有效期至 2026-06-30',
-    subDetail: '请及时更新学生证与居住证',
-    actionKey: 'verify',
-    actionLabel: '去续期'
-  }
-]
-
-const serviceItems = [
-  { key: 'coupon', label: '我的优惠券', hint: '2 张可用', icon: 'ticket' },
-  { key: 'support', label: '帮助中心', icon: 'help' },
-  { key: 'contact', label: '联系客服', icon: 'phone' },
-  { key: 'feedback', label: '意见反馈', icon: 'message' },
-  { key: 'setting', label: '设置', icon: 'setting' }
-]
-
-const displayName = computed(() => authStore.profile?.name || '元气小圆同学')
+const displayName = computed(() => currentUser.value?.name || authStore.profile?.name || '未命名用户')
 const avatarText = computed(() => {
   const name = displayName.value || '元'
   return name.slice(0, 1).toUpperCase()
 })
+const phoneCopy = computed(() => `手机号 ${currentUser.value?.phone || authStore.profile?.phone || '未绑定'}`)
+const registerCopy = computed(() => {
+  const registerText = formatDateTime(currentUser.value?.createTime)
+  if (registerText === '--') {
+    return '注册时间待同步'
+  }
+  return `注册时间 ${registerText.slice(0, 10)}`
+})
+const chatUnreadTotal = computed(() => Number(messageCenterStore.chatUnreadTotal || 0))
+const notificationUnreadTotal = computed(() => Number(messageCenterStore.notificationUnreadTotal || 0))
+const totalUnread = computed(() => chatUnreadTotal.value + notificationUnreadTotal.value)
+const unpaidOrderCount = computed(() => orders.value.filter(isUnpaidOrder).length)
+const paidOrderCount = computed(() => orders.value.filter(isPaidOrder).length)
+const pendingReviewCount = computed(() => orders.value.filter(isPendingReviewOrder).length)
+const refundInProgressCount = computed(() => orders.value.filter(isRefundInProgressOrder).length)
+
+const quickStats = computed(() => [
+  { label: '聊天未读', value: `${chatUnreadTotal.value} 条`, icon: 'message' },
+  { label: '系统通知', value: `${notificationUnreadTotal.value} 条`, icon: 'spark' },
+  { label: '待支付', value: `${unpaidOrderCount.value} 笔`, icon: 'ticket' },
+  { label: '待评价', value: `${pendingReviewCount.value} 笔`, icon: 'document-pen' }
+])
+
+const overviewItems = computed(() => [
+  { key: 'favorite', label: '我的收藏', value: favoriteTotal.value, unit: '套', icon: 'star' },
+  { key: 'history', label: '浏览记录', value: historyTotal.value, unit: '条', icon: 'clock' },
+  { key: 'unpaid', label: '待支付订单', value: unpaidOrderCount.value, unit: '笔', icon: 'ticket' },
+  { key: 'paid', label: '已支付订单', value: paidOrderCount.value, unit: '笔', icon: 'document' }
+])
+
+const todoItems = computed(() => {
+  const items = []
+
+  if (chatUnreadTotal.value > 0) {
+    items.push({
+      key: 'chat-unread',
+      icon: 'message',
+      title: '聊天消息待查看',
+      detail: `你有 ${chatUnreadTotal.value} 条未读聊天消息`,
+      subDetail: '建议尽快回复房东，避免错过沟通时机',
+      actionKey: 'messages',
+      actionLabel: '去查看',
+      hot: true
+    })
+  }
+
+  if (notificationUnreadTotal.value > 0) {
+    items.push({
+      key: 'notification-unread',
+      icon: 'spark',
+      title: '系统通知待处理',
+      detail: `你有 ${notificationUnreadTotal.value} 条未读系统通知`,
+      subDetail: '预约提醒和平台通知会在消息中心统一展示',
+      actionKey: 'messages',
+      actionLabel: '查看通知'
+    })
+  }
+
+  if (unpaidOrderCount.value > 0) {
+    items.push({
+      key: 'order-unpaid',
+      icon: 'ticket',
+      title: '订单待支付',
+      detail: `当前共有 ${unpaidOrderCount.value} 笔待支付订单`,
+      subDetail: '尽快完成支付，避免心仪房源被其他人锁定',
+      actionKey: 'orders',
+      actionLabel: '去支付',
+      hot: true
+    })
+  }
+
+  if (pendingReviewCount.value > 0) {
+    items.push({
+      key: 'order-review',
+      icon: 'document-pen',
+      title: '订单待评价',
+      detail: `当前共有 ${pendingReviewCount.value} 笔订单待评价`,
+      subDetail: '完成评价后可沉淀真实租住体验',
+      actionKey: 'orders',
+      actionLabel: '去评价'
+    })
+  }
+
+  if (refundInProgressCount.value > 0) {
+    items.push({
+      key: 'order-refund',
+      icon: 'document',
+      title: '退款处理中',
+      detail: `当前共有 ${refundInProgressCount.value} 笔退款单处理中`,
+      subDetail: '可在订单页持续跟进退款进度',
+      actionKey: 'orders',
+      actionLabel: '查看订单'
+    })
+  }
+
+  return items.slice(0, 4)
+})
+
+const serviceItems = computed(() => [
+  { key: 'profile', label: '个人资料', hint: currentUser.value?.id ? `ID ${currentUser.value.id}` : '', icon: 'badge' },
+  { key: 'messages', label: '消息中心', hint: totalUnread.value > 0 ? `${totalUnread.value} 条未读` : '查看沟通', icon: 'message' },
+  { key: 'favorite', label: '我的收藏', hint: `${favoriteTotal.value} 套`, icon: 'star' },
+  { key: 'history', label: '浏览记录', hint: `${historyTotal.value} 条`, icon: 'clock' },
+  { key: 'orders', label: '我的订单', hint: `${orders.value.length} 笔`, icon: 'document' }
+])
 
 const iconMap = {
   badge: [
@@ -308,27 +384,125 @@ async function loadProfile() {
   profileError.value = ''
   try {
     const profile = await fetchCurrentUser()
+    currentUser.value = profile
     authStore.syncProfile?.({
       userId: profile.id,
       phone: profile.phone,
-      name: profile.name
+      name: profile.name,
+      createTime: profile.createTime
     })
   } catch (error) {
+    currentUser.value = authStore.profile
     if (!authStore.profile?.name) {
-      profileError.value = error?.message || '用户资料加载失败，当前使用 mock 展示'
+      profileError.value = formatRequestError(error, '用户资料加载失败')
     }
   }
+}
+
+function normalizeOrderList(records = []) {
+  return records.map((order) => ({
+    ...order,
+    latestRefundStatus: order?.latestRefundStatus ?? null
+  }))
+}
+
+async function fetchAllOrders() {
+  const size = 100
+  let current = 1
+  let total = 0
+  const records = []
+
+  do {
+    const page = await fetchMyOrderPage({ current, size })
+    const pageRecords = Array.isArray(page?.records) ? page.records : []
+    total = Number(page?.total || 0)
+    records.push(...pageRecords)
+    if (!pageRecords.length) {
+      break
+    }
+    current += 1
+  } while (records.length < total)
+
+  return normalizeOrderList(records)
+}
+
+async function loadDashboard() {
+  dashboardLoading.value = true
+  dashboardError.value = ''
+
+  const failedModules = []
+  const [favoriteResult, historyResult, orderResult, unreadResult] = await Promise.allSettled([
+    fetchMyFavoritePage({ current: 1, size: 1 }),
+    fetchMyBrowseHistory({ current: 1, size: 1 }),
+    fetchAllOrders(),
+    messageCenterStore.loadUnreadTotals({ force: true })
+  ])
+
+  if (favoriteResult.status === 'fulfilled') {
+    favoriteTotal.value = Number(favoriteResult.value?.total || 0)
+  } else {
+    failedModules.push('收藏')
+    favoriteTotal.value = 0
+  }
+
+  if (historyResult.status === 'fulfilled') {
+    historyTotal.value = Number(historyResult.value?.total || 0)
+  } else {
+    failedModules.push('浏览记录')
+    historyTotal.value = 0
+  }
+
+  if (orderResult.status === 'fulfilled') {
+    orders.value = orderResult.value
+  } else {
+    failedModules.push('订单')
+    orders.value = []
+  }
+
+  if (unreadResult.status !== 'fulfilled') {
+    failedModules.push('未读消息')
+  }
+
+  if (failedModules.length) {
+    dashboardError.value = `${failedModules.join('、')}数据暂时未同步完成，页面已展示其余真实数据。`
+  }
+
+  dashboardLoading.value = false
+}
+
+function isRefundBlockingStatus(status) {
+  return status === 0 || status === 1 || status === 2 || status === 3 || status === 5
+}
+
+function isUnpaidOrder(order) {
+  return order?.status === 0
+}
+
+function isPaidOrder(order) {
+  return order?.status === 1 && order?.latestRefundStatus === null
+}
+
+function isPendingReviewOrder(order) {
+  return Boolean(order?.canReview) && !isRefundBlockingStatus(order?.latestRefundStatus)
+}
+
+function isRefundInProgressOrder(order) {
+  return [0, 1, 3, 5].includes(order?.latestRefundStatus)
 }
 
 function goProfile() {
   router.push('/mine/profile')
 }
 
-function openPlaceholder(key, title) {
-  router.push(`/placeholder/${key}?title=${encodeURIComponent(title)}`)
-}
-
 function openModule(key, label) {
+  if (key === 'profile') {
+    router.push('/mine/profile')
+    return
+  }
+  if (key === 'messages') {
+    router.push('/messages')
+    return
+  }
   if (key === 'favorite') {
     router.push('/mine/favorites')
     return
@@ -337,15 +511,16 @@ function openModule(key, label) {
     router.push('/mine/history')
     return
   }
-  if (key === 'contract') {
+  if (key === 'orders' || key === 'unpaid' || key === 'paid') {
     router.push('/mine/orders')
     return
   }
-  openPlaceholder(key, label)
+  router.push(`/placeholder/${key}?title=${encodeURIComponent(label)}`)
 }
 
 onMounted(() => {
   loadProfile()
+  loadDashboard()
 })
 </script>
 
@@ -475,6 +650,11 @@ onMounted(() => {
   text-align: center;
 }
 
+.benefit-value {
+  font-size: 15px;
+  line-height: 1;
+}
+
 .benefit-icon {
   width: 34px;
   height: 34px;
@@ -504,6 +684,11 @@ onMounted(() => {
   margin: 0;
   font-size: 18px;
   color: #2c2a20;
+}
+
+.panel-caption {
+  color: #8d8776;
+  font-size: 12px;
 }
 
 .overview-grid {
