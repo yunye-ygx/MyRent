@@ -20,6 +20,10 @@ export function searchNearbyHouse(payload) {
   return http.post('/house/nearby', payload)
 }
 
+export function fetchHouseKeywordSearch(payload) {
+  return http.post('/house/search', payload)
+}
+
 export function smartGuideHouse(payload) {
   return http.post('/house/smart-guide', payload)
 }

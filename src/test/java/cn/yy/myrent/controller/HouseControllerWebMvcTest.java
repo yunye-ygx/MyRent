@@ -1,6 +1,7 @@
 package cn.yy.myrent.controller;
 
 import cn.yy.myrent.common.JwtTokenUtil;
+import cn.yy.myrent.dto.HouseKeywordSearchReqDTO;
 import cn.yy.myrent.dto.HouseListFilterReqDTO;
 import cn.yy.myrent.dto.HouseSuggestReqDTO;
 import cn.yy.myrent.entity.House;
@@ -24,6 +25,7 @@ import cn.yy.myrent.service.IHouseHistoryService;
 import cn.yy.myrent.service.IHouseService;
 import cn.yy.myrent.service.IReviewService;
 import cn.yy.myrent.service.hot.HouseHotService;
+import cn.yy.myrent.service.search.HouseKeywordSearchService;
 import cn.yy.myrent.sync.house.service.HouseEsSyncService;
 import cn.yy.myrent.vo.HouseSearchResultVO;
 import cn.yy.myrent.vo.HouseSuggestItemVO;
@@ -36,6 +38,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -56,6 +59,9 @@ class HouseControllerWebMvcTest {
 
     @MockBean
     private IHouseService houseService;
+
+    @MockBean
+    private HouseKeywordSearchService houseKeywordSearchService;
 
     @MockBean
     private IHouseCommandService houseCommandService;
@@ -119,6 +125,60 @@ class HouseControllerWebMvcTest {
 
     @MockBean
     private UserMapper userMapper;
+
+    @Test
+    void searchShouldDefaultPageAndSize() throws Exception {
+        given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
+
+        HouseVO item = new HouseVO();
+        item.setId(7L);
+        item.setTitle("天河公园单间");
+        item.setPrice(BigDecimal.valueOf(3200));
+
+        HouseSearchResultVO result = new HouseSearchResultVO();
+        result.setHouses(List.of(item));
+        result.setFallbackSource("KEYWORD_SEARCH");
+
+        given(houseKeywordSearchService.search(any(HouseKeywordSearchReqDTO.class))).willReturn(result);
+
+        mockMvc.perform(post("/house/search")
+                        .header("token", "test-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "keyword": "天河公园单间"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.houses[0].id").value(7))
+                .andExpect(jsonPath("$.data.houses[0].title").value("天河公园单间"))
+                .andExpect(jsonPath("$.data.fallbackSource").value("KEYWORD_SEARCH"));
+
+        ArgumentCaptor<HouseKeywordSearchReqDTO> captor = ArgumentCaptor.forClass(HouseKeywordSearchReqDTO.class);
+        verify(houseKeywordSearchService).search(captor.capture());
+        assertEquals("天河公园单间", captor.getValue().getKeyword());
+        assertEquals(1, captor.getValue().getPage());
+        assertEquals(10, captor.getValue().getSize());
+    }
+
+    @Test
+    void searchShouldRequireKeyword() throws Exception {
+        given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
+
+        mockMvc.perform(post("/house/search")
+                        .header("token", "test-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "page": 1,
+                                  "size": 10
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(houseKeywordSearchService);
+    }
 
     @Test
     void rebuildHotCacheShouldInvokeHotService() throws Exception {

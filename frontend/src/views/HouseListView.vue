@@ -140,7 +140,7 @@
       <div class="result-column">
         <div class="result-summary">
           <div>
-            <p class="summary-count" data-test="result-count">共找到 {{ filteredHouses.length }} 套房源</p>
+            <p class="summary-count" data-test="result-count">共找到 {{ displayedTotal }} 套房源</p>
             <p class="summary-copy">{{ resultSummaryText }}</p>
           </div>
           <div class="summary-meta">
@@ -192,6 +192,22 @@
             </div>
           </article>
         </div>
+
+        <div v-if="canLoadMore" class="load-more-row">
+          <button
+            data-test="load-more"
+            class="load-more-btn"
+            type="button"
+            :disabled="loadingMore"
+            @click="loadMoreHouses"
+          >
+            {{ loadingMore ? '加载中' : `加载更多（已加载 ${filteredHouses.length} / ${displayedTotal}）` }}
+          </button>
+        </div>
+
+        <p v-else-if="filteredHouses.length && filteredHouses.length >= displayedTotal" class="load-more-done">
+          已加载全部 {{ displayedTotal }} 套房源
+        </p>
       </div>
 
       <aside class="map-column">
@@ -228,7 +244,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchHouseListFilter } from '@/api/house'
+import { fetchHouseKeywordSearch, fetchHouseListFilter } from '@/api/house'
 import { DEFAULT_CITY, HOT_CITY_OPTIONS, getRegionsByCity } from '@/config/cityFilters'
 import { useAuthStore } from '@/stores/auth'
 import EmptyState from '@/components/EmptyState.vue'
@@ -249,6 +265,8 @@ const CITY_PLACEHOLDER_COORDS = [
   { left: '55%', top: '63%' },
   { left: '35%', top: '72%' }
 ]
+
+const PAGE_SIZE = 10
 
 const priceOptions = [
   { label: '1500以下', value: '0-1500', min: 0, max: 1500, budget: 1500 },
@@ -281,7 +299,10 @@ const filters = reactive({
 })
 
 const houses = ref([])
+const total = ref(0)
+const currentPage = ref(0)
 const loading = ref(false)
+const loadingMore = ref(false)
 const loadError = ref('')
 const resultMessage = ref('切换城市、区域、租金、租住方式或标签后，会自动刷新房源。')
 const currentMode = ref('filter')
@@ -302,20 +323,20 @@ const activeFeatureLabels = computed(() =>
   featureOptions.filter((item) => filters[item.key]).map((item) => item.label)
 )
 
-const filteredHouses = computed(() => {
-  const keyword = filters.keyword.trim().toLowerCase()
-  if (!keyword) {
-    return houses.value
+const filteredHouses = computed(() => houses.value)
+const displayedTotal = computed(() => {
+  const resolved = Number(total.value)
+  if (Number.isFinite(resolved) && resolved >= 0) {
+    return resolved
   }
-
-  return houses.value.filter((house) => {
-    const haystack = [house.title, house.city, house.region, house.publisherName, ...house.tags]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
-    return haystack.includes(keyword)
-  })
+  return filteredHouses.value.length
 })
+const canLoadMore = computed(() =>
+  !loading.value
+  && !loadingMore.value
+  && filteredHouses.value.length > 0
+  && filteredHouses.value.length < displayedTotal.value
+)
 
 const guideStatusText = computed(() => {
   if (loading.value) {
@@ -330,7 +351,12 @@ const budgetTrackWidth = computed(() => {
   const ratio = Math.max(0.12, Math.min(budget / 6500, 1))
   return `${Math.round(ratio * 100)}%`
 })
-const currentModeLabel = computed(() => (currentMode.value === 'filter' ? '结构化筛选' : '房源列表'))
+const currentModeLabel = computed(() => {
+  if (currentMode.value === 'keyword') {
+    return '关键词搜索'
+  }
+  return '结构化筛选'
+})
 const emptyDescription = computed(() => {
   if (loadError.value) {
     return loadError.value
@@ -344,6 +370,9 @@ const resultSummaryText = computed(() => {
   const payload = lastFilterPayload.value
   if (!payload) {
     return `${currentCity.value} 房源列表`
+  }
+  if (currentMode.value === 'keyword' && payload.keyword) {
+    return `关键词：${payload.keyword}`
   }
 
   const pieces = [payload.city]
@@ -359,6 +388,9 @@ const mapCopyText = computed(() => {
   const payload = lastFilterPayload.value
   if (!payload) {
     return `${currentCity.value} 房源分布`
+  }
+  if (currentMode.value === 'keyword' && payload.keyword) {
+    return `关键词：${payload.keyword}`
   }
   return `${payload.city}${payload.region ? ` · ${payload.region}` : ''}`
 })
@@ -383,6 +415,9 @@ watch(
     filters.civilWaterElectric
   ],
   () => {
+    if (filters.keyword.trim()) {
+      return
+    }
     queueAutoSearch()
   }
 )
@@ -392,6 +427,9 @@ watch(
   () => {
     if (!getRegionsByCity(currentCity.value).includes(filters.locationName)) {
       filters.locationName = ''
+    }
+    if (filters.keyword.trim()) {
+      return
     }
     queueAutoSearch({ force: true })
   }
@@ -427,31 +465,113 @@ function toggleRegion(region) {
   filters.locationName = filters.locationName === region ? '' : region
 }
 
-async function submitFilterSearch({ force = false } = {}) {
-  const payload = buildFilterPayload()
-  const requestKey = JSON.stringify(payload)
-  if (!force && lastRequestKey.value === requestKey) {
+async function submitFilterSearch({ force = false, append = false } = {}) {
+  const keyword = filters.keyword.trim()
+  if (keyword) {
+    const nextPage = append ? currentPage.value + 1 : 1
+    const keywordPayload = {
+      keyword,
+      page: nextPage,
+      size: PAGE_SIZE
+    }
+    const requestKey = JSON.stringify(keywordPayload)
+    if (!append && !force && lastRequestKey.value === requestKey) {
+      return
+    }
+    if (append && (loading.value || loadingMore.value)) {
+      return
+    }
+
+    const previousRequestKey = lastRequestKey.value
+    if (!append) {
+      lastRequestKey.value = requestKey
+      loading.value = true
+    } else {
+      loadingMore.value = true
+    }
+    loadError.value = ''
+    currentMode.value = 'keyword'
+
+    try {
+      const result = await fetchHouseKeywordSearch(keywordPayload)
+      const records = normalizeHouseRecords(extractRecords(result))
+      houses.value = append ? [...houses.value, ...records] : records
+      total.value = extractTotal(result, houses.value.length)
+      currentPage.value = keywordPayload.page
+      lastFilterPayload.value = keywordPayload
+      resultMessage.value = result?.tipMessage || `关键词搜索结果已刷新：${keyword}`
+    } catch (error) {
+      if (!append) {
+        houses.value = []
+        total.value = 0
+        currentPage.value = 0
+        lastRequestKey.value = ''
+        lastFilterPayload.value = keywordPayload
+      } else {
+        lastRequestKey.value = previousRequestKey
+      }
+      loadError.value = error?.message || '关键词搜索接口暂时不可用，请稍后重试。'
+      resultMessage.value = loadError.value
+    } finally {
+      if (append) {
+        loadingMore.value = false
+      } else {
+        loading.value = false
+      }
+    }
     return
   }
 
-  lastRequestKey.value = requestKey
-  loading.value = true
+  const nextPage = append ? currentPage.value + 1 : 1
+  const payload = {
+    ...buildFilterPayload(),
+    page: nextPage,
+    size: PAGE_SIZE
+  }
+  const requestKey = JSON.stringify(payload)
+  if (!append && !force && lastRequestKey.value === requestKey) {
+    return
+  }
+  if (append && (loading.value || loadingMore.value)) {
+    return
+  }
+
+  const previousRequestKey = lastRequestKey.value
+  if (!append) {
+    lastRequestKey.value = requestKey
+    loading.value = true
+  } else {
+    loadingMore.value = true
+  }
   loadError.value = ''
   currentMode.value = 'filter'
 
   try {
     const result = await fetchHouseListFilter(payload)
-    houses.value = normalizeHouseRecords(extractRecords(result))
+    const records = normalizeHouseRecords(extractRecords(result))
+    houses.value = append ? [...houses.value, ...records] : records
+    total.value = extractTotal(result, houses.value.length)
+    currentPage.value = payload.page
     lastFilterPayload.value = payload
     resultMessage.value = result?.tipMessage || `已按 ${payload.city}${payload.region ? ` ${payload.region}` : ''} 刷新房源`
   } catch (error) {
-    houses.value = []
-    lastRequestKey.value = ''
-    lastFilterPayload.value = payload
+    if (!append) {
+      houses.value = []
+      total.value = 0
+      currentPage.value = 0
+      lastRequestKey.value = ''
+      lastFilterPayload.value = payload
+    } else {
+      lastRequestKey.value = previousRequestKey
+    }
     loadError.value = error?.message || '房源筛选接口暂时不可用，请稍后重试。'
     resultMessage.value = loadError.value
   } finally {
-    loading.value = false
+    if (append) {
+      loadingMore.value = false
+    } else {
+      loading.value = false
+    }
   }
 }
 
@@ -467,9 +587,7 @@ function buildFilterPayload() {
     nearSubway: filters.nearSubway,
     privateBathroom: filters.privateBathroom,
     hasBalcony: filters.hasBalcony,
-    civilWaterElectric: filters.civilWaterElectric,
-    page: 1,
-    size: 10
+    civilWaterElectric: filters.civilWaterElectric
   }
 }
 
@@ -526,6 +644,14 @@ function extractRecords(result) {
     return result.items
   }
   return []
+}
+
+function extractTotal(result, fallbackCount = 0) {
+  const resolved = Number(result?.total)
+  if (Number.isFinite(resolved) && resolved >= 0) {
+    return resolved
+  }
+  return fallbackCount
 }
 
 function normalizeHouseRecords(records) {
@@ -595,6 +721,13 @@ function toAmount(value) {
     return 0
   }
   return amount
+}
+
+function loadMoreHouses() {
+  if (!canLoadMore.value) {
+    return
+  }
+  submitFilterSearch({ append: true })
 }
 
 function resetFilters() {
@@ -907,6 +1040,35 @@ function formatAmount(value) {
 .result-list {
   display: grid;
   gap: 14px;
+}
+
+.load-more-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 18px;
+}
+
+.load-more-btn {
+  min-width: 220px;
+  height: 44px;
+  border: 1px solid #d8e3d3;
+  border-radius: 999px;
+  background: #f6fbf4;
+  color: #476140;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.load-more-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.load-more-done {
+  margin: 18px 0 0;
+  text-align: center;
+  color: #8a9688;
+  font-size: 13px;
 }
 
 .result-card {

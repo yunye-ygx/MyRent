@@ -118,7 +118,7 @@
 <script setup>
 import { computed, defineComponent, h, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchHotHousePage, searchNearbyHouse } from '@/api/house'
+import { fetchHotHousePage, fetchHouseKeywordSearch } from '@/api/house'
 import heroRoomImage from '@/assets/home/hero-room.jpg'
 import listingImage1 from '@/assets/home/listing-1.jpg'
 import listingImage2 from '@/assets/home/listing-2.jpg'
@@ -245,8 +245,7 @@ const mockListings = [
 
 const feed = useHouseFeed({
   hotLoader: fetchHotHousePage,
-  nearbyLoader: searchNearbyHouse,
-  defaultCity: '南京'
+  searchLoader: fetchHouseKeywordSearch
 })
 
 const displayListings = computed(() => {
@@ -280,7 +279,7 @@ async function handleSearch(keyword) {
     return
   }
 
-  feed.activateNearby(keyword)
+  feed.activateSearch(keyword)
   await feed.loadNext()
 }
 

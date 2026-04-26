@@ -250,7 +250,7 @@ public class PaymentServiceImpl extends ServiceImpl<PaymentMapper, Payment> impl
             return PaymentRepairResult.PAID_WIN;
         }
 
-        Order latestOrder = orderMapper.selectOrderNo(order.getOrderNo());
+        Order latestOrder = orderMapper.selectOrderNo(order.getOrderNo());  // 获取最新订单状态
         if (latestOrder != null && payment.getPaymentNo().equals(latestOrder.getSuccessPaymentNo())) {
             payment.setStatus(PaymentStatus.PAID);
             paymentMapper.updateById(payment);

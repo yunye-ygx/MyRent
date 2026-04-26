@@ -2,16 +2,12 @@ import { reactive } from 'vue'
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import HouseListView from '@/views/HouseListView.vue'
-import { fetchHouseListFilter } from '@/api/house'
-import { fetchUserById } from '@/api/user'
+import { fetchHouseKeywordSearch, fetchHouseListFilter } from '@/api/house'
 import { useAuthStore } from '@/stores/auth'
 
 vi.mock('@/api/house', () => ({
-  fetchHouseListFilter: vi.fn()
-}))
-
-vi.mock('@/api/user', () => ({
-  fetchUserById: vi.fn()
+  fetchHouseListFilter: vi.fn(),
+  fetchHouseKeywordSearch: vi.fn()
 }))
 
 vi.mock('@/stores/auth', () => ({
@@ -21,6 +17,24 @@ vi.mock('@/stores/auth', () => ({
 async function flushPromises() {
   for (let index = 0; index < 8; index += 1) {
     await Promise.resolve()
+  }
+}
+
+function buildHouse(id, overrides = {}) {
+  return {
+    id,
+    publisherUserId: 9 + id,
+    title: `房源-${id}`,
+    price: 4200 + id,
+    city: '广州',
+    region: '天河',
+    rentType: 1,
+    nearSubway: true,
+    privateBathroom: true,
+    hasBalcony: id % 2 === 0,
+    civilWaterElectric: true,
+    status: 1,
+    ...overrides
   }
 }
 
@@ -38,27 +52,30 @@ describe('HouseListView', () => {
 
     fetchHouseListFilter.mockImplementation((payload = {}) =>
       Promise.resolve({
+        total: 12,
         tipMessage: '结构化筛选已更新',
-        records: [
-          {
-            id: 101,
-            publisherUserId: 9,
-            title: '珠江新城地铁口两居',
-            price: 4200,
-            city: payload.city || '广州',
-            region: payload.region || '天河',
-            rentType: payload.rentType || 1,
-            nearSubway: payload.nearSubway ?? true,
-            privateBathroom: payload.privateBathroom ?? true,
-            hasBalcony: payload.hasBalcony ?? false,
-            civilWaterElectric: payload.civilWaterElectric ?? true,
-            status: 1
-          }
-        ]
+        records: [buildHouse(100 + (payload.page || 1), {
+          city: payload.city || '广州',
+          region: payload.region || '天河',
+          rentType: payload.rentType || 1,
+          nearSubway: payload.nearSubway ?? true,
+          privateBathroom: payload.privateBathroom ?? true,
+          hasBalcony: payload.hasBalcony ?? false,
+          civilWaterElectric: payload.civilWaterElectric ?? true
+        })]
       })
     )
 
-    fetchUserById.mockResolvedValue({ name: '房东A' })
+    fetchHouseKeywordSearch.mockImplementation((payload = {}) =>
+      Promise.resolve({
+        total: 17,
+        tipMessage: `关键词搜索结果已刷新：${payload.keyword}`,
+        houses: [buildHouse(200 + (payload.page || 1), {
+          title: `${payload.keyword || '关键词'}房源-${payload.page || 1}`
+        })],
+        fallbackSource: 'KEYWORD_SEARCH'
+      })
+    )
   })
 
   afterEach(() => {
@@ -111,14 +128,34 @@ describe('HouseListView', () => {
     expect(text).not.toContain('可做饭')
   })
 
-  it('renders real feature tags from backend fields', async () => {
+  it('shows backend total and loads next page in keyword mode', async () => {
     const wrapper = await mountView()
 
-    expect(wrapper.text()).toContain('近地铁')
-    expect(wrapper.text()).toContain('独立卫浴')
-    expect(wrapper.text()).toContain('民水民电')
-    expect(wrapper.text()).not.toContain('家庭友好')
-    expect(wrapper.text()).not.toContain('随时看房')
+    fetchHouseKeywordSearch.mockClear()
+    fetchHouseListFilter.mockClear()
+
+    await wrapper.get('[data-test="house-keyword"]').setValue('豫园')
+    await wrapper.get('[data-test="house-search-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchHouseKeywordSearch).toHaveBeenCalledWith({
+      keyword: '豫园',
+      page: 1,
+      size: 10
+    })
+    expect(wrapper.get('[data-test="result-count"]').text()).toContain('17')
+
+    await wrapper.get('[data-test="load-more"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchHouseKeywordSearch).toHaveBeenLastCalledWith({
+      keyword: '豫园',
+      page: 2,
+      size: 10
+    })
+    expect(wrapper.findAll('[data-test="result-card"]')).toHaveLength(2)
+    expect(wrapper.get('[data-test="result-count"]').text()).toContain('17')
+    expect(fetchHouseListFilter).not.toHaveBeenCalled()
   })
 
   it('requests backend data when feature flags change', async () => {
@@ -140,6 +177,58 @@ describe('HouseListView', () => {
       maxPriceYuan: null,
       nearSubway: true,
       privateBathroom: true,
+      hasBalcony: false,
+      civilWaterElectric: false,
+      page: 1,
+      size: 10
+    })
+  })
+
+  it('loads next page in structured filter mode when more results exist', async () => {
+    const wrapper = await mountView()
+
+    fetchHouseListFilter.mockClear()
+
+    await wrapper.get('[data-test="load-more"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchHouseListFilter).toHaveBeenCalledWith({
+      city: '广州',
+      region: '',
+      rentType: null,
+      minPriceYuan: null,
+      maxPriceYuan: null,
+      nearSubway: false,
+      privateBathroom: false,
+      hasBalcony: false,
+      civilWaterElectric: false,
+      page: 2,
+      size: 10
+    })
+    expect(wrapper.findAll('[data-test="result-card"]')).toHaveLength(2)
+    expect(wrapper.get('[data-test="result-count"]').text()).toContain('12')
+  })
+
+  it('returns to structured mode after clearing the keyword and resetting filters', async () => {
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-test="house-keyword"]').setValue('天河公园')
+    await wrapper.get('[data-test="house-search-submit"]').trigger('click')
+    await flushPromises()
+
+    fetchHouseListFilter.mockClear()
+
+    await wrapper.find('.toolbar-reset').trigger('click')
+    await flushPromises()
+
+    expect(fetchHouseListFilter).toHaveBeenCalledWith({
+      city: '广州',
+      region: '',
+      rentType: null,
+      minPriceYuan: null,
+      maxPriceYuan: null,
+      nearSubway: false,
+      privateBathroom: false,
       hasBalcony: false,
       civilWaterElectric: false,
       page: 1,

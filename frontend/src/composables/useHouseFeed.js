@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { formatRequestError } from '@/utils/format'
 
-export function useHouseFeed({ hotLoader, nearbyLoader, defaultCity }) {
+export function useHouseFeed({ hotLoader, searchLoader }) {
   const houses = ref([])
   const loading = ref(false)
   const error = ref('')
@@ -9,7 +9,7 @@ export function useHouseFeed({ hotLoader, nearbyLoader, defaultCity }) {
   const size = ref(10)
   const hasMore = ref(true)
   const mode = ref('hot')
-  const activeLocation = ref('')
+  const activeKeyword = ref('')
   const resultTip = ref('')
 
   function resetPaging() {
@@ -28,10 +28,9 @@ export function useHouseFeed({ hotLoader, nearbyLoader, defaultCity }) {
     error.value = ''
 
     try {
-      const result = mode.value === 'nearby'
-        ? await nearbyLoader({
-            locationName: activeLocation.value,
-            city: defaultCity,
+      const result = mode.value === 'search'
+        ? await searchLoader({
+            keyword: activeKeyword.value,
             page: current.value,
             size: size.value
           })
@@ -53,16 +52,16 @@ export function useHouseFeed({ hotLoader, nearbyLoader, defaultCity }) {
     }
   }
 
-  function activateNearby(locationName) {
-    mode.value = 'nearby'
-    activeLocation.value = locationName
+  function activateSearch(keyword) {
+    mode.value = 'search'
+    activeKeyword.value = keyword
     resultTip.value = ''
     resetPaging()
   }
 
   function activateHot() {
     mode.value = 'hot'
-    activeLocation.value = ''
+    activeKeyword.value = ''
     resultTip.value = ''
     resetPaging()
   }
@@ -75,11 +74,11 @@ export function useHouseFeed({ hotLoader, nearbyLoader, defaultCity }) {
     size,
     hasMore,
     mode,
-    activeLocation,
+    activeKeyword,
     resultTip,
     resetPaging,
     loadNext,
-    activateNearby,
+    activateSearch,
     activateHot
   }
 }

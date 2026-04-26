@@ -2,6 +2,7 @@ package cn.yy.myrent.controller;
 
 import cn.yy.myrent.common.Result;
 import cn.yy.myrent.common.UserContext;
+import cn.yy.myrent.dto.HouseKeywordSearchReqDTO;
 import cn.yy.myrent.dto.HouseListFilterReqDTO;
 import cn.yy.myrent.dto.HouseSuggestReqDTO;
 import cn.yy.myrent.dto.SearchHouseReqDTO;
@@ -12,6 +13,7 @@ import cn.yy.myrent.service.IHouseHistoryService;
 import cn.yy.myrent.service.IHouseService;
 import cn.yy.myrent.service.IReviewService;
 import cn.yy.myrent.service.hot.HouseHotService;
+import cn.yy.myrent.service.search.HouseKeywordSearchService;
 import cn.yy.myrent.sync.house.service.HouseEsSyncService;
 import cn.yy.myrent.vo.HouseReviewPageVO;
 import cn.yy.myrent.vo.HouseSearchResultVO;
@@ -49,6 +51,7 @@ public class HouseController {
     private final IReviewService reviewService;
     private final HouseEsSyncService houseEsSyncService;
     private final HouseHotService houseHotService;
+    private final HouseKeywordSearchService houseKeywordSearchService;
 
     @PostMapping("/nearby")
     @Operation(summary = "附近房源搜索", description = "优先走 ES，失败后自动降级")
@@ -79,6 +82,18 @@ public class HouseController {
     @Operation(summary = "智能找房引导", description = "先做 ES 预筛选，再由 DB 完成最终过滤和排序")
     public Result<SmartGuideResultVO> smartGuide(@Valid @RequestBody SmartGuideReqDTO reqDTO) {
         return Result.success(houseService.smartGuide(reqDTO));
+    }
+
+    @PostMapping("/search")
+    @Operation(summary = "关键词房源搜索", description = "并发执行地点召回和文本召回，再由 DB 完成最终过滤和排序")
+    public Result<HouseSearchResultVO> search(@Valid @RequestBody HouseKeywordSearchReqDTO reqDTO) {
+        if (reqDTO.getPage() == null) {
+            reqDTO.setPage(1);
+        }
+        if (reqDTO.getSize() == null) {
+            reqDTO.setSize(10);
+        }
+        return Result.success(houseKeywordSearchService.search(reqDTO));
     }
 
     @PostMapping("/list-filter")

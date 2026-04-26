@@ -21,6 +21,7 @@ import co.elastic.clients.elasticsearch._types.DistanceUnit;
 import co.elastic.clients.elasticsearch._types.SortOptions;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
@@ -141,9 +142,9 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
             if (esResult.isEmpty()) {
                 log.info("ES nearby search finished but no house matched, lat={}, lon={}, radius={}m, pageIndex={}, pageSize={}",
                         lat, lon, radiusMeters, pageIndex, pageSize);
-                return buildSearchResult(esResult, false, FALLBACK_SOURCE_ES, TIP_OUT_OF_RANGE);
+                return buildSearchResult(esResult, null, false, FALLBACK_SOURCE_ES, TIP_OUT_OF_RANGE);
             }
-            return buildSearchResult(esResult, false, FALLBACK_SOURCE_ES, null);
+            return buildSearchResult(esResult, null, false, FALLBACK_SOURCE_ES, null);
         } catch (TimeoutException te) {
             log.warn("ES nearby search timed out ({}ms), fallback strategy enabled, lat={}, lon={}, radius={}m",
                     ES_QUERY_TIMEOUT_MS, lat, lon, radiusMeters);
@@ -173,10 +174,10 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         int pageSize = size != null ? size : 10;
         try {
             List<HouseVO> hotHouses = searchHotFromRedis(null, pageIndex, pageSize);
-            return buildSearchResult(hotHouses, false, FALLBACK_SOURCE_REDIS_HOT, null);
+            return buildSearchResult(hotHouses, null, false, FALLBACK_SOURCE_REDIS_HOT, null);
         } catch (Exception e) {
             log.error("hot-house query via Redis failed, fallback to DB, pageIndex={}, pageSize={}", pageIndex, pageSize, e);
-            return buildSearchResult(searchHotFromDb(pageIndex, pageSize), false, FALLBACK_SOURCE_DB_HOT, null);
+            return buildSearchResult(searchHotFromDb(pageIndex, pageSize), null, false, FALLBACK_SOURCE_DB_HOT, null);
         }
     }
 
@@ -196,13 +197,14 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
 
         log.info("根据条件筛选房源，优先查询 ES");
         try {
-            List<HouseVO> houses = searchFilterInEs(reqDTO, pageIndex, size);
-            return buildSearchResult(houses, false, FILTER_SOURCE_ES, null);
+            PagedHouseResult houses = searchFilterInEs(reqDTO, pageIndex, size);
+            return buildSearchResult(houses.houses(), houses.total(), false, FILTER_SOURCE_ES, null);
         } catch (Exception e) {
             log.warn("ES filter query failed, fallback to DB, page={}, size={}", page, size, e);
         }
 
-        return buildSearchResult(filterListFromDb(reqDTO, offset, size), true, FILTER_SOURCE_DB, null);
+        List<HouseVO> dbHouses = filterListFromDb(reqDTO, offset, size);
+        return buildSearchResult(dbHouses, countFilteredHousesInDb(reqDTO), true, FILTER_SOURCE_DB, null);
     }
 
     private HouseSearchResultVO searchWhenEsUnavailable(String city, int pageIndex, int pageSize) {
@@ -211,7 +213,7 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
             if (!redisRecommended.isEmpty()) {
                 log.info("ES unavailable, Redis hot fallback hit, city={}, pageIndex={}, pageSize={}, count={}",
                         city, pageIndex, pageSize, redisRecommended.size());
-                return buildSearchResult(redisRecommended, true, FALLBACK_SOURCE_REDIS_HOT, TIP_ES_DOWN);
+                return buildSearchResult(redisRecommended, null, true, FALLBACK_SOURCE_REDIS_HOT, TIP_ES_DOWN);
             }
             log.warn("ES unavailable, Redis hot fallback returned empty, city={}, pageIndex={}, pageSize={}",
                     city, pageIndex, pageSize);
@@ -221,14 +223,16 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         }
 
         List<HouseVO> dbRecommended = searchHotFromDb(pageIndex, pageSize);
-        return buildSearchResult(dbRecommended, true, FALLBACK_SOURCE_DB_HOT, TIP_ES_DOWN);
+        return buildSearchResult(dbRecommended, null, true, FALLBACK_SOURCE_DB_HOT, TIP_ES_DOWN);
     }
 
     private HouseSearchResultVO buildSearchResult(List<HouseVO> houses,
+                                                  Long total,
                                                   boolean esDown,
                                                   String fallbackSource,
                                                   String tipMessage) {
         HouseSearchResultVO result = new HouseSearchResultVO();
+        result.setTotal(total);
         result.setHouses(enrichPublisherNamesSafely(houses));
         result.setEsDown(esDown);
         result.setFallbackSource(fallbackSource);
@@ -331,7 +335,7 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         return voList;
     }
 
-    private List<HouseVO> searchFilterInEs(HouseListFilterReqDTO reqDTO, int pageIndex, int pageSize) {
+    private PagedHouseResult searchFilterInEs(HouseListFilterReqDTO reqDTO, int pageIndex, int pageSize) {
         Integer minPriceCent = yuanToCent(reqDTO == null ? null : reqDTO.getMinPriceYuan());
         Integer maxPriceCent = yuanToCent(reqDTO == null ? null : reqDTO.getMaxPriceYuan());
 
@@ -385,7 +389,7 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
             }
         }
         log.info("ES filter query success, count={}, pageIndex={}, pageSize={}", voList.size(), pageIndex, pageSize);
-        return voList;
+        return new PagedHouseResult(voList, hits.getTotalHits());
     }
 
     private List<HouseVO> searchHotFromRedis(String city, int pageIndex, int pageSize) {
@@ -443,6 +447,44 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
             houses.add(convertHouseToVo(house));
         }
         return houses;
+    }
+
+    private long countFilteredHousesInDb(HouseListFilterReqDTO reqDTO) {
+        QueryWrapper<House> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("status", HOUSE_STATUS_AVAILABLE);
+        if (reqDTO == null) {
+            return baseMapper.selectCount(queryWrapper);
+        }
+        if (StringUtils.hasText(reqDTO.getCity())) {
+            queryWrapper.eq("city", reqDTO.getCity());
+        }
+        if (StringUtils.hasText(reqDTO.getRegion())) {
+            queryWrapper.eq("region", reqDTO.getRegion());
+        }
+        if (reqDTO.getRentType() != null) {
+            queryWrapper.eq("rent_type", reqDTO.getRentType());
+        }
+        Integer minPriceCent = yuanToCent(reqDTO.getMinPriceYuan());
+        if (minPriceCent != null) {
+            queryWrapper.ge("price", minPriceCent);
+        }
+        Integer maxPriceCent = yuanToCent(reqDTO.getMaxPriceYuan());
+        if (maxPriceCent != null) {
+            queryWrapper.le("price", maxPriceCent);
+        }
+        if (Boolean.TRUE.equals(reqDTO.getNearSubway())) {
+            queryWrapper.eq("near_subway", 1);
+        }
+        if (Boolean.TRUE.equals(reqDTO.getPrivateBathroom())) {
+            queryWrapper.eq("private_bathroom", 1);
+        }
+        if (Boolean.TRUE.equals(reqDTO.getHasBalcony())) {
+            queryWrapper.eq("has_balcony", 1);
+        }
+        if (Boolean.TRUE.equals(reqDTO.getCivilWaterElectric())) {
+            queryWrapper.eq("civil_water_electric", 1);
+        }
+        return baseMapper.selectCount(queryWrapper);
     }
 
     private HouseVO convertDocToVo(HouseDoc doc) {
@@ -523,5 +565,8 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
     }
 
     private record SearchPoint(double latitude, double longitude) {
+    }
+
+    private record PagedHouseResult(List<HouseVO> houses, long total) {
     }
 }

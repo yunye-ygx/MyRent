@@ -8,6 +8,11 @@ import java.util.List;
 public class HouseSearchResultVO {
 
     /**
+     * 命中的总房源数（分页前）。
+     */
+    private Long total;
+
+    /**
      * 房源列表数据。
      */
     private List<HouseVO> houses;

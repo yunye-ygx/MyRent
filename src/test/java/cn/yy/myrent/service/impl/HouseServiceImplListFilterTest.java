@@ -109,6 +109,7 @@ class HouseServiceImplListFilterTest {
         @SuppressWarnings("unchecked")
         SearchHits<HouseDoc> hits = (SearchHits<HouseDoc>) mock(SearchHits.class);
         when(hits.iterator()).thenReturn(java.util.List.of(hit).iterator());
+        when(hits.getTotalHits()).thenReturn(17L);
         when(elasticsearchOperations.search(any(NativeQuery.class), eq(HouseDoc.class))).thenReturn(hits);
 
         HouseListFilterReqDTO reqDTO = new HouseListFilterReqDTO();
@@ -127,6 +128,7 @@ class HouseServiceImplListFilterTest {
         HouseSearchResultVO result = houseService.filterList(reqDTO);
 
         assertEquals(1, result.getHouses().size());
+        assertEquals(17L, result.getTotal());
         assertEquals("\u82cf\u5dde", result.getHouses().get(0).getCity());
         assertEquals("\u59d1\u82cf", result.getHouses().get(0).getRegion());
         assertEquals(Boolean.TRUE, result.getHouses().get(0).getNearSubway());
@@ -189,6 +191,7 @@ class HouseServiceImplListFilterTest {
                 0,
                 8
         )).thenReturn(java.util.List.of(house));
+        when(houseMapper.selectCount(any())).thenReturn(12L);
 
         HouseListFilterReqDTO reqDTO = new HouseListFilterReqDTO();
         reqDTO.setCity("\u82cf\u5dde");
@@ -206,6 +209,7 @@ class HouseServiceImplListFilterTest {
         HouseSearchResultVO result = houseService.filterList(reqDTO);
 
         assertEquals(1, result.getHouses().size());
+        assertEquals(12L, result.getTotal());
         assertEquals("DB_FILTER", result.getFallbackSource());
         assertEquals(Boolean.TRUE, result.getEsDown());
         verify(houseMapper).selectListFilterPage(
