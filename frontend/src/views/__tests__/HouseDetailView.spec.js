@@ -4,10 +4,12 @@ import HouseDetailView from '@/views/HouseDetailView.vue'
 import { createOrder } from '@/api/order'
 import { followPublisher, fetchPublisherFollowStatus } from '@/api/publisherFollow'
 
+const setMessageDeskPendingTarget = vi.fn()
+
 vi.mock('@/api/house', () => ({
   fetchHouseById: vi.fn().mockResolvedValue({
     id: 7,
-    title: '天河区一居室',
+    title: 'Tianhe Studio',
     price: 5600,
     depositAmount: 5600,
     status: 1,
@@ -22,8 +24,8 @@ vi.mock('@/api/house', () => ({
         reviewId: 11,
         orderNo: 'ORDER-1001',
         score: 5,
-        content: '房间采光不错。',
-        reviewerName: '测试用户A',
+        content: 'Bright room and convenient commute.',
+        reviewerName: 'Tester A',
         edited: false,
         createTime: '2026-04-21T10:00:00',
         updateTime: '2026-04-21T10:00:00'
@@ -35,7 +37,7 @@ vi.mock('@/api/house', () => ({
 }))
 
 vi.mock('@/api/user', () => ({
-  fetchUserById: vi.fn().mockResolvedValue({ name: '房东 A' })
+  fetchUserById: vi.fn().mockResolvedValue({ name: 'Landlord A' })
 }))
 
 vi.mock('@/api/order', () => ({
@@ -55,7 +57,13 @@ vi.mock('@/api/publisherFollow', () => ({
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
     userId: 1,
-    profile: { name: '测试用户' }
+    profile: { name: 'Tenant User' }
+  })
+}))
+
+vi.mock('@/stores/messageCenter', () => ({
+  useMessageCenterStore: () => ({
+    setMessageDeskPendingTarget
   })
 }))
 
@@ -65,6 +73,7 @@ describe('HouseDetailView', () => {
   beforeEach(() => {
     delete window.location
     window.location = { assign: vi.fn() }
+    setMessageDeskPendingTarget.mockClear()
   })
 
   afterEach(() => {
@@ -88,12 +97,10 @@ describe('HouseDetailView', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('天河区一居室')
-    expect(wrapper.text()).toContain('提交定金')
-    expect(wrapper.text()).toContain('房东 A')
+    expect(wrapper.text()).toContain('Tianhe Studio')
+    expect(wrapper.text()).toContain('Landlord A')
     expect(wrapper.text()).toContain('4.5')
-    expect(wrapper.text()).toContain('2 条评价')
-    expect(wrapper.text()).toContain('房间采光不错。')
+    expect(wrapper.text()).toContain('Bright room and convenient commute.')
   })
 
   it('redirects to mock checkout after creating an order', async () => {
@@ -113,7 +120,7 @@ describe('HouseDetailView', () => {
 
     await flushPromises()
 
-    const depositButton = wrapper.findAll('button').find((button) => button.text().includes('提交定金'))
+    const depositButton = wrapper.findAll('.action-bar button')[2]
     await depositButton.trigger('click')
     await flushPromises()
 
@@ -146,5 +153,41 @@ describe('HouseDetailView', () => {
     await flushPromises()
 
     expect(followPublisher).toHaveBeenCalledWith(9)
+  })
+
+  it('routes consult actions into the message center with a targeted chat session', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/house/:id', component: HouseDetailView },
+        { path: '/messages', component: { template: '<div>messages</div>' } }
+      ]
+    })
+
+    router.push('/house/7')
+    await router.isReady()
+
+    const wrapper = mount(HouseDetailView, {
+      global: {
+        plugins: [router]
+      }
+    })
+
+    await flushPromises()
+
+    const buttons = wrapper.findAll('.action-bar button')
+    await buttons[1].trigger('click')
+    await flushPromises()
+
+    expect(setMessageDeskPendingTarget).toHaveBeenCalledWith({
+      kind: 'chat',
+      sessionId: '1_9_7',
+      peerId: 9,
+      peerName: 'Landlord A',
+      houseId: 7,
+      houseTitle: 'Tianhe Studio',
+      price: 5600
+    })
+    expect(router.currentRoute.value.fullPath).toBe('/messages')
   })
 })

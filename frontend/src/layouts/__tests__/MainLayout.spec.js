@@ -5,6 +5,7 @@ const push = vi.fn()
 const loadUnreadTotals = vi.fn()
 const dismissChatToast = vi.fn()
 const setCurrentChatSession = vi.fn()
+const setMessageDeskPendingTarget = vi.fn()
 const handleIncomingChatMessage = vi.fn()
 const loadSessions = vi.fn()
 const upsertSessionFromMessage = vi.fn()
@@ -54,6 +55,7 @@ vi.mock('@/stores/messageCenter', () => ({
     loadUnreadTotals,
     dismissChatToast,
     setCurrentChatSession,
+    setMessageDeskPendingTarget,
     handleIncomingChatMessage
   })
 }))
@@ -71,6 +73,7 @@ describe('MainLayout', () => {
     loadUnreadTotals.mockClear()
     dismissChatToast.mockClear()
     setCurrentChatSession.mockClear()
+    setMessageDeskPendingTarget.mockClear()
     handleIncomingChatMessage.mockClear()
     loadSessions.mockClear()
     upsertSessionFromMessage.mockClear()
@@ -170,6 +173,34 @@ describe('MainLayout', () => {
     expect(loadUnreadTotals).toHaveBeenCalledTimes(1)
     expect(loadSessions).toHaveBeenCalledTimes(1)
     expect(loadSessions).toHaveBeenCalledWith({ minFreshMs: 5000 })
+  })
+
+  it('routes toast clicks into the message center with an explicit target', async () => {
+    const wrapper = mount(MainLayout, {
+      global: {
+        stubs: {
+          AppTopNav: true,
+          AppTabBar: true,
+          OnlineMessageToast: {
+            props: ['toast'],
+            template: '<button data-test="chat-toast" @click="$emit(\'click\')">{{ toast.senderName }}</button>'
+          },
+          RouterView: true
+        }
+      }
+    })
+
+    await wrapper.get('[data-test="chat-toast"]').trigger('click')
+
+    expect(dismissChatToast).toHaveBeenCalledWith('toast-1')
+    expect(setMessageDeskPendingTarget).toHaveBeenCalledWith({
+      kind: 'chat',
+      sessionId: '1_9_7',
+      peerId: 9,
+      peerName: 'Landlord A',
+      houseId: 7
+    })
+    expect(push).toHaveBeenCalledWith('/messages')
   })
 
   it('refreshes unread totals and session summaries on websocket reconnect, then forwards messages to both stores', () => {

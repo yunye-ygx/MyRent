@@ -22,20 +22,23 @@
       </div>
 
       <p class="sidebar-footnote" :class="{ error: listErrorMessage }">
-        {{ listErrorMessage || '消息列表仅展示真实聊天记录和系统通知。' }}
+        {{ listErrorMessage || '消息列表展示聊天会话、系统通知和预约提醒。' }}
       </p>
     </aside>
 
     <section class="desk-list app-surface">
       <div class="list-header">
         <div>
-          <p class="panel-kicker">近期会话</p>
+          <p class="panel-kicker">最近会话</p>
           <h2>{{ listTitle }}</h2>
         </div>
         <button class="ghost-btn compact-btn" @click="refreshCurrentFeed">刷新列表</button>
       </div>
 
-      <LoadingState v-if="loadingSessions && !filteredEntries.length" text="正在加载消息列表..." />
+      <LoadingState
+        v-if="loadingSessions && !filteredEntries.length"
+        text="正在加载消息列表..."
+      />
 
       <div v-else class="conversation-list">
         <button
@@ -44,7 +47,7 @@
           :data-entry-id="entry.id"
           class="conversation-card"
           :class="{ active: selectedEntry?.id === entry.id }"
-          @click="selectedEntryId = entry.id"
+          @click="selectEntry(entry)"
         >
           <div class="conversation-avatar" :class="entry.kind">
             {{ entry.avatarText }}
@@ -73,7 +76,7 @@
         <EmptyState
           v-if="!filteredEntries.length"
           title="暂无消息"
-          description="当前分类下没有可展示的会话。"
+          description="当前分类下没有可展示的内容。"
         />
       </div>
     </section>
@@ -112,7 +115,7 @@
             <EmptyState
               v-if="!selectedMessages.length"
               title="暂无会话内容"
-              :description="threadHint || '当前会话还没有产生消息。'"
+              :description="threadHint || '当前会话还没有消息记录。'"
             />
 
             <template v-else>
@@ -171,15 +174,15 @@
 
       <EmptyState
         v-else
-        title="请选择一条会话"
-        description="左侧列表会展示聊天消息、系统通知和预约提醒。"
+        title="请选择会话"
+        description="从左侧列表选择一条会话后，再查看聊天消息、系统通知或预约提醒。"
       />
     </section>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { markMessagesRead, pullHistoryMessages, sendChatMessage } from '@/api/chat'
 import { fetchNotificationPage, markNotificationRead } from '@/api/notification'
@@ -221,13 +224,13 @@ function minutesAgo(minutes) {
 }
 
 const currentUserId = computed(() => Number(authStore.userId || 9001))
-const currentUserName = computed(() => authStore.profile?.name || '元气小圆同学')
+const currentUserName = computed(() => authStore.profile?.name || 'Current User')
 const loadingSessions = computed(() => chatSessionStore.loading || notificationLoading.value)
 const listErrorMessage = computed(() =>
   [chatSessionStore.error, notificationError.value].filter(Boolean).join(' ')
 )
 
-function getInitial(text, fallback = '租') {
+function getInitial(text, fallback = 'U') {
   const value = String(text || '').trim()
   return value ? value.slice(0, 1) : fallback
 }
@@ -254,13 +257,125 @@ function formatPriceText(value, fallback = '在线沟通') {
   if (!Number.isFinite(numericValue) || numericValue <= 0) {
     return fallback
   }
-  return `¥${numericValue}/月`
+  return `CNY ${numericValue}/month`
+}
+
+function toChatEntryId(sessionId) {
+  return sessionId ? `chat:${sessionId}` : ''
+}
+
+function buildMessageDeskTarget(target = {}) {
+  if (!target?.kind) {
+    return null
+  }
+
+  if (target.kind === 'notification') {
+    const notificationId = Number(target.notificationId || 0)
+    return {
+      kind: 'notification',
+      entryId: String(target.entryId || (notificationId ? `notification:${notificationId}` : '')),
+      notificationId
+    }
+  }
+
+  const sessionId = String(target.sessionId || '')
+  return {
+    kind: 'chat',
+    entryId: String(target.entryId || toChatEntryId(sessionId)),
+    sessionId,
+    peerId: Number(target.peerId || 0),
+    peerName: String(target.peerName || ''),
+    houseId: Number(target.houseId || 0),
+    houseTitle: String(target.houseTitle || ''),
+    price: Number(target.price || 0)
+  }
+}
+
+function buildMessageDeskTargetFromEntry(entry) {
+  if (!entry) {
+    return null
+  }
+
+  if (entry.kind === 'notification') {
+    return buildMessageDeskTarget({
+      kind: 'notification',
+      entryId: entry.id,
+      notificationId: entry.notificationId
+    })
+  }
+
+  return buildMessageDeskTarget({
+    kind: 'chat',
+    entryId: entry.id,
+    sessionId: entry.sessionId,
+    peerId: entry.peerId,
+    peerName: entry.peerName || entry.title,
+    houseId: entry.houseId,
+    houseTitle: entry.subtitle || entry.headerSubtitle,
+    price: entry.price
+  })
+}
+
+function buildDraftChatEntry(target) {
+  const normalizedTarget = buildMessageDeskTarget(target)
+  if (!normalizedTarget?.sessionId) {
+    return null
+  }
+
+  return {
+    id: normalizedTarget.entryId || toChatEntryId(normalizedTarget.sessionId),
+    kind: 'chat',
+    category: 'chat',
+    source: 'context',
+    sessionId: normalizedTarget.sessionId,
+    peerId: normalizedTarget.peerId,
+    peerName: normalizedTarget.peerName || '房东',
+    houseId: normalizedTarget.houseId,
+    price: normalizedTarget.price,
+    title: normalizedTarget.peerName || '房东',
+    subtitle: normalizedTarget.houseTitle || '房源沟通中',
+    headerSubtitle: normalizedTarget.houseTitle || '可以直接发送第一条消息，开始沟通。',
+    preview: '这是从房源或消息提醒直接打开的会话。',
+    updatedAt: new Date().toISOString(),
+    unreadCount: 0,
+    avatarText: getInitial(normalizedTarget.peerName, 'L'),
+    statusText: '新会话',
+    statusTone: 'muted',
+    priceText: formatPriceText(normalizedTarget.price),
+    linkTarget: normalizedTarget.houseId > 0 ? `/house/${normalizedTarget.houseId}` : ''
+  }
+}
+
+function matchesTarget(entry, target) {
+  const normalizedTarget = buildMessageDeskTarget(target)
+  if (!entry || !normalizedTarget) {
+    return false
+  }
+
+  if (normalizedTarget.kind === 'notification') {
+    return (
+      entry.kind === 'notification'
+      && (
+        entry.id === normalizedTarget.entryId
+        || String(entry.notificationId) === String(normalizedTarget.notificationId)
+      )
+    )
+  }
+
+  return (
+    entry.kind === 'chat'
+    && (
+      entry.id === normalizedTarget.entryId
+      || String(entry.sessionId) === String(normalizedTarget.sessionId)
+    )
+  )
 }
 
 function normalizeChatEntry(session = {}, source = 'server') {
   const unreadCount = Number(session.unreadCount || 0)
+  const price = Number(session.price || 0)
   return {
-    id: `chat:${session.sessionId}`,
+    id: toChatEntryId(session.sessionId),
     kind: 'chat',
     category: 'chat',
     source,
@@ -268,16 +383,17 @@ function normalizeChatEntry(session = {}, source = 'server') {
     peerId: Number(session.peerId || 0),
     peerName: session.peerName || '房东',
     houseId: Number(session.houseId || 0),
-    title: session.peerName || '房东会话',
+    price,
+    title: session.peerName || '房东',
     subtitle: session.houseTitle || session.houseLabel || '房源沟通中',
     headerSubtitle: session.houseTitle || session.houseLabel || '最近消息',
     preview: session.lastMsgContent || '暂无消息',
     updatedAt: session.updateTime || minutesAgo(0),
     unreadCount,
     avatarText: getInitial(session.peerName, '房'),
-    statusText: unreadCount > 0 ? '待回复' : '已回复',
+    statusText: unreadCount > 0 ? '待查看' : '已查看',
     statusTone: unreadCount > 0 ? 'warning' : 'muted',
-    priceText: formatPriceText(session.price),
+    priceText: formatPriceText(price),
     linkTarget: Number(session.houseId || 0) > 0 ? `/house/${session.houseId}` : ''
   }
 }
@@ -292,13 +408,13 @@ function normalizeNotificationEntry(item = {}, source = 'server') {
     source,
     notificationId: item.id,
     title: category === 'booking' ? '预约助手' : '系统通知',
-    subtitle: item.title || (category === 'booking' ? '预约提醒' : '系统消息'),
-    headerSubtitle: category === 'booking' ? '预约日程同步' : '平台消息播报',
+    subtitle: item.title || (category === 'booking' ? '预约提醒' : '平台消息'),
+    headerSubtitle: category === 'booking' ? '近期预约安排' : '平台通知播报',
     preview: item.content || '暂无通知内容',
     updatedAt: item.createTime || minutesAgo(0),
     unreadCount,
     avatarText: category === 'booking' ? '约' : '系',
-    statusText: unreadCount > 0 ? '新消息' : '已读',
+    statusText: unreadCount > 0 ? '新通知' : '已读',
     statusTone: unreadCount > 0 ? 'danger' : 'muted',
     priceText: category === 'booking' ? '预约提醒' : '系统通知',
     linkTarget: item.redirectTargetId ? `/house/${item.redirectTargetId}` : ''
@@ -306,10 +422,31 @@ function normalizeNotificationEntry(item = {}, source = 'server') {
 }
 
 const allEntries = computed(() => {
-  const sessionEntries = chatSessionStore.sessions.map((item) => normalizeChatEntry(item, 'server'))
-  const notificationEntries = notifications.value.map((item) => normalizeNotificationEntry(item, 'server'))
+  const mergedEntries = new Map()
 
-  return [...sessionEntries, ...notificationEntries].sort(
+  ;[
+    messageCenterStore.pendingMessageDeskTarget,
+    messageCenterStore.selectedMessageDeskTarget
+  ]
+    .map((target) => buildDraftChatEntry(target))
+    .filter(Boolean)
+    .forEach((entry) => {
+      mergedEntries.set(entry.id, entry)
+    })
+
+  chatSessionStore.sessions
+    .map((item) => normalizeChatEntry(item, 'server'))
+    .forEach((entry) => {
+      mergedEntries.set(entry.id, entry)
+    })
+
+  notifications.value
+    .map((item) => normalizeNotificationEntry(item, 'server'))
+    .forEach((entry) => {
+      mergedEntries.set(entry.id, entry)
+    })
+
+  return [...mergedEntries.values()].sort(
     (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
   )
 })
@@ -357,7 +494,7 @@ const listTitle = computed(() => {
 
 const composerPlaceholder = computed(() => {
   if (!selectedEntry.value) {
-    return '请输入消息...'
+    return '请先选择一条会话'
   }
   if (selectedEntry.value.kind !== 'chat') {
     return '系统通知不支持回复'
@@ -415,6 +552,58 @@ async function scrollThreadToBottom() {
   element.scrollTop = element.scrollHeight
 }
 
+function resetThreadPanel() {
+  selectedMessages.value = []
+  composer.value = ''
+  threadHint.value = ''
+  threadLoading.value = false
+}
+
+function clearActiveChatSession() {
+  messageCenterStore.setCurrentChatSession('')
+  chatSessionStore.setCurrentSessionId('')
+}
+
+function syncActiveChatSession(entry) {
+  if (entry?.kind === 'chat' && entry.sessionId) {
+    messageCenterStore.setCurrentChatSession(entry.sessionId)
+    chatSessionStore.setCurrentSessionId(entry.sessionId)
+    return
+  }
+  clearActiveChatSession()
+}
+
+function applySelection(entry, options = {}) {
+  const {
+    persistSelection = false,
+    clearPendingTarget = false
+  } = options
+
+  if (!entry) {
+    selectedEntryId.value = ''
+    resetThreadPanel()
+    clearActiveChatSession()
+    return
+  }
+
+  selectedEntryId.value = entry.id
+  syncActiveChatSession(entry)
+
+  if (persistSelection) {
+    messageCenterStore.setMessageDeskSelection(buildMessageDeskTargetFromEntry(entry))
+  }
+  if (clearPendingTarget) {
+    messageCenterStore.clearMessageDeskPendingTarget()
+  }
+}
+
+function selectEntry(entry) {
+  applySelection(entry, {
+    persistSelection: true,
+    clearPendingTarget: true
+  })
+}
+
 function clearChatUnread(entry) {
   const current = chatSessionStore.sessions.find(
     (item) => String(item.sessionId) === String(entry.sessionId)
@@ -457,7 +646,7 @@ async function markNotificationAsRead(entry) {
 
 async function loadThread(entry) {
   if (!entry) {
-    selectedMessages.value = []
+    resetThreadPanel()
     return
   }
 
@@ -474,6 +663,16 @@ async function loadThread(entry) {
     selectedMessages.value = buildNotificationThread(entry)
     threadLoading.value = false
     await scrollThreadToBottom()
+    return
+  }
+
+  const hasServerSession = chatSessionStore.sessions.some(
+    (item) => String(item.sessionId) === String(entry.sessionId)
+  )
+  if (entry.source === 'context' && !hasServerSession) {
+    selectedMessages.value = []
+    threadHint.value = '发送第一条消息后，就可以开始和房东沟通。'
+    threadLoading.value = false
     return
   }
 
@@ -594,6 +793,7 @@ async function handleSend() {
     ]
     threadHint.value = ''
     chatSessionStore.loadSessions({ force: true }).catch(() => {})
+    messageCenterStore.setMessageDeskSelection(buildMessageDeskTargetFromEntry(entry))
   } catch (error) {
     selectedMessages.value = selectedMessages.value.filter((item) => item.id !== optimisticMessage.id)
     composer.value = text
@@ -604,17 +804,41 @@ async function handleSend() {
   }
 }
 
+const pendingTargetKey = computed(() => JSON.stringify(messageCenterStore.pendingMessageDeskTarget || null))
+const selectedTargetKey = computed(() => JSON.stringify(messageCenterStore.selectedMessageDeskTarget || null))
+
 watch(
-  filteredEntries,
-  (entries) => {
+  [filteredEntries, pendingTargetKey, selectedTargetKey],
+  ([entries]) => {
     if (!entries.length) {
-      selectedEntryId.value = ''
-      selectedMessages.value = []
+      applySelection(null)
       return
     }
-    const stillExists = entries.some((item) => item.id === selectedEntryId.value)
-    if (!stillExists) {
-      selectedEntryId.value = entries[0].id
+
+    const currentEntry = entries.find((item) => item.id === selectedEntryId.value)
+    if (currentEntry) {
+      syncActiveChatSession(currentEntry)
+      return
+    }
+
+    const pendingEntry = entries.find((item) => matchesTarget(item, messageCenterStore.pendingMessageDeskTarget))
+    if (pendingEntry) {
+      applySelection(pendingEntry, {
+        persistSelection: true,
+        clearPendingTarget: true
+      })
+      return
+    }
+
+    const storedEntry = entries.find((item) => matchesTarget(item, messageCenterStore.selectedMessageDeskTarget))
+    if (storedEntry) {
+      applySelection(storedEntry)
+      return
+    }
+
+    applySelection(null)
+    if (messageCenterStore.pendingMessageDeskTarget) {
+      messageCenterStore.clearMessageDeskPendingTarget()
     }
   },
   { immediate: true }
@@ -624,8 +848,11 @@ watch(
   selectedEntry,
   (entry) => {
     if (!entry) {
+      resetThreadPanel()
+      clearActiveChatSession()
       return
     }
+    syncActiveChatSession(entry)
     loadThread(entry)
   },
   { immediate: true }
@@ -637,6 +864,10 @@ onMounted(async () => {
     chatSessionStore.loadSessions({ minFreshMs: 5000 }),
     loadNotifications()
   ])
+})
+
+onUnmounted(() => {
+  clearActiveChatSession()
 })
 </script>
 

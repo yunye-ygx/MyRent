@@ -83,11 +83,13 @@ import LoadingState from '@/components/LoadingState.vue'
 import HouseActionBar from '@/components/house/HouseActionBar.vue'
 import HouseDetailSummary from '@/components/house/HouseDetailSummary.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useMessageCenterStore } from '@/stores/messageCenter'
 import { formatRequestError, getHouseStatusText } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const messageCenterStore = useMessageCenterStore()
 
 const loading = ref(false)
 const lockLoading = ref(false)
@@ -317,14 +319,16 @@ function goConsult() {
     return
   }
 
-  router.push({
-    path: `/chat/${targetSessionId}`,
-    query: {
-      peerId: String(house.value.publisherUserId),
-      peerName: publisher.value?.name || '',
-      houseId: String(house.value.id)
-    }
+  messageCenterStore.setMessageDeskPendingTarget({
+    kind: 'chat',
+    sessionId: targetSessionId,
+    peerId: house.value.publisherUserId,
+    peerName: publisher.value?.name || '',
+    houseId: house.value.id,
+    houseTitle: house.value.title || '',
+    price: house.value.price || 0
   })
+  router.push('/messages')
 }
 
 async function submitDeposit() {

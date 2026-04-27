@@ -8,6 +8,8 @@ export const useMessageCenterStore = defineStore('messageCenter', {
     notificationUnreadTotal: 0,
     currentChatSessionId: '',
     chatToasts: [],
+    selectedMessageDeskTarget: null,
+    pendingMessageDeskTarget: null,
     hasLoadedUnreadTotals: false,
     lastLoadedUnreadAt: 0,
     pendingUnreadLoad: null
@@ -58,6 +60,15 @@ export const useMessageCenterStore = defineStore('messageCenter', {
     setCurrentChatSession(sessionId) {
       this.currentChatSessionId = String(sessionId || '')
     },
+    setMessageDeskSelection(target) {
+      this.selectedMessageDeskTarget = target ? { ...target } : null
+    },
+    setMessageDeskPendingTarget(target) {
+      this.pendingMessageDeskTarget = target ? { ...target } : null
+    },
+    clearMessageDeskPendingTarget() {
+      this.pendingMessageDeskTarget = null
+    },
     setChatUnreadTotal(total) {
       this.chatUnreadTotal = Number(total || 0)
     },
@@ -75,6 +86,17 @@ export const useMessageCenterStore = defineStore('messageCenter', {
     },
     dismissChatToast(id) {
       this.chatToasts = this.chatToasts.filter((item) => item.id !== id)
+    },
+    resetState() {
+      this.chatUnreadTotal = 0
+      this.notificationUnreadTotal = 0
+      this.currentChatSessionId = ''
+      this.chatToasts = []
+      this.selectedMessageDeskTarget = null
+      this.pendingMessageDeskTarget = null
+      this.hasLoadedUnreadTotals = false
+      this.lastLoadedUnreadAt = 0
+      this.pendingUnreadLoad = null
     },
     handleIncomingChatMessage(message) {
       if (!message?.sessionId) {

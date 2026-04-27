@@ -62,6 +62,15 @@ export const useChatSessionStore = defineStore('chatSession', {
     setCurrentSessionId(sessionId) {
       this.currentSessionId = String(sessionId || '')
     },
+    resetState() {
+      this.loading = false
+      this.error = ''
+      this.sessions = []
+      this.currentSessionId = ''
+      this.hasLoaded = false
+      this.lastLoadedAt = 0
+      this.pendingLoad = null
+    },
     async loadSessions(options = {}) {
       const { force = false, minFreshMs = 0 } = options
       const loadedRecently = this.hasLoaded && Date.now() - Number(this.lastLoadedAt || 0) < minFreshMs

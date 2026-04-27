@@ -119,14 +119,14 @@ function connectWs() {
 
 function openToast(toast) {
   messageCenterStore.dismissChatToast(toast.id)
-  router.push({
-    path: `/chat/${toast.sessionId}`,
-    query: {
-      peerId: String(toast.peerId || ''),
-      peerName: toast.senderName || '',
-      houseId: toast.houseId ? String(toast.houseId) : ''
-    }
+  messageCenterStore.setMessageDeskPendingTarget({
+    kind: 'chat',
+    sessionId: toast.sessionId,
+    peerId: toast.peerId || 0,
+    peerName: toast.senderName || '',
+    houseId: toast.houseId || 0
   })
+  router.push('/messages')
 }
 
 watch(

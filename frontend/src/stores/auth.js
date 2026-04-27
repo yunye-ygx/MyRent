@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { loginByPhone, registerByPhone } from '@/api/user'
 import { DEFAULT_CITY } from '@/config/cityFilters'
+import { useChatSessionStore } from '@/stores/chatSession'
+import { useMessageCenterStore } from '@/stores/messageCenter'
 import { clearSession, getProfile, getToken, setProfile, setToken } from '@/utils/storage'
 
 const CURRENT_CITY_KEY = 'myrent_current_city'
@@ -93,10 +95,15 @@ export const useAuthStore = defineStore('auth', {
       setProfile(this.profile)
     },
     logout() {
+      const chatSessionStore = useChatSessionStore()
+      const messageCenterStore = useMessageCenterStore()
+
       this.token = ''
       this.profile = null
       clearSession()
       this.currentCity = getStoredCity() || this.currentCity || DEFAULT_CITY
+      chatSessionStore.resetState()
+      messageCenterStore.resetState()
     }
   }
 })

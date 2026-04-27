@@ -68,4 +68,66 @@ describe('messageCenter store', () => {
     expect(fetchChatUnreadTotal).toHaveBeenCalledTimes(2)
     expect(fetchNotificationUnreadTotal).toHaveBeenCalledTimes(2)
   })
+
+  it('tracks the persisted desk selection and one-shot contextual target separately', () => {
+    const store = useMessageCenterStore()
+
+    store.setMessageDeskSelection({
+      kind: 'chat',
+      sessionId: '1_9_7',
+      peerId: 9,
+      peerName: 'Landlord A',
+      houseId: 7
+    })
+    store.setMessageDeskPendingTarget({
+      kind: 'chat',
+      sessionId: '1_9_8',
+      peerId: 9,
+      peerName: 'Landlord A',
+      houseId: 8
+    })
+
+    expect(store.selectedMessageDeskTarget).toMatchObject({
+      kind: 'chat',
+      sessionId: '1_9_7'
+    })
+    expect(store.pendingMessageDeskTarget).toMatchObject({
+      kind: 'chat',
+      sessionId: '1_9_8'
+    })
+
+    store.clearMessageDeskPendingTarget()
+
+    expect(store.pendingMessageDeskTarget).toBe(null)
+    expect(store.selectedMessageDeskTarget).toMatchObject({
+      kind: 'chat',
+      sessionId: '1_9_7'
+    })
+  })
+
+  it('resets message-center session state on logout-style cleanup', () => {
+    const store = useMessageCenterStore()
+
+    store.chatUnreadTotal = 3
+    store.notificationUnreadTotal = 2
+    store.currentChatSessionId = '1_9_7'
+    store.chatToasts = [{ id: 'toast-1' }]
+    store.setMessageDeskSelection({
+      kind: 'chat',
+      sessionId: '1_9_7'
+    })
+    store.setMessageDeskPendingTarget({
+      kind: 'chat',
+      sessionId: '1_9_8'
+    })
+
+    store.resetState()
+
+    expect(store.chatUnreadTotal).toBe(0)
+    expect(store.notificationUnreadTotal).toBe(0)
+    expect(store.currentChatSessionId).toBe('')
+    expect(store.chatToasts).toEqual([])
+    expect(store.selectedMessageDeskTarget).toBe(null)
+    expect(store.pendingMessageDeskTarget).toBe(null)
+  })
 })
