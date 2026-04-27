@@ -429,7 +429,9 @@ watch(
       filters.locationName = ''
     }
     if (filters.keyword.trim()) {
-      return
+      clearAutoSearchTimer()
+      filters.keyword = ''
+      lastRequestKey.value = ''
     }
     queueAutoSearch({ force: true })
   }

@@ -96,6 +96,10 @@ public class HouseController {
         return Result.success(houseKeywordSearchService.search(reqDTO));
     }
 
+    // TODO: If we later want keyword search to auto-sync city/region, have the backend return
+    // resolvedCity/resolvedRegion explicitly; do not let the frontend infer them from search hits.
+    // TODO: Long term, unify keyword search and structured filtering into one query model so
+    // keyword mode and filter mode do not diverge in state handling.
     @PostMapping("/list-filter")
     @Operation(summary = "房源列表筛选", description = "按城市、区域、租住方式和价格区间筛选房源列表")
     public Result<HouseSearchResultVO> listFilter(@RequestBody HouseListFilterReqDTO reqDTO) {

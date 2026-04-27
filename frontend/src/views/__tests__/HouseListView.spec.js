@@ -48,6 +48,9 @@ describe('HouseListView', () => {
     vi.useFakeTimers()
     authStore.currentCity = '广州'
     authStore.switchCity.mockReset()
+    authStore.switchCity.mockImplementation((city) => {
+      authStore.currentCity = city
+    })
     useAuthStore.mockReturnValue(authStore)
 
     fetchHouseListFilter.mockImplementation((payload = {}) =>
@@ -156,6 +159,36 @@ describe('HouseListView', () => {
     expect(wrapper.findAll('[data-test="result-card"]')).toHaveLength(2)
     expect(wrapper.get('[data-test="result-count"]').text()).toContain('17')
     expect(fetchHouseListFilter).not.toHaveBeenCalled()
+  })
+
+  it('requests filtered data after switching city from keyword mode', async () => {
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-test="house-keyword"]').setValue('豫园')
+    await wrapper.get('[data-test="house-search-submit"]').trigger('click')
+    await flushPromises()
+
+    fetchHouseListFilter.mockClear()
+
+    await wrapper.get('[data-test="house-city-select"]').setValue('上海')
+    vi.advanceTimersByTime(300)
+    await flushPromises()
+
+    expect(authStore.switchCity).toHaveBeenCalledWith('上海')
+    expect(fetchHouseListFilter).toHaveBeenCalledWith({
+      city: '上海',
+      region: '',
+      rentType: null,
+      minPriceYuan: null,
+      maxPriceYuan: null,
+      nearSubway: false,
+      privateBathroom: false,
+      hasBalcony: false,
+      civilWaterElectric: false,
+      page: 1,
+      size: 10
+    })
+    expect(wrapper.get('[data-test="house-keyword"]').element.value).toBe('')
   })
 
   it('requests backend data when feature flags change', async () => {
