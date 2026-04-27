@@ -6,9 +6,8 @@
       </div>
       <div class="hero-glow" aria-hidden="true"></div>
       <div class="hero-copy">
-        <p class="hero-kicker">首页推荐</p>
-        <h1 class="hero-title">更适合大学生的租房方式</h1>
-        <p class="hero-subtitle">近学校、预算友好、通勤便利、真实房源</p>
+        <h1 class="hero-title">先按你的方式开始找房</h1>
+        <p class="hero-subtitle">输入学校、小区或地铁站直达找房页，真正的筛选和比较交给找房页完成。</p>
 
         <form class="hero-search" @submit.prevent="submitSearch">
           <label class="search-box" for="home-search">
@@ -22,7 +21,7 @@
               @keyup.enter.prevent="submitSearch"
             />
           </label>
-          <button class="search-action" type="submit">搜索</button>
+          <button class="search-action" type="submit">去找房</button>
         </form>
 
         <div class="preset-tags">
@@ -31,7 +30,7 @@
             :key="tag.label"
             class="preset-tag"
             type="button"
-            @click="applyPreset(tag.keyword)"
+            @click="applyPreset(tag)"
           >
             <span class="preset-dot" aria-hidden="true"></span>
             {{ tag.label }}
@@ -40,28 +39,42 @@
       </div>
 
       <div class="hero-note">
-        <p class="hero-note-title">住在更近的地方</p>
-        <p class="hero-note-copy">把时间留给热爱</p>
+        <p class="hero-note-title">先决定方向</p>
+        <p class="hero-note-copy">再去找房页认真比较</p>
       </div>
     </section>
 
-    <section class="feature-grid">
-      <article v-for="(feature, index) in featureCards" :key="feature.title" class="feature-card app-surface">
-        <div class="feature-icon" :style="{ '--feature-tint': feature.tint }">
-          <HomeFeatureIcon :index="index" />
-        </div>
+    <section class="feature-section app-surface">
+      <div class="section-head feature-head">
         <div>
-          <h2 class="feature-title">{{ feature.title }}</h2>
-          <p class="feature-copy">{{ feature.description }}</p>
+          <h2 class="section-title feature-section-title">你可以这样开始</h2>
+          <p class="section-subtitle">首页给你方向，点进后再用完整筛选缩小范围。</p>
         </div>
-      </article>
+        <RouterLink class="section-link" to="/houses">直接进入找房页 &gt;</RouterLink>
+      </div>
+
+      <div class="feature-grid">
+        <article
+          v-for="(feature, index) in featureCards"
+          :key="feature.actionLabel"
+          class="feature-card app-surface"
+          @click="applyScenario(feature.query)"
+        >
+          <div class="feature-icon" :style="{ '--feature-tint': feature.tint }">
+            <HomeFeatureIcon :index="index" />
+          </div>
+          <button class="feature-link-button" type="button">
+            {{ feature.actionLabel }}
+          </button>
+        </article>
+      </div>
     </section>
 
     <section class="content-layout">
       <div class="listing-panel app-surface">
         <div class="section-head">
           <div>
-            <h2 class="section-title">近校精选房源</h2>
+            <h2 class="section-title">为学生优先推荐</h2>
             <p class="section-subtitle">{{ sectionTip }}</p>
           </div>
           <RouterLink class="section-link" to="/houses">查看全部 &gt;</RouterLink>
@@ -105,10 +118,17 @@
 
       <aside class="guide-panel app-surface">
         <p class="guide-kicker">新生租房指南</p>
+        <p class="guide-summary">第一次租房先看流程，再去筛房，会比直接搜索更不容易踩坑。</p>
         <ul class="guide-list">
           <li v-for="item in guideChecklist" :key="item">{{ item }}</li>
         </ul>
-        <RouterLink class="guide-action" to="/houses">立即看房</RouterLink>
+        <div class="guide-trust">
+          <span v-for="item in trustBadges" :key="item" class="guide-badge">{{ item }}</span>
+        </div>
+        <div class="guide-actions">
+          <RouterLink class="guide-action" :to="{ path: '/houses', query: { rentMode: 'SHARED' } }">先看合租</RouterLink>
+          <RouterLink class="guide-ghost-action" to="/houses">进入找房页</RouterLink>
+        </div>
         <p v-if="feed.error.value" class="guide-note">接口暂不可用，当前先展示示例房源。</p>
       </aside>
     </section>
@@ -118,7 +138,7 @@
 <script setup>
 import { computed, defineComponent, h, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchHotHousePage, fetchHouseKeywordSearch } from '@/api/house'
+import { fetchHotHousePage } from '@/api/house'
 import heroRoomImage from '@/assets/home/hero-room.jpg'
 import listingImage1 from '@/assets/home/listing-1.jpg'
 import listingImage2 from '@/assets/home/listing-2.jpg'
@@ -131,19 +151,40 @@ const searchKeyword = ref('')
 
 const presetTags = [
   { label: '近学校', keyword: '学校附近' },
-  { label: '低价优先', keyword: '低价好房' },
-  { label: '整租优先', keyword: '整租优先' },
-  { label: '可短租', keyword: '短租房源' }
+  { label: '预算 1500 内', pricePreset: '0-1500' },
+  { label: '可短租', keyword: '短租房源' },
+  { label: '地铁沿线', keyword: '地铁站附近' }
 ]
 
 const featureCards = [
-  { icon: '⌂', title: '整租 / 合租', description: '多种户型随心选', tint: '#edf4ea' },
-  { icon: '⌖', title: '地铁找房', description: '地铁周边一目了然', tint: '#eef5ea' },
-  { icon: '✦', title: '近校优选', description: '步行范围更省心', tint: '#f3f2e7' },
-  { icon: '▣', title: '低价优先', description: '预算友好好房', tint: '#f3ede6' }
+  {
+    icon: '⌂',
+    actionLabel: '看看近校房',
+    query: { keyword: '学校附近' },
+    tint: '#edf4ea'
+  },
+  {
+    icon: '⌖',
+    actionLabel: '先看低预算',
+    query: { pricePreset: '0-1500' },
+    tint: '#eef5ea'
+  },
+  {
+    icon: '✦',
+    actionLabel: '先看合租',
+    query: { rentMode: 'SHARED' },
+    tint: '#f3f2e7'
+  },
+  {
+    icon: '▣',
+    actionLabel: '看看整租',
+    query: { rentMode: 'WHOLE' },
+    tint: '#f3ede6'
+  }
 ]
 
 const guideChecklist = ['进校攻略', '合同注意事项', '入住准备清单', '租房避坑说明']
+const trustBadges = ['真实房源', '学生友好', '价格透明']
 
 const featureIconPaths = [
   [
@@ -244,8 +285,7 @@ const mockListings = [
 ]
 
 const feed = useHouseFeed({
-  hotLoader: fetchHotHousePage,
-  searchLoader: fetchHouseKeywordSearch
+  hotLoader: fetchHotHousePage
 })
 
 const displayListings = computed(() => {
@@ -269,27 +309,41 @@ const sectionTip = computed(() => {
   if (feed.resultTip.value) {
     return feed.resultTip.value
   }
-  return '步行可达大学的优质房源'
+  return '先看通勤更省心、预算更友好的精选房源'
 })
 
-async function handleSearch(keyword) {
-  if (!keyword) {
-    feed.activateHot()
-    await feed.loadNext()
-    return
-  }
-
-  feed.activateSearch(keyword)
-  await feed.loadNext()
+function buildHouseQuery(params = {}) {
+  return Object.fromEntries(
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
+  )
 }
 
 function submitSearch() {
-  handleSearch(searchKeyword.value)
+  router.push({
+    path: '/houses',
+    query: buildHouseQuery({
+      keyword: searchKeyword.value.trim()
+    })
+  })
 }
 
-function applyPreset(keyword) {
-  searchKeyword.value = keyword
-  handleSearch(keyword)
+function applyPreset(tag) {
+  searchKeyword.value = tag.keyword || ''
+  router.push({
+    path: '/houses',
+    query: buildHouseQuery({
+      keyword: tag.keyword,
+      pricePreset: tag.pricePreset,
+      rentMode: tag.rentMode
+    })
+  })
+}
+
+function applyScenario(query) {
+  router.push({
+    path: '/houses',
+    query: buildHouseQuery(query)
+  })
 }
 
 function handleListingPointerMove(event) {
@@ -547,6 +601,19 @@ onMounted(() => {
   line-height: 1.5;
 }
 
+.feature-section {
+  padding: 18px 18px 20px;
+  border: 1px solid rgba(184, 170, 146, 0.14);
+}
+
+.feature-head {
+  margin-bottom: 16px;
+}
+
+.feature-section-title {
+  font-size: 24px;
+}
+
 .feature-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -555,11 +622,24 @@ onMounted(() => {
 
 .feature-card {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  min-height: 86px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 144px;
   padding: 18px 20px;
   border: 1px solid rgba(184, 170, 146, 0.14);
+  cursor: pointer;
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease,
+    border-color 0.25s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(143, 130, 108, 0.26);
+  box-shadow: 0 18px 28px rgba(95, 72, 40, 0.08);
 }
 
 .feature-icon {
@@ -579,16 +659,16 @@ onMounted(() => {
   height: 24px;
 }
 
-.feature-title {
-  margin: 0;
-  font-size: 16px;
-  color: #37322c;
-}
-
-.feature-copy {
-  margin: 6px 0 0;
+.feature-link-button {
+  align-self: flex-start;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: #eef4e7;
+  color: #4d6b3b;
   font-size: 13px;
-  color: #9c9589;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .content-layout {
@@ -896,6 +976,13 @@ onMounted(() => {
   color: #4f7b41;
 }
 
+.guide-summary {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #746d64;
+}
+
 .guide-list {
   margin: 0;
   padding-left: 18px;
@@ -903,17 +990,57 @@ onMounted(() => {
   line-height: 1.9;
 }
 
+.guide-trust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.guide-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #f4f7ef;
+  color: #567044;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.guide-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .guide-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 92px;
+  min-width: 92px;
   height: 36px;
+  padding: 0 14px;
   border-radius: 999px;
   background: #4c6b3d;
   color: #fff;
   font-size: 13px;
   font-weight: 600;
+}
+
+.guide-ghost-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 108px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgba(108, 131, 91, 0.22);
+  border-radius: 999px;
+  color: #4c6b3d;
+  font-size: 13px;
+  font-weight: 600;
+  background: #f9fbf6;
 }
 
 .guide-note {

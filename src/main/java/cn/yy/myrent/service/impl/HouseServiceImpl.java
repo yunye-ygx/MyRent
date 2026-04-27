@@ -369,6 +369,9 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
                 if (Boolean.TRUE.equals(reqDTO.getCivilWaterElectric())) {
                     b.filter(f -> f.term(t -> t.field("civilWaterElectric").value(true)));
                 }
+                if (Boolean.TRUE.equals(reqDTO.getSupportStudentDepositFree())) {
+                    b.filter(f -> f.term(t -> t.field("supportStudentDepositFree").value(true)));
+                }
             }
             return b;
         }));
@@ -438,6 +441,7 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
                 reqDTO == null ? null : reqDTO.getPrivateBathroom(),
                 reqDTO == null ? null : reqDTO.getHasBalcony(),
                 reqDTO == null ? null : reqDTO.getCivilWaterElectric(),
+                reqDTO == null ? null : reqDTO.getSupportStudentDepositFree(),
                 offset,
                 size
         );
@@ -484,6 +488,9 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         if (Boolean.TRUE.equals(reqDTO.getCivilWaterElectric())) {
             queryWrapper.eq("civil_water_electric", 1);
         }
+        if (Boolean.TRUE.equals(reqDTO.getSupportStudentDepositFree())) {
+            queryWrapper.eq("support_student_deposit_free", 1);
+        }
         return baseMapper.selectCount(queryWrapper);
     }
 
@@ -498,6 +505,7 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         vo.setPrivateBathroom(Boolean.TRUE.equals(doc.getPrivateBathroom()));
         vo.setHasBalcony(Boolean.TRUE.equals(doc.getHasBalcony()));
         vo.setCivilWaterElectric(Boolean.TRUE.equals(doc.getCivilWaterElectric()));
+        vo.setSupportStudentDepositFree(Boolean.TRUE.equals(doc.getSupportStudentDepositFree()));
         vo.setStatus(doc.getStatus());
         if (doc.getPrice() != null) {
             BigDecimal priceYuan = BigDecimal.valueOf(doc.getPrice())
@@ -523,6 +531,8 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         vo.setPrivateBathroom(house.getPrivateBathroom() != null && house.getPrivateBathroom() == 1);
         vo.setHasBalcony(house.getHasBalcony() != null && house.getHasBalcony() == 1);
         vo.setCivilWaterElectric(house.getCivilWaterElectric() != null && house.getCivilWaterElectric() == 1);
+        vo.setSupportStudentDepositFree(house.getSupportStudentDepositFree() != null
+                && house.getSupportStudentDepositFree() == 1);
         vo.setStatus(house.getStatus());
         if (house.getPrice() != null) {
             BigDecimal priceYuan = BigDecimal.valueOf(house.getPrice())

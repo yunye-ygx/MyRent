@@ -54,6 +54,9 @@ public class House implements Serializable {
     @TableField("civil_water_electric")
     private Integer civilWaterElectric;
 
+    @TableField("support_student_deposit_free")
+    private Integer supportStudentDepositFree;
+
     @TableField("rent_type")
     private Integer rentType;
 

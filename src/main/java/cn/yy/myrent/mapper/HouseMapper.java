@@ -27,6 +27,7 @@ public interface HouseMapper extends BaseMapper<House> {
                                      @Param("privateBathroom") Boolean privateBathroom,
                                      @Param("hasBalcony") Boolean hasBalcony,
                                      @Param("civilWaterElectric") Boolean civilWaterElectric,
+                                     @Param("supportStudentDepositFree") Boolean supportStudentDepositFree,
                                      @Param("offset") Integer offset,
                                      @Param("size") Integer size);
 

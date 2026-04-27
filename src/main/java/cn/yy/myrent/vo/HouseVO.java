@@ -30,6 +30,8 @@ public class HouseVO {
 
     private Boolean civilWaterElectric;
 
+    private Boolean supportStudentDepositFree;
+
     private BigDecimal price;
 
     private BigDecimal depositAmount;

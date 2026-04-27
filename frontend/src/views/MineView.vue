@@ -14,26 +14,36 @@
           </div>
         </div>
 
-        <button class="outline-btn" type="button" @click="goProfile">编辑资料</button>
+        <div class="profile-actions">
+          <button class="outline-btn" type="button" @click="goProfile">编辑资料</button>
+          <button
+            class="outline-btn danger-btn"
+            data-testid="logout-button"
+            type="button"
+            @click="handleLogout"
+          >
+            退出登录
+          </button>
+        </div>
+
         <p v-if="profileError" class="profile-tip">{{ profileError }}</p>
       </section>
 
       <section class="benefit-card">
         <div class="benefit-copy">
-          <p class="benefit-title">待办速览</p>
+          <p class="benefit-title">学生专享权益</p>
           <div class="benefit-grid">
-            <div v-for="item in quickStats" :key="item.label" class="benefit-item">
+            <div v-for="item in benefitItems" :key="item.label" class="benefit-item">
               <div class="benefit-icon">
                 <MineIcon :name="item.icon" />
               </div>
-              <strong class="benefit-value">{{ item.value }}</strong>
               <span>{{ item.label }}</span>
             </div>
           </div>
         </div>
 
-        <button class="benefit-btn" type="button" @click="openModule('messages', '消息中心')">
-          进入消息中心
+        <button class="benefit-btn" type="button" @click="openModule('student-benefits', '学生专享权益')">
+          查看我的权益
         </button>
       </section>
     </aside>
@@ -41,9 +51,12 @@
     <section class="content-column">
       <section class="overview-panel app-surface">
         <div class="panel-head">
-          <h3 class="panel-title">我的租房管理</h3>
-          <span v-if="dashboardLoading" class="panel-caption">正在同步真实数据...</span>
+          <div>
+            <h3 class="panel-title">我的租房管理</h3>
+            <p class="panel-subtitle">把高频入口收敛到一处，减少页面内重复跳转。</p>
+          </div>
         </div>
+
         <p v-if="dashboardError" class="profile-tip">{{ dashboardError }}</p>
         <div class="overview-grid">
           <button
@@ -71,7 +84,10 @@
       <div class="detail-grid">
         <section class="task-panel app-surface">
           <div class="panel-head">
-            <h3 class="panel-title">待处理事项</h3>
+            <div>
+              <h3 class="panel-title">待处理事项</h3>
+              <p class="panel-subtitle">优先显示真正需要马上处理的消息和订单。</p>
+            </div>
           </div>
 
           <template v-if="todoItems.length">
@@ -100,14 +116,17 @@
 
           <EmptyState
             v-else
-            title="暂无待处理事项"
-            description="当前没有需要立即处理的消息或订单。"
+            title="暂时没有待处理事项"
+            description="当前没有必须立刻处理的消息或订单，你可以继续找房或管理个人资料。"
           />
         </section>
 
         <section class="service-panel app-surface">
           <div class="panel-head">
-            <h3 class="panel-title">常用服务</h3>
+            <div>
+              <h3 class="panel-title">账号与服务</h3>
+              <p class="panel-subtitle">保留账号、安全、沟通类入口，避免和订单记录重复。</p>
+            </div>
           </div>
 
           <button
@@ -152,7 +171,6 @@ const authStore = useAuthStore()
 const messageCenterStore = useMessageCenterStore()
 
 const profileError = ref('')
-const dashboardLoading = ref(false)
 const dashboardError = ref('')
 const currentUser = ref(null)
 const favoriteTotal = ref(0)
@@ -161,7 +179,7 @@ const orders = ref([])
 
 const displayName = computed(() => currentUser.value?.name || authStore.profile?.name || '未命名用户')
 const avatarText = computed(() => {
-  const name = displayName.value || '元'
+  const name = displayName.value || '我'
   return name.slice(0, 1).toUpperCase()
 })
 const phoneCopy = computed(() => `手机号 ${currentUser.value?.phone || authStore.profile?.phone || '未绑定'}`)
@@ -176,22 +194,20 @@ const chatUnreadTotal = computed(() => Number(messageCenterStore.chatUnreadTotal
 const notificationUnreadTotal = computed(() => Number(messageCenterStore.notificationUnreadTotal || 0))
 const totalUnread = computed(() => chatUnreadTotal.value + notificationUnreadTotal.value)
 const unpaidOrderCount = computed(() => orders.value.filter(isUnpaidOrder).length)
-const paidOrderCount = computed(() => orders.value.filter(isPaidOrder).length)
 const pendingReviewCount = computed(() => orders.value.filter(isPendingReviewOrder).length)
 const refundInProgressCount = computed(() => orders.value.filter(isRefundInProgressOrder).length)
 
-const quickStats = computed(() => [
-  { label: '聊天未读', value: `${chatUnreadTotal.value} 条`, icon: 'message' },
-  { label: '系统通知', value: `${notificationUnreadTotal.value} 条`, icon: 'spark' },
-  { label: '待支付', value: `${unpaidOrderCount.value} 笔`, icon: 'ticket' },
-  { label: '待评价', value: `${pendingReviewCount.value} 笔`, icon: 'document-pen' }
-])
+const benefitItems = [
+  { label: '求真找优先', icon: 'spark' },
+  { label: '专属优惠券', icon: 'ticket' },
+  { label: '免押金房源', icon: 'bag' },
+  { label: '安心保障', icon: 'shield' }
+]
 
 const overviewItems = computed(() => [
   { key: 'favorite', label: '我的收藏', value: favoriteTotal.value, unit: '套', icon: 'star' },
   { key: 'history', label: '浏览记录', value: historyTotal.value, unit: '条', icon: 'clock' },
-  { key: 'unpaid', label: '待支付订单', value: unpaidOrderCount.value, unit: '笔', icon: 'ticket' },
-  { key: 'paid', label: '已支付订单', value: paidOrderCount.value, unit: '笔', icon: 'document' }
+  { key: 'orders', label: '我的订单', value: orders.value.length, unit: '笔', icon: 'document' }
 ])
 
 const todoItems = computed(() => {
@@ -202,8 +218,8 @@ const todoItems = computed(() => {
       key: 'chat-unread',
       icon: 'message',
       title: '聊天消息待查看',
-      detail: `你有 ${chatUnreadTotal.value} 条未读聊天消息`,
-      subDetail: '建议尽快回复房东，避免错过沟通时机',
+      detail: `你有 ${chatUnreadTotal.value} 条未读聊天消息。`,
+      subDetail: '建议尽快回复房东或中介，避免错过沟通时机。',
       actionKey: 'messages',
       actionLabel: '去查看',
       hot: true
@@ -215,8 +231,8 @@ const todoItems = computed(() => {
       key: 'notification-unread',
       icon: 'spark',
       title: '系统通知待处理',
-      detail: `你有 ${notificationUnreadTotal.value} 条未读系统通知`,
-      subDetail: '预约提醒和平台通知会在消息中心统一展示',
+      detail: `你有 ${notificationUnreadTotal.value} 条未读系统通知。`,
+      subDetail: '预约提醒、订单进度和平台通知都会统一展示在消息中心。',
       actionKey: 'messages',
       actionLabel: '查看通知'
     })
@@ -227,8 +243,8 @@ const todoItems = computed(() => {
       key: 'order-unpaid',
       icon: 'ticket',
       title: '订单待支付',
-      detail: `当前共有 ${unpaidOrderCount.value} 笔待支付订单`,
-      subDetail: '尽快完成支付，避免心仪房源被其他人锁定',
+      detail: `当前共有 ${unpaidOrderCount.value} 笔待支付订单。`,
+      subDetail: '尽快完成支付，避免心仪房源被其他人锁定。',
       actionKey: 'orders',
       actionLabel: '去支付',
       hot: true
@@ -240,8 +256,8 @@ const todoItems = computed(() => {
       key: 'order-review',
       icon: 'document-pen',
       title: '订单待评价',
-      detail: `当前共有 ${pendingReviewCount.value} 笔订单待评价`,
-      subDetail: '完成评价后可沉淀真实租住体验',
+      detail: `当前共有 ${pendingReviewCount.value} 笔订单待评价。`,
+      subDetail: '完成评价后，可以帮助后续租客判断真实租住体验。',
       actionKey: 'orders',
       actionLabel: '去评价'
     })
@@ -252,8 +268,8 @@ const todoItems = computed(() => {
       key: 'order-refund',
       icon: 'document',
       title: '退款处理中',
-      detail: `当前共有 ${refundInProgressCount.value} 笔退款单处理中`,
-      subDetail: '可在订单页持续跟进退款进度',
+      detail: `当前共有 ${refundInProgressCount.value} 笔退款单处理中。`,
+      subDetail: '你可以在订单页继续跟进退款进度。',
       actionKey: 'orders',
       actionLabel: '查看订单'
     })
@@ -263,11 +279,30 @@ const todoItems = computed(() => {
 })
 
 const serviceItems = computed(() => [
-  { key: 'profile', label: '个人资料', hint: currentUser.value?.id ? `ID ${currentUser.value.id}` : '', icon: 'badge' },
-  { key: 'messages', label: '消息中心', hint: totalUnread.value > 0 ? `${totalUnread.value} 条未读` : '查看沟通', icon: 'message' },
-  { key: 'favorite', label: '我的收藏', hint: `${favoriteTotal.value} 套`, icon: 'star' },
-  { key: 'history', label: '浏览记录', hint: `${historyTotal.value} 条`, icon: 'clock' },
-  { key: 'orders', label: '我的订单', hint: `${orders.value.length} 笔`, icon: 'document' }
+  {
+    key: 'profile',
+    label: '个人资料',
+    hint: '修改昵称与基础信息',
+    icon: 'badge'
+  },
+  {
+    key: 'messages',
+    label: '消息中心',
+    hint: totalUnread.value > 0 ? `${totalUnread.value} 条未读` : '查看聊天与通知',
+    icon: 'message'
+  },
+  {
+    key: 'security',
+    label: '账号安全',
+    hint: '管理登录与隐私设置',
+    icon: 'shield'
+  },
+  {
+    key: 'support',
+    label: '帮助与反馈',
+    hint: '联系客服或提交意见',
+    icon: 'help'
+  }
 ])
 
 const iconMap = {
@@ -278,19 +313,6 @@ const iconMap = {
   bag: [
     'M6 8h12l-1 11H7L6 8z',
     'M9 8V6a3 3 0 0 1 6 0v2'
-  ],
-  calendar: [
-    'M7 4v3',
-    'M17 4v3',
-    'M5 9h14',
-    'M6 6h12a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z'
-  ],
-  'calendar-check': [
-    'M7 4v3',
-    'M17 4v3',
-    'M5 9h14',
-    'M6 6h12a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z',
-    'M9.5 14l1.7 1.7L15 12'
   ],
   clock: [
     'M12 6v6l4 2',
@@ -317,20 +339,6 @@ const iconMap = {
   ],
   message: [
     'M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v6a2.5 2.5 0 0 1-2.5 2.5H11l-4 4v-4H7.5A2.5 2.5 0 0 1 5 12.5v-6z'
-  ],
-  phone: [
-    'M8.8 5.5l2.1 3.8-1.7 1.7a14 14 0 0 0 3.8 3.8l1.7-1.7 3.8 2.1-.6 3.2a2 2 0 0 1-2 1.6C10.2 20 4 13.8 4 6.1a2 2 0 0 1 1.6-2l3.2-.6z'
-  ],
-  setting: [
-    'M12 8.7A3.3 3.3 0 1 1 8.7 12 3.3 3.3 0 0 1 12 8.7z',
-    'M12 2.5v2.1',
-    'M12 19.4v2.1',
-    'M4.9 4.9l1.5 1.5',
-    'M17.6 17.6l1.5 1.5',
-    'M2.5 12h2.1',
-    'M19.4 12h2.1',
-    'M4.9 19.1l1.5-1.5',
-    'M17.6 6.4l1.5-1.5'
   ],
   shield: [
     'M12 3l7 4v5c0 5-3.5 7.8-7 9-3.5-1.2-7-4-7-9V7l7-4z',
@@ -427,7 +435,6 @@ async function fetchAllOrders() {
 }
 
 async function loadDashboard() {
-  dashboardLoading.value = true
   dashboardError.value = ''
 
   const failedModules = []
@@ -441,22 +448,22 @@ async function loadDashboard() {
   if (favoriteResult.status === 'fulfilled') {
     favoriteTotal.value = Number(favoriteResult.value?.total || 0)
   } else {
-    failedModules.push('收藏')
     favoriteTotal.value = 0
+    failedModules.push('收藏')
   }
 
   if (historyResult.status === 'fulfilled') {
     historyTotal.value = Number(historyResult.value?.total || 0)
   } else {
-    failedModules.push('浏览记录')
     historyTotal.value = 0
+    failedModules.push('浏览记录')
   }
 
   if (orderResult.status === 'fulfilled') {
     orders.value = orderResult.value
   } else {
-    failedModules.push('订单')
     orders.value = []
+    failedModules.push('订单')
   }
 
   if (unreadResult.status !== 'fulfilled') {
@@ -464,10 +471,8 @@ async function loadDashboard() {
   }
 
   if (failedModules.length) {
-    dashboardError.value = `${failedModules.join('、')}数据暂时未同步完成，页面已展示其余真实数据。`
+    dashboardError.value = `${failedModules.join('、')}数据暂时未同步完成，页面已先展示其余可用信息。`
   }
-
-  dashboardLoading.value = false
 }
 
 function isRefundBlockingStatus(status) {
@@ -476,10 +481,6 @@ function isRefundBlockingStatus(status) {
 
 function isUnpaidOrder(order) {
   return order?.status === 0
-}
-
-function isPaidOrder(order) {
-  return order?.status === 1 && order?.latestRefundStatus === null
 }
 
 function isPendingReviewOrder(order) {
@@ -492,6 +493,14 @@ function isRefundInProgressOrder(order) {
 
 function goProfile() {
   router.push('/mine/profile')
+}
+
+function handleLogout() {
+  if (typeof window !== 'undefined' && !window.confirm('确认退出登录吗？')) {
+    return
+  }
+  authStore.logout?.()
+  router.replace('/login')
 }
 
 function openModule(key, label) {
@@ -511,8 +520,12 @@ function openModule(key, label) {
     router.push('/mine/history')
     return
   }
-  if (key === 'orders' || key === 'unpaid' || key === 'paid') {
+  if (key === 'orders' || key === 'unpaid' || key === 'review' || key === 'refund') {
     router.push('/mine/orders')
+    return
+  }
+  if (key === 'student-benefits') {
+    router.push('/mine/student-benefits')
     return
   }
   router.push(`/placeholder/${key}?title=${encodeURIComponent(label)}`)
@@ -548,7 +561,7 @@ onMounted(() => {
 }
 
 .profile-card {
-  padding: 18px;
+  padding: 20px;
 }
 
 .profile-header {
@@ -571,7 +584,9 @@ onMounted(() => {
   box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.55);
 }
 
-.profile-copy {
+.profile-copy,
+.record-copy,
+.task-copy {
   min-width: 0;
 }
 
@@ -605,15 +620,31 @@ onMounted(() => {
   font-size: 13px;
 }
 
+.profile-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.outline-btn,
+.ghost-btn,
+.task-btn {
+  border-radius: 999px;
+  cursor: pointer;
+}
+
 .outline-btn {
   width: 100%;
-  margin-top: 18px;
   border: 1px solid rgba(116, 137, 104, 0.18);
-  border-radius: 999px;
   background: #fffdf9;
   color: #657b5a;
   padding: 10px 14px;
-  cursor: pointer;
+}
+
+.danger-btn {
+  border-color: rgba(190, 88, 68, 0.18);
+  color: #ad5846;
 }
 
 .profile-tip {
@@ -650,11 +681,6 @@ onMounted(() => {
   text-align: center;
 }
 
-.benefit-value {
-  font-size: 15px;
-  line-height: 1;
-}
-
 .benefit-icon {
   width: 34px;
   height: 34px;
@@ -676,46 +702,66 @@ onMounted(() => {
   cursor: pointer;
 }
 
-.overview-panel {
+.overview-panel,
+.task-panel,
+.service-panel {
   padding: 22px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
 .panel-title {
   margin: 0;
-  font-size: 18px;
+  font-size: 20px;
   color: #2c2a20;
 }
 
-.panel-caption {
+.panel-subtitle {
+  margin: 6px 0 0;
   color: #8d8776;
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ghost-btn {
+  border: 1px solid rgba(116, 137, 104, 0.16);
+  background: #f7f4ec;
+  color: #607654;
+  padding: 10px 16px;
+  flex-shrink: 0;
 }
 
 .overview-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
-  margin-top: 18px;
 }
 
 .overview-card {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 18px 16px;
   border: 1px solid rgba(98, 120, 86, 0.12);
   border-radius: 18px;
   background: linear-gradient(180deg, #fffdf9 0%, #fbf7f0 100%);
   color: #4b4a3f;
   text-align: left;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 16px;
 }
 
 .overview-icon,
 .task-icon,
-.service-icon {
-  width: 38px;
-  height: 38px;
+.service-icon,
+.benefit-icon {
+  width: 40px;
+  height: 40px;
   border-radius: 14px;
   display: grid;
   place-items: center;
@@ -724,15 +770,14 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.overview-copy,
-.task-copy {
+.overview-copy {
   min-width: 0;
 }
 
 .overview-label {
   display: block;
-  font-size: 14px;
   color: #6b6556;
+  font-size: 14px;
 }
 
 .overview-meta {
@@ -750,20 +795,8 @@ onMounted(() => {
 
 .detail-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.9fr);
+  grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.95fr);
   gap: 18px;
-}
-
-.task-panel,
-.service-panel {
-  padding: 20px 22px;
-}
-
-.panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
 }
 
 .task-item,
@@ -820,11 +853,9 @@ onMounted(() => {
   margin-left: auto;
   flex-shrink: 0;
   border: 1px solid rgba(116, 137, 104, 0.18);
-  border-radius: 999px;
   background: #fffdf9;
   color: #677e5c;
   padding: 9px 14px;
-  cursor: pointer;
 }
 
 .service-item {
@@ -856,10 +887,7 @@ onMounted(() => {
 }
 
 @media (max-width: 1023px) {
-  .mine-dashboard {
-    grid-template-columns: 1fr;
-  }
-
+  .mine-dashboard,
   .overview-grid,
   .detail-grid {
     grid-template-columns: 1fr;
@@ -877,24 +905,6 @@ onMounted(() => {
   .content-column {
     gap: 20px;
   }
-
-  .overview-panel {
-    padding: 24px 26px;
-  }
-
-  .overview-grid {
-    gap: 16px;
-  }
-
-  .detail-grid {
-    grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.95fr);
-    gap: 20px;
-  }
-
-  .task-panel,
-  .service-panel {
-    padding: 22px 24px;
-  }
 }
 
 @media (max-width: 767px) {
@@ -906,21 +916,21 @@ onMounted(() => {
     border-radius: 20px;
   }
 
+  .profile-actions {
+    grid-template-columns: 1fr;
+  }
+
   .benefit-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .overview-card,
   .task-item {
+    flex-wrap: wrap;
     align-items: flex-start;
   }
 
-  .task-item {
-    flex-wrap: wrap;
-  }
-
   .task-btn {
-    margin-left: 52px;
+    margin-left: 54px;
   }
 }
 </style>

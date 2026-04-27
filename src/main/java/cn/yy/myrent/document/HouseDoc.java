@@ -43,6 +43,9 @@ public class HouseDoc {
     @Field(type = FieldType.Boolean)
     private Boolean civilWaterElectric;
 
+    @Field(type = FieldType.Boolean)
+    private Boolean supportStudentDepositFree;
+
     @Field(type = FieldType.Integer)
     private Integer rentType;
 

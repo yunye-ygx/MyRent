@@ -72,6 +72,7 @@ class HouseServiceImplListFilterTest {
         house.setPrivateBathroom(1);
         house.setHasBalcony(0);
         house.setCivilWaterElectric(1);
+        house.setSupportStudentDepositFree(1);
         house.setPrice(280000);
         house.setDepositAmount(100000);
         house.setStatus(1);
@@ -84,6 +85,7 @@ class HouseServiceImplListFilterTest {
         assertEquals(Boolean.TRUE, vo.getPrivateBathroom());
         assertEquals(Boolean.FALSE, vo.getHasBalcony());
         assertEquals(Boolean.TRUE, vo.getCivilWaterElectric());
+        assertEquals(Boolean.TRUE, vo.getSupportStudentDepositFree());
     }
 
     @Test
@@ -98,6 +100,7 @@ class HouseServiceImplListFilterTest {
         doc.setPrivateBathroom(true);
         doc.setHasBalcony(true);
         doc.setCivilWaterElectric(true);
+        doc.setSupportStudentDepositFree(true);
         doc.setPrice(320000);
         doc.setDepositAmount(100000);
         doc.setStatus(1);
@@ -122,6 +125,7 @@ class HouseServiceImplListFilterTest {
         reqDTO.setPrivateBathroom(true);
         reqDTO.setHasBalcony(true);
         reqDTO.setCivilWaterElectric(true);
+        reqDTO.setSupportStudentDepositFree(true);
         reqDTO.setPage(1);
         reqDTO.setSize(8);
 
@@ -132,6 +136,7 @@ class HouseServiceImplListFilterTest {
         assertEquals("\u82cf\u5dde", result.getHouses().get(0).getCity());
         assertEquals("\u59d1\u82cf", result.getHouses().get(0).getRegion());
         assertEquals(Boolean.TRUE, result.getHouses().get(0).getNearSubway());
+        assertEquals(Boolean.TRUE, result.getHouses().get(0).getSupportStudentDepositFree());
         assertEquals("ES_FILTER", result.getFallbackSource());
 
         ArgumentCaptor<NativeQuery> queryCaptor = ArgumentCaptor.forClass(NativeQuery.class);
@@ -156,6 +161,7 @@ class HouseServiceImplListFilterTest {
         assertTrue(filters.stream().anyMatch(q -> q.isTerm() && "privateBathroom".equals(q.term().field())));
         assertTrue(filters.stream().anyMatch(q -> q.isTerm() && "hasBalcony".equals(q.term().field())));
         assertTrue(filters.stream().anyMatch(q -> q.isTerm() && "civilWaterElectric".equals(q.term().field())));
+        assertTrue(filters.stream().anyMatch(q -> q.isTerm() && "supportStudentDepositFree".equals(q.term().field())));
     }
 
     @Test
@@ -174,6 +180,7 @@ class HouseServiceImplListFilterTest {
         house.setPrivateBathroom(1);
         house.setHasBalcony(1);
         house.setCivilWaterElectric(1);
+        house.setSupportStudentDepositFree(1);
         house.setPrice(320000);
         house.setDepositAmount(100000);
         house.setStatus(1);
@@ -184,6 +191,7 @@ class HouseServiceImplListFilterTest {
                 1,
                 150000,
                 350000,
+                Boolean.TRUE,
                 Boolean.TRUE,
                 Boolean.TRUE,
                 Boolean.TRUE,
@@ -203,6 +211,7 @@ class HouseServiceImplListFilterTest {
         reqDTO.setPrivateBathroom(true);
         reqDTO.setHasBalcony(true);
         reqDTO.setCivilWaterElectric(true);
+        reqDTO.setSupportStudentDepositFree(true);
         reqDTO.setPage(1);
         reqDTO.setSize(8);
 
@@ -218,6 +227,7 @@ class HouseServiceImplListFilterTest {
                 1,
                 150000,
                 350000,
+                Boolean.TRUE,
                 Boolean.TRUE,
                 Boolean.TRUE,
                 Boolean.TRUE,

@@ -68,6 +68,11 @@ const routes = [
         name: 'mine-order-review',
         component: () => import('@/views/mine/MineOrderReviewView.vue')
       },
+      {
+        path: 'mine/student-benefits',
+        name: 'mine-student-benefits',
+        component: () => import('@/views/mine/StudentBenefitsView.vue')
+      }
     ]
   },
   {

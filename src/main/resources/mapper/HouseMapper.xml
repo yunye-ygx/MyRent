@@ -37,6 +37,9 @@
           <if test="civilWaterElectric != null and civilWaterElectric">
               and civil_water_electric = 1
           </if>
+          <if test="supportStudentDepositFree != null and supportStudentDepositFree">
+              and support_student_deposit_free = 1
+          </if>
         order by create_time desc, id desc
         limit #{offset}, #{size}
     </select>

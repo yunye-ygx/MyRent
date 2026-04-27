@@ -74,6 +74,16 @@
           <button class="view-pill" type="button">地图视图</button>
         </div>
       </div>
+
+      <div v-if="studentBenefitActive" class="student-benefit-banner" data-test="student-benefit-banner">
+        <div>
+          <p class="student-benefit-banner__title">学生免押房源</p>
+          <p class="student-benefit-banner__copy">当前仅展示支持学生免押权益的房源</p>
+        </div>
+        <button class="student-benefit-banner__action" type="button" @click="clearStudentBenefit">
+          取消筛选
+        </button>
+      </div>
     </section>
 
     <section class="results-shell">
@@ -242,8 +252,8 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { fetchHouseKeywordSearch, fetchHouseListFilter } from '@/api/house'
 import { DEFAULT_CITY, HOT_CITY_OPTIONS, getRegionsByCity } from '@/config/cityFilters'
 import { useAuthStore } from '@/stores/auth'
@@ -281,6 +291,7 @@ const rentModeOptions = [
   { label: '合租', value: 'SHARED' }
 ]
 
+const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 
@@ -295,7 +306,8 @@ const filters = reactive({
   nearSubway: false,
   privateBathroom: false,
   hasBalcony: false,
-  civilWaterElectric: false
+  civilWaterElectric: false,
+  supportStudentDepositFree: false
 })
 
 const houses = ref([])
@@ -308,6 +320,8 @@ const resultMessage = ref('切换城市、区域、租金、租住方式或标�
 const currentMode = ref('filter')
 const lastFilterPayload = ref(null)
 const lastRequestKey = ref('')
+const applyingRouteFilters = ref(false)
+const skipNextAutoSearch = ref(false)
 let autoSearchTimer = null
 
 const currentCity = computed(() => authStore.currentCity || DEFAULT_CITY)
@@ -322,6 +336,7 @@ const selectedPriceOption = computed(() => priceOptions.find((item) => item.valu
 const activeFeatureLabels = computed(() =>
   featureOptions.filter((item) => filters[item.key]).map((item) => item.label)
 )
+const studentBenefitActive = computed(() => filters.supportStudentDepositFree)
 
 const filteredHouses = computed(() => houses.value)
 const displayedTotal = computed(() => {
@@ -412,9 +427,17 @@ watch(
     filters.nearSubway,
     filters.privateBathroom,
     filters.hasBalcony,
-    filters.civilWaterElectric
+    filters.civilWaterElectric,
+    filters.supportStudentDepositFree
   ],
   () => {
+    if (applyingRouteFilters.value) {
+      return
+    }
+    if (skipNextAutoSearch.value) {
+      skipNextAutoSearch.value = false
+      return
+    }
     if (filters.keyword.trim()) {
       return
     }
@@ -422,24 +445,30 @@ watch(
   }
 )
 
-watch(
-  currentCity,
-  () => {
-    if (!getRegionsByCity(currentCity.value).includes(filters.locationName)) {
-      filters.locationName = ''
-    }
-    if (filters.keyword.trim()) {
-      clearAutoSearchTimer()
-      filters.keyword = ''
-      lastRequestKey.value = ''
-    }
-    queueAutoSearch({ force: true })
+watch(currentCity, () => {
+  if (applyingRouteFilters.value) {
+    return
   }
-)
-
-onMounted(() => {
-  submitFilterSearch({ force: true })
+  if (!getRegionsByCity(currentCity.value).includes(filters.locationName)) {
+    filters.locationName = ''
+  }
+  if (filters.keyword.trim()) {
+    clearAutoSearchTimer()
+    filters.keyword = ''
+    lastRequestKey.value = ''
+  }
+  queueAutoSearch({ force: true })
 })
+
+watch(
+  () => route.query,
+  (query) => {
+    applyRouteFilters(query)
+    clearAutoSearchTimer()
+    submitFilterSearch({ force: true })
+  },
+  { immediate: true }
+)
 
 onBeforeUnmount(() => {
   clearAutoSearchTimer()
@@ -457,6 +486,45 @@ function queueAutoSearch(options = {}) {
   autoSearchTimer = setTimeout(() => {
     submitFilterSearch(options)
   }, 260)
+}
+
+function applyRouteFilters(query) {
+  applyingRouteFilters.value = true
+  skipNextAutoSearch.value = true
+
+  const city = readQueryValue(query.city)
+  if (city && city !== currentCity.value) {
+    authStore.switchCity(city)
+  }
+
+  const keyword = readQueryValue(query.keyword)
+  const locationName = readQueryValue(query.locationName)
+  const pricePreset = readQueryValue(query.pricePreset)
+  const rentMode = normalizeRentMode(readQueryValue(query.rentMode))
+
+  filters.keyword = keyword
+  filters.locationName = locationName
+  filters.pricePreset = priceOptions.some((item) => item.value === pricePreset) ? pricePreset : ''
+  filters.rentMode = rentMode
+  filters.nearSubway = readBooleanQuery(query.nearSubway)
+  filters.privateBathroom = readBooleanQuery(query.privateBathroom)
+  filters.hasBalcony = readBooleanQuery(query.hasBalcony)
+  filters.civilWaterElectric = readBooleanQuery(query.civilWaterElectric)
+  filters.supportStudentDepositFree = readQueryValue(query.studentBenefit) === 'deposit-free'
+
+  applyingRouteFilters.value = false
+}
+
+function readQueryValue(value) {
+  if (Array.isArray(value)) {
+    return String(value[0] || '').trim()
+  }
+  return String(value || '').trim()
+}
+
+function readBooleanQuery(value) {
+  const normalized = readQueryValue(value)
+  return normalized === '1' || normalized === 'true'
 }
 
 function handleCityChange(event) {
@@ -589,7 +657,8 @@ function buildFilterPayload() {
     nearSubway: filters.nearSubway,
     privateBathroom: filters.privateBathroom,
     hasBalcony: filters.hasBalcony,
-    civilWaterElectric: filters.civilWaterElectric
+    civilWaterElectric: filters.civilWaterElectric,
+    supportStudentDepositFree: filters.supportStudentDepositFree
   }
 }
 
@@ -710,6 +779,9 @@ function buildHouseTags(item) {
   if (isTruthyFlag(item?.civilWaterElectric)) {
     tags.push('\u6c11\u6c34\u6c11\u7535')
   }
+  if (isTruthyFlag(item?.supportStudentDepositFree)) {
+    tags.push('学生免押')
+  }
   return tags
 }
 
@@ -742,6 +814,25 @@ function resetFilters() {
   filters.privateBathroom = false
   filters.hasBalcony = false
   filters.civilWaterElectric = false
+  filters.supportStudentDepositFree = false
+  submitFilterSearch({ force: true })
+}
+
+function clearStudentBenefit() {
+  clearAutoSearchTimer()
+
+  if (readQueryValue(route.query.studentBenefit) === 'deposit-free') {
+    const nextQuery = { ...route.query }
+    delete nextQuery.studentBenefit
+    router.replace({ path: route.path, query: nextQuery })
+    return
+  }
+
+  if (!filters.supportStudentDepositFree) {
+    return
+  }
+
+  filters.supportStudentDepositFree = false
   submitFilterSearch({ force: true })
 }
 
@@ -876,6 +967,43 @@ function formatAmount(value) {
   margin: 0;
   color: #9aa39b;
   font-size: 12px;
+}
+
+.student-benefit-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(91, 117, 80, 0.18);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(234, 243, 228, 0.96), rgba(247, 252, 244, 0.98));
+}
+
+.student-benefit-banner__title {
+  margin: 0;
+  color: #223224;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.student-benefit-banner__copy {
+  margin: 6px 0 0;
+  color: #6f7f6d;
+  font-size: 12px;
+}
+
+.student-benefit-banner__action {
+  min-width: 92px;
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: #5b7550;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .view-switch {

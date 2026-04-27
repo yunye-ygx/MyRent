@@ -33,6 +33,7 @@ function buildHouse(id, overrides = {}) {
     privateBathroom: true,
     hasBalcony: id % 2 === 0,
     civilWaterElectric: true,
+    supportStudentDepositFree: id % 2 === 1,
     status: 1,
     ...overrides
   }
@@ -64,7 +65,8 @@ describe('HouseListView', () => {
           nearSubway: payload.nearSubway ?? true,
           privateBathroom: payload.privateBathroom ?? true,
           hasBalcony: payload.hasBalcony ?? false,
-          civilWaterElectric: payload.civilWaterElectric ?? true
+          civilWaterElectric: payload.civilWaterElectric ?? true,
+          supportStudentDepositFree: payload.supportStudentDepositFree ?? false
         })]
       })
     )
@@ -87,7 +89,7 @@ describe('HouseListView', () => {
     vi.clearAllMocks()
   })
 
-  async function mountView() {
+  async function mountView(path = '/houses') {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
@@ -96,7 +98,7 @@ describe('HouseListView', () => {
       ]
     })
 
-    router.push('/houses')
+    router.push(path)
     await router.isReady()
 
     const wrapper = mount(HouseListView, {
@@ -137,12 +139,12 @@ describe('HouseListView', () => {
     fetchHouseKeywordSearch.mockClear()
     fetchHouseListFilter.mockClear()
 
-    await wrapper.get('[data-test="house-keyword"]').setValue('豫园')
+    await wrapper.get('[data-test="house-keyword"]').setValue('豪园')
     await wrapper.get('[data-test="house-search-submit"]').trigger('click')
     await flushPromises()
 
     expect(fetchHouseKeywordSearch).toHaveBeenCalledWith({
-      keyword: '豫园',
+      keyword: '豪园',
       page: 1,
       size: 10
     })
@@ -152,7 +154,7 @@ describe('HouseListView', () => {
     await flushPromises()
 
     expect(fetchHouseKeywordSearch).toHaveBeenLastCalledWith({
-      keyword: '豫园',
+      keyword: '豪园',
       page: 2,
       size: 10
     })
@@ -161,10 +163,49 @@ describe('HouseListView', () => {
     expect(fetchHouseListFilter).not.toHaveBeenCalled()
   })
 
+  it('hydrates filters from homepage query params before requesting data', async () => {
+    await mountView('/houses?pricePreset=0-1500&rentMode=SHARED')
+
+    expect(fetchHouseListFilter).toHaveBeenCalledWith({
+      city: '广州',
+      region: '',
+      rentType: 2,
+      minPriceYuan: 0,
+      maxPriceYuan: 1500,
+      nearSubway: false,
+      privateBathroom: false,
+      hasBalcony: false,
+      civilWaterElectric: false,
+      supportStudentDepositFree: false,
+      page: 1,
+      size: 10
+    })
+  })
+
+  it('hydrates the student deposit-free route flag and requests matching houses', async () => {
+    const wrapper = await mountView('/houses?studentBenefit=deposit-free')
+
+    expect(fetchHouseListFilter).toHaveBeenCalledWith({
+      city: '广州',
+      region: '',
+      rentType: null,
+      minPriceYuan: null,
+      maxPriceYuan: null,
+      nearSubway: false,
+      privateBathroom: false,
+      hasBalcony: false,
+      civilWaterElectric: false,
+      supportStudentDepositFree: true,
+      page: 1,
+      size: 10
+    })
+    expect(wrapper.text()).toContain('学生免押')
+  })
+
   it('requests filtered data after switching city from keyword mode', async () => {
     const wrapper = await mountView()
 
-    await wrapper.get('[data-test="house-keyword"]').setValue('豫园')
+    await wrapper.get('[data-test="house-keyword"]').setValue('豪园')
     await wrapper.get('[data-test="house-search-submit"]').trigger('click')
     await flushPromises()
 
@@ -185,6 +226,7 @@ describe('HouseListView', () => {
       privateBathroom: false,
       hasBalcony: false,
       civilWaterElectric: false,
+      supportStudentDepositFree: false,
       page: 1,
       size: 10
     })
@@ -212,6 +254,7 @@ describe('HouseListView', () => {
       privateBathroom: true,
       hasBalcony: false,
       civilWaterElectric: false,
+      supportStudentDepositFree: false,
       page: 1,
       size: 10
     })
@@ -235,6 +278,7 @@ describe('HouseListView', () => {
       privateBathroom: false,
       hasBalcony: false,
       civilWaterElectric: false,
+      supportStudentDepositFree: false,
       page: 2,
       size: 10
     })
@@ -264,6 +308,7 @@ describe('HouseListView', () => {
       privateBathroom: false,
       hasBalcony: false,
       civilWaterElectric: false,
+      supportStudentDepositFree: false,
       page: 1,
       size: 10
     })

@@ -221,6 +221,8 @@ public class HouseEsSyncServiceImpl implements HouseEsSyncService {
         doc.setPrivateBathroom(house.getPrivateBathroom() != null && house.getPrivateBathroom() == 1);
         doc.setHasBalcony(house.getHasBalcony() != null && house.getHasBalcony() == 1);
         doc.setCivilWaterElectric(house.getCivilWaterElectric() != null && house.getCivilWaterElectric() == 1);
+        doc.setSupportStudentDepositFree(house.getSupportStudentDepositFree() != null
+                && house.getSupportStudentDepositFree() == 1);
         doc.setRentType(house.getRentType());
         doc.setPrice(house.getPrice());
         doc.setDepositAmount(house.getDepositAmount());

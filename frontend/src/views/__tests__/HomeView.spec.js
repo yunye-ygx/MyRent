@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import HomeView from '@/views/HomeView.vue'
 
-const activateSearch = vi.fn()
+const loadNext = vi.fn()
 
 vi.mock('@/composables/useHouseFeed', () => ({
   useHouseFeed: () => ({
@@ -12,18 +12,16 @@ vi.mock('@/composables/useHouseFeed', () => ({
     error: ref(''),
     mode: ref('hot'),
     resultTip: ref('步行可达大学的优质房源'),
-    loadNext: vi.fn(),
-    activateSearch,
-    activateHot: vi.fn()
+    loadNext
   })
 }))
 
 describe('HomeView', () => {
   beforeEach(() => {
-    activateSearch.mockReset()
+    loadNext.mockReset()
   })
 
-  it('renders the redesigned landing page shell with integrated hero media and listing guide', () => {
+  it('renders the homepage as a guidance-first landing page', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
@@ -40,11 +38,14 @@ describe('HomeView', () => {
       }
     })
 
-    expect(wrapper.text()).toContain('更适合大学生的租房方式')
-    expect(wrapper.text()).toContain('整租 / 合租')
-    expect(wrapper.text()).toContain('近校精选房源')
+    expect(wrapper.text()).toContain('先按你的方式开始找房')
+    expect(wrapper.text()).toContain('你可以这样开始')
+    expect(wrapper.text()).toContain('看看近校房')
+    expect(wrapper.text()).toContain('为学生优先推荐')
     expect(wrapper.text()).toContain('新生租房指南')
     expect(wrapper.find('.hero-media').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('首页只帮你更快开始')
+    expect(wrapper.text()).not.toContain('通勤优先')
     expect(wrapper.text()).not.toContain('Phase 1')
   })
 
@@ -71,7 +72,7 @@ describe('HomeView', () => {
     expect(pushSpy).toHaveBeenCalledWith('/house/1')
   })
 
-  it('submits keyword search through the feed search mode', async () => {
+  it('routes hero search to the house list page with keyword query', async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
@@ -80,6 +81,8 @@ describe('HomeView', () => {
         { path: '/house/:id', component: { template: '<div />' } }
       ]
     })
+
+    const pushSpy = vi.spyOn(router, 'push')
 
     const wrapper = mount(HomeView, {
       global: {
@@ -90,6 +93,11 @@ describe('HomeView', () => {
     await wrapper.get('#home-search').setValue('天河公园')
     await wrapper.get('.hero-search').trigger('submit')
 
-    expect(activateSearch).toHaveBeenCalledWith('天河公园')
+    expect(pushSpy).toHaveBeenCalledWith({
+      path: '/houses',
+      query: {
+        keyword: '天河公园'
+      }
+    })
   })
 })

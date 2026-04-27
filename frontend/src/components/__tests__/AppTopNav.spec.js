@@ -35,7 +35,7 @@ describe('AppTopNav', () => {
     }
   })
 
-  it('renders configured nav items, active state, city switcher, and profile chip', () => {
+  it('renders nav items, active state, city switcher, and profile chip outside mine page', () => {
     const wrapper = mount(AppTopNav, {
       props: {
         items: [
@@ -62,6 +62,27 @@ describe('AppTopNav', () => {
     expect(wrapper.findAll('.city-select option').map((option) => option.text())).toEqual(
       HOT_CITY_OPTIONS.map((city) => city.name)
     )
+  })
+
+  it('keeps the profile chip visible on mine page', () => {
+    const wrapper = mount(AppTopNav, {
+      props: {
+        items: [
+          { label: '首页', to: '/home' },
+          { label: '找房', to: '/houses' },
+          { label: '消息', to: '/messages' }
+        ],
+        currentPath: '/mine'
+      },
+      global: {
+        stubs: {
+          RouterLink: RouterLinkStub
+        }
+      }
+    })
+
+    expect(wrapper.find('.profile-chip').exists()).toBe(true)
+    expect(wrapper.text()).toContain('元气小圆同学')
   })
 
   it('switches current city when selecting another hot city', async () => {

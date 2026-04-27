@@ -23,6 +23,8 @@ public class HouseListFilterReqDTO {
 
     private Boolean civilWaterElectric;
 
+    private Boolean supportStudentDepositFree;
+
     private Integer page = 1;
 
     private Integer size = 8;
