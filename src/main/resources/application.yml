@@ -26,6 +26,15 @@ spring:
     uris: http://192.168.100.128:9200
     connection-timeout: 5s
     socket-timeout: 30s
+  ai:
+    openai:
+      # Spring AI uses the OpenAI-compatible client here, but the target provider is Alibaba Bailian.
+      api-key: ${BAILIAN_API_KEY:sk-4bc19b4f8af04134b52a70f8d26027da}
+      base-url: ${BAILIAN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
+      chat:
+        enabled: ${MYRENT_AI_RECOMMEND_ENABLED:true}
+        options:
+          model: ${BAILIAN_CHAT_MODEL:qwen-flash}
 
 
 knife4j:
@@ -43,3 +52,9 @@ myrent:
   jwt:
     secret: MyRentJwtSecretChangeMe
     expire-seconds: 86400
+  ai:
+    recommend:
+      enabled: ${MYRENT_AI_RECOMMEND_ENABLED:true}
+      state-ttl-hours: 48
+      history-limit: 10
+      default-budget-scope: STRICT

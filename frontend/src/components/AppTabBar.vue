@@ -1,13 +1,16 @@
 <template>
-  <nav class="tabbar grid">
+  <nav class="tabbar grid" :style="{ gridTemplateColumns: `repeat(${mobileTabItems.length}, 1fr)` }">
     <button
       v-for="item in mobileTabItems"
       :key="item.path"
       class="tab-btn"
-      :class="{ active: isActive(item.path) }"
+      :class="{ active: isActive(item.path), featured: item.featured }"
       @click="go(item.path)"
     >
-      <span class="icon">{{ item.icon }}</span>
+      <span v-if="item.icon === 'dog'" class="icon icon-dog">
+        <DogAssistantIcon />
+      </span>
+      <span v-else class="icon">{{ item.icon }}</span>
       <span class="label-row">
         <span>{{ item.label }}</span>
         <span v-if="item.path === '/messages' && messageCenterStore.totalUnread > 0" class="nav-badge">
@@ -20,6 +23,7 @@
 
 <script setup>
 import { useRoute, useRouter } from 'vue-router'
+import DogAssistantIcon from '@/components/icons/DogAssistantIcon.vue'
 import { mobileTabItems } from '@/design/site'
 import { useMessageCenterStore } from '@/stores/messageCenter'
 
@@ -41,7 +45,6 @@ function go(path) {
 
 <style scoped>
 .tabbar {
-  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
   background: rgba(255, 253, 249, 0.94);
@@ -68,10 +71,21 @@ function go(path) {
   color: var(--color-accent);
 }
 
+.tab-btn.featured.active {
+  background: #fff1dc;
+  color: #7d4d1f;
+}
+
 .icon {
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+.icon-dog {
+  width: 22px;
+  height: 22px;
+  letter-spacing: normal;
 }
 
 .label-row {

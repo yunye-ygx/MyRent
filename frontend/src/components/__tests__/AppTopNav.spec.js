@@ -35,12 +35,13 @@ describe('AppTopNav', () => {
     }
   })
 
-  it('renders nav items, active state, city switcher, and profile chip outside mine page', () => {
+  it('renders the featured ai nav item in the center list', () => {
     const wrapper = mount(AppTopNav, {
       props: {
         items: [
           { label: '首页', to: '/home' },
           { label: '找房', to: '/houses' },
+          { label: '智能推荐', to: '/ai-recommend', featured: true, icon: 'dog' },
           { label: '消息', to: '/messages' }
         ],
         currentPath: '/houses'
@@ -52,27 +53,25 @@ describe('AppTopNav', () => {
       }
     })
 
-    expect(wrapper.text()).toContain('青禾租房')
-    expect(wrapper.text()).toContain('首页')
-    expect(wrapper.text()).toContain('找房')
-    expect(wrapper.text()).toContain('南京')
-    expect(wrapper.text()).toContain('元气小圆同学')
-    expect(wrapper.text()).toContain('5')
+    expect(wrapper.text()).toContain('青年租房')
+    expect(wrapper.text()).toContain('智能推荐')
+    expect(wrapper.find('[data-nav="/ai-recommend"]').classes()).toContain('is-featured')
     expect(wrapper.get('[data-nav="/houses"]').classes()).toContain('is-active')
     expect(wrapper.findAll('.city-select option').map((option) => option.text())).toEqual(
       HOT_CITY_OPTIONS.map((city) => city.name)
     )
   })
 
-  it('keeps the profile chip visible on mine page', () => {
+  it('marks the featured ai nav item active when visiting the ai route', () => {
     const wrapper = mount(AppTopNav, {
       props: {
         items: [
           { label: '首页', to: '/home' },
           { label: '找房', to: '/houses' },
+          { label: '智能推荐', to: '/ai-recommend', featured: true, icon: 'dog' },
           { label: '消息', to: '/messages' }
         ],
-        currentPath: '/mine'
+        currentPath: '/ai-recommend'
       },
       global: {
         stubs: {
@@ -81,8 +80,7 @@ describe('AppTopNav', () => {
       }
     })
 
-    expect(wrapper.find('.profile-chip').exists()).toBe(true)
-    expect(wrapper.text()).toContain('元气小圆同学')
+    expect(wrapper.get('[data-nav="/ai-recommend"]').classes()).toContain('is-active')
   })
 
   it('switches current city when selecting another hot city', async () => {
@@ -91,6 +89,7 @@ describe('AppTopNav', () => {
         items: [
           { label: '首页', to: '/home' },
           { label: '找房', to: '/houses' },
+          { label: '智能推荐', to: '/ai-recommend', featured: true, icon: 'dog' },
           { label: '消息', to: '/messages' }
         ],
         currentPath: '/home'

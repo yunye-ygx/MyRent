@@ -29,6 +29,11 @@ const routes = [
         component: () => import('@/views/HouseListView.vue')
       },
       {
+        path: 'ai-recommend',
+        name: 'ai-recommend',
+        component: () => import('@/views/AiRecommendView.vue')
+      },
+      {
         path: 'messages',
         name: 'messages',
         component: () => import('@/views/MessagesView.vue')

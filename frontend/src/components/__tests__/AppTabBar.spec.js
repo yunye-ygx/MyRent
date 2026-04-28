@@ -1,12 +1,14 @@
 import { mount } from '@vue/test-utils'
 import AppTabBar from '@/components/AppTabBar.vue'
 
+const push = vi.fn()
+
 vi.mock('vue-router', () => ({
   useRoute: () => ({
-    path: '/home'
+    path: '/ai-recommend'
   }),
   useRouter: () => ({
-    push: vi.fn()
+    push
   })
 }))
 
@@ -17,11 +19,17 @@ vi.mock('@/stores/messageCenter', () => ({
 }))
 
 describe('AppTabBar', () => {
-  it('uses utility classes for layout and shows the unread badge on the messages tab', () => {
+  beforeEach(() => {
+    push.mockReset()
+  })
+
+  it('renders the ai tab with dog icon and active state', () => {
     const wrapper = mount(AppTabBar)
 
     expect(wrapper.classes()).toContain('grid')
-    expect(wrapper.classes()).toContain('tabbar')
-    expect(wrapper.text()).toContain('3')
+    expect(wrapper.text()).toContain('智能推荐')
+    expect(wrapper.findAll('.tab-btn')).toHaveLength(5)
+    expect(wrapper.find('.icon-dog').exists()).toBe(true)
+    expect(wrapper.findAll('.tab-btn')[2].classes()).toContain('active')
   })
 })

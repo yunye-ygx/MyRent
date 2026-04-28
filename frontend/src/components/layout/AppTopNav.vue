@@ -3,7 +3,7 @@
     <div class="brand">
       <div class="brand-mark">青</div>
       <div class="brand-copy">
-        <div class="brand-name">青禾租房</div>
+        <div class="brand-name">青年租房</div>
         <div class="brand-subtitle">城市租住消息台</div>
       </div>
     </div>
@@ -15,12 +15,23 @@
         :to="item.to"
         :data-nav="item.to"
         class="nav-link"
-        :class="{ 'is-active': currentPath.startsWith(item.to) }"
+        :class="{
+          'is-active': currentPath.startsWith(item.to),
+          'is-featured': item.featured
+        }"
       >
-        <span>{{ item.label }}</span>
-        <span v-if="isMessageItem(item) && messageCenterStore.totalUnread > 0" class="nav-badge">
-          {{ messageCenterStore.totalUnread }}
+        <span v-if="item.featured" class="featured-shell">
+          <span class="featured-icon">
+            <DogAssistantIcon />
+          </span>
+          <span class="featured-label">{{ item.label }}</span>
         </span>
+        <template v-else>
+          <span>{{ item.label }}</span>
+          <span v-if="isMessageItem(item) && messageCenterStore.totalUnread > 0" class="nav-badge">
+            {{ messageCenterStore.totalUnread }}
+          </span>
+        </template>
       </RouterLink>
     </nav>
 
@@ -48,6 +59,7 @@
 <script setup>
 import { computed, toRefs } from 'vue'
 import { HOT_CITY_OPTIONS } from '@/config/cityFilters'
+import DogAssistantIcon from '@/components/icons/DogAssistantIcon.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useMessageCenterStore } from '@/stores/messageCenter'
 
@@ -142,6 +154,7 @@ function handleCityChange(event) {
 .nav-list {
   justify-content: center;
   gap: 8px;
+  min-height: 72px;
 }
 
 .nav-link {
@@ -152,7 +165,7 @@ function handleCityChange(event) {
   color: #667085;
   font-size: 14px;
   font-weight: 600;
-  transition: color 0.2s ease, background 0.2s ease;
+  transition: color 0.2s ease, background 0.2s ease, transform 0.2s ease;
 }
 
 .nav-link:hover {
@@ -173,6 +186,48 @@ function handleCityChange(event) {
   height: 3px;
   border-radius: 999px;
   background: #8da56f;
+}
+
+.nav-link.is-featured {
+  padding: 0;
+  background: transparent;
+  transform: translateY(-10px);
+}
+
+.nav-link.is-featured:hover {
+  background: transparent;
+}
+
+.nav-link.is-featured::after {
+  display: none;
+}
+
+.featured-shell {
+  min-width: 136px;
+  display: inline-grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 12px 18px 14px;
+  border-radius: 999px 999px 22px 22px;
+  background: linear-gradient(180deg, #ffdca8 0%, #f1bb74 100%);
+  color: #5c3716;
+  border: 1px solid rgba(164, 103, 36, 0.22);
+  box-shadow: 0 16px 28px rgba(171, 110, 35, 0.18);
+}
+
+.nav-link.is-featured.is-active .featured-shell {
+  background: linear-gradient(180deg, #ffe8bf 0%, #f3c780 100%);
+  box-shadow: 0 18px 34px rgba(171, 110, 35, 0.22);
+}
+
+.featured-icon {
+  width: 30px;
+  height: 30px;
+}
+
+.featured-label {
+  font-size: 14px;
+  font-weight: 800;
 }
 
 .nav-badge {
@@ -242,6 +297,10 @@ function handleCityChange(event) {
 @media (max-width: 1280px) {
   .app-top-nav {
     gap: 18px;
+  }
+
+  .featured-shell {
+    min-width: 122px;
   }
 }
 </style>
