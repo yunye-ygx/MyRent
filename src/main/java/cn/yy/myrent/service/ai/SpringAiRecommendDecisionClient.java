@@ -14,49 +14,32 @@ import java.util.List;
 @ConditionalOnProperty(value = "spring.ai.openai.chat.enabled", havingValue = "true")
 public class SpringAiRecommendDecisionClient implements AiRecommendDecisionClient {
 
-    private static final String SYSTEM_PROMPT = """
-            你是租房推荐助手的决策层，不直接返回真实房源，只负责输出结构化决策。
-            目标：
-            1. 根据当前槽位和最近对话，判断下一步是 ASK、ADVISE 还是 SEARCH。
-            2. 当信息不足时，优先 ASK，只追问 1 到 2 个最关键的问题。
-            3. 只有在 budgetYuan、rentMode、locationName 都可用时，才允许输出 SEARCH。
-            4. ADVISE 只能给高层建议，不能假装已经查过真实房源。
-            5. slots 字段只填写你本轮能确认的新状态；未知字段保留为空或不填。
-            6. 输出必须严格符合给定 JSON 结构，不要追加解释文本。
-            """;
+    private static final String EMPTY_SUMMARY = "";
 
     private final ChatClient chatClient;
     private final ObjectMapper objectMapper;
+    private final AiRecommendPromptBundle promptBundle;
 
-    public SpringAiRecommendDecisionClient(ChatClient.Builder chatClientBuilder, ObjectMapper objectMapper) {
+    public SpringAiRecommendDecisionClient(ChatClient.Builder chatClientBuilder,
+                                           ObjectMapper objectMapper,
+                                           AiRecommendPromptLoader promptLoader) {
         this.chatClient = chatClientBuilder.build();
         this.objectMapper = objectMapper;
+        this.promptBundle = promptLoader.load();
     }
 
     @Override
     public AiRecommendDecision decide(AiRecommendSessionState sessionState, String userMessage) {
         BeanOutputConverter<AiRecommendDecision> outputConverter = new BeanOutputConverter<>(AiRecommendDecision.class);
-        String prompt = """
-                当前会话状态：
-                %s
-
-                最近对话：
-                %s
-
-                用户本轮消息：
-                %s
-
-                请直接返回结构化 JSON：
-                %s
-                """.formatted(
-                toJson(sessionState.getSlots()),
-                formatHistory(sessionState.getHistory()),
-                userMessage,
-                outputConverter.getFormat()
-        );
+        String prompt = promptBundle.userContextTemplate()
+                .replace("${slots}", toJson(sessionState.getSlots()))
+                .replace("${summary}", EMPTY_SUMMARY)
+                .replace("${recentHistory}", formatHistory(sessionState.getHistory()))
+                .replace("${userMessage}", userMessage)
+                .replace("${format}", promptBundle.outputFormatPrompt());
 
         AiRecommendDecision decision = chatClient.prompt()
-                .system(SYSTEM_PROMPT)
+                .system(promptBundle.systemPrompt())
                 .user(prompt)
                 .call()
                 .entity(outputConverter);

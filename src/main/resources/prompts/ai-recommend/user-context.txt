@@ -1,0 +1,14 @@
+Current slots:
+${slots}
+
+Session summary:
+${summary}
+
+Recent history:
+${recentHistory}
+
+Latest user message:
+${userMessage}
+
+Follow this output format exactly:
+${format}
