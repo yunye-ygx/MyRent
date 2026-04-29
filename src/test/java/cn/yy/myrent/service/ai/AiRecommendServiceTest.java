@@ -12,9 +12,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -40,7 +43,15 @@ class AiRecommendServiceTest {
 
     @BeforeEach
     void setUp() {
-        aiRecommendService = new AiRecommendServiceImpl(decisionClient, stateStore, houseService, 10, "RENT_ONLY");
+        aiRecommendService = new AiRecommendServiceImpl(
+                decisionClient,
+                stateStore,
+                houseService,
+                new AiRecommendSummaryBuilder(),
+                30,
+                6,
+                "RENT_ONLY"
+        );
     }
 
     @Test
@@ -62,22 +73,22 @@ class AiRecommendServiceTest {
         when(stateStore.loadOrCreate(1001L)).thenReturn(session);
         when(decisionClient.decide(any(AiRecommendSessionState.class), any(String.class)))
                 .thenReturn(AiRecommendDecision.builder()
-                        .reply("预算和区域再具体一点，我再继续帮你缩小范围。")
+                        .reply("Please share your budget and preferred area.")
                         .slots(AiRecommendSlots.builder()
-                                .city("上海")
+                                .city("Shanghai")
                                 .budgetScope("RENT_ONLY")
                                 .priority("COMMUTE")
-                                .preferences(List.of("近地铁"))
+                                .preferences(List.of("near subway"))
                                 .build())
                         .build());
 
-        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("我想在上海租房"));
+        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("I want to rent in Shanghai"));
 
         assertEquals("ASK", result.getAction());
         assertNull(result.getRecommendation());
-        assertEquals("上海", result.getSlots().getCity());
+        assertEquals("Shanghai", result.getSlots().getCity());
         assertEquals("COMMUTE", result.getSlots().getPriority());
-        assertEquals(List.of("近地铁"), result.getSlots().getPreferences());
+        assertEquals(List.of("near subway"), result.getSlots().getPreferences());
         verify(houseService, never()).smartGuide(any(SmartGuideReqDTO.class));
         verify(stateStore).save(any(AiRecommendSessionState.class));
     }
@@ -88,18 +99,18 @@ class AiRecommendServiceTest {
         when(stateStore.loadOrCreate(1001L)).thenReturn(session);
         when(decisionClient.decide(any(AiRecommendSessionState.class), any(String.class)))
                 .thenReturn(AiRecommendDecision.builder()
-                        .reply("如果你还没想好区域，可以先在通勤和预算之间做取舍。")
+                        .reply("I can first compare commute and budget tradeoffs for you.")
                         .slots(AiRecommendSlots.builder()
-                                .city("上海")
+                                .city("Shanghai")
                                 .budgetScope("RENT_ONLY")
                                 .priority("PRICE")
                                 .build())
                         .build());
 
-        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("先给我一点建议"));
+        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("need some advice first"));
 
-        assertEquals("ASK", result.getAction());
-        assertTrue(result.getAssistantReply().contains("取舍"));
+        assertEquals("ADVISE", result.getAction());
+        assertTrue(result.getAssistantReply().contains("tradeoffs"));
         assertNull(result.getRecommendation());
         verify(houseService, never()).smartGuide(any(SmartGuideReqDTO.class));
     }
@@ -110,32 +121,32 @@ class AiRecommendServiceTest {
         when(stateStore.loadOrCreate(1001L)).thenReturn(session);
         when(decisionClient.decide(any(AiRecommendSessionState.class), any(String.class)))
                 .thenReturn(AiRecommendDecision.builder()
-                        .reply("我先按你的条件筛一批真实房源。")
+                        .reply("I will search based on these constraints.")
                         .slots(AiRecommendSlots.builder()
-                                .city("上海")
-                                .locationName("浦东")
+                                .city("Shanghai")
+                                .locationName("Pudong")
                                 .budgetYuan(3500)
                                 .budgetScope("TOTAL")
                                 .rentMode("WHOLE")
                                 .priority("COMMUTE")
-                                .preferences(List.of("近地铁"))
+                                .preferences(List.of("near subway"))
                                 .build())
                         .build());
         SmartGuideResultVO recommendation = new SmartGuideResultVO();
-        recommendation.setTipMessage("已找到符合条件的房源。");
+        recommendation.setTipMessage("matched");
         when(houseService.smartGuide(any(SmartGuideReqDTO.class))).thenReturn(recommendation);
 
-        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("预算3500，想在浦东整租"));
+        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("budget 3500, whole rent in Pudong"));
 
         assertEquals("SEARCH", result.getAction());
         assertNotNull(result.getRecommendation());
-        assertEquals("已找到符合条件的房源。", result.getRecommendation().getTipMessage());
+        assertEquals("matched", result.getRecommendation().getTipMessage());
 
         ArgumentCaptor<SmartGuideReqDTO> captor = ArgumentCaptor.forClass(SmartGuideReqDTO.class);
         verify(houseService).smartGuide(captor.capture());
         assertEquals(Integer.valueOf(3500), captor.getValue().getBudgetYuan());
         assertEquals("WHOLE", captor.getValue().getRentMode());
-        assertEquals("浦东", captor.getValue().getLocationName());
+        assertEquals("Pudong", captor.getValue().getLocationName());
         assertEquals("TOTAL", captor.getValue().getBudgetScope());
     }
 
@@ -145,20 +156,20 @@ class AiRecommendServiceTest {
         when(stateStore.loadOrCreate(1001L)).thenReturn(session);
         when(decisionClient.decide(any(AiRecommendSessionState.class), any(String.class)))
                 .thenReturn(AiRecommendDecision.builder()
-                        .reply("我来帮你搜一下。")
+                        .reply("I can search now.")
                         .slots(AiRecommendSlots.builder()
-                                .city("上海")
+                                .city("Shanghai")
                                 .budgetYuan(3500)
                                 .budgetScope("RENT_ONLY")
                                 .rentMode("WHOLE")
                                 .build())
                         .build());
 
-        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("预算3500整租"));
+        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("budget 3500 whole rent"));
 
         assertEquals("ASK", result.getAction());
         assertNull(result.getRecommendation());
-        assertEquals("我来帮你搜一下。", result.getAssistantReply());
+        assertNotEquals("I can search now.", result.getAssistantReply());
         assertEquals(List.of("locationName"), result.getMissingSlots());
         verify(houseService, never()).smartGuide(any(SmartGuideReqDTO.class));
     }
@@ -169,18 +180,40 @@ class AiRecommendServiceTest {
         when(stateStore.loadOrCreate(1001L)).thenReturn(session);
         when(decisionClient.decide(any(AiRecommendSessionState.class), any(String.class)))
                 .thenReturn(AiRecommendDecision.builder()
-                        .reply("我先帮你整理一下条件。")
+                        .reply("Let me整理 the constraints first.")
                         .slots(AiRecommendSlots.builder()
-                                .city("上海")
+                                .city("Shanghai")
                                 .budgetYuan(4200)
                                 .budgetScope("RENT_ONLY")
                                 .rentMode("WHOLE")
                                 .build())
                         .build());
 
-        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("预算4200，整租"));
+        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("budget 4200, whole rent"));
 
         assertEquals(List.of("locationName"), result.getMissingSlots());
+    }
+
+    @Test
+    void chatShouldSendOnlyRecentSixTurnsToModelContext() {
+        AiRecommendSessionState session = AiRecommendSessionState.empty(1001L);
+        session.setHistory(IntStream.range(0, 10)
+                .mapToObj(i -> new AiRecommendTurn(i % 2 == 0 ? "user" : "assistant", "turn-" + i))
+                .toList());
+        when(stateStore.loadOrCreate(1001L)).thenReturn(session);
+        when(decisionClient.decide(any(AiRecommendSessionState.class), any(String.class)))
+                .thenAnswer(invocation -> {
+                    AiRecommendSessionState forwarded = invocation.getArgument(0);
+                    assertEquals(6, forwarded.getHistory().size());
+                    assertEquals("turn-5", forwarded.getHistory().get(0).getContent());
+                    assertEquals("hello", forwarded.getHistory().get(5).getContent());
+                    return AiRecommendDecision.builder()
+                            .reply("ok")
+                            .slots(AiRecommendSlots.builder().build())
+                            .build();
+                });
+
+        aiRecommendService.chat(1001L, req("hello"));
     }
 
     @Test
@@ -250,21 +283,21 @@ class AiRecommendServiceTest {
         when(stateStore.loadOrCreate(1001L)).thenReturn(session);
         when(decisionClient.decide(any(AiRecommendSessionState.class), any(String.class)))
                 .thenReturn(AiRecommendDecision.builder()
-                        .reply("我来帮你查房源。")
+                        .reply("I can search listings now.")
                         .slots(AiRecommendSlots.builder()
-                                .city("上海")
-                                .locationName("浦东")
+                                .city("Shanghai")
+                                .locationName("Pudong")
                                 .budgetYuan(100)
                                 .budgetScope("RENT_ONLY")
                                 .rentMode("WHOLE")
                                 .build())
                         .build());
 
-        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("预算100，浦东整租"));
+        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("budget 100, whole rent in Pudong"));
 
         assertEquals("ASK", result.getAction());
         assertTrue(result.getMissingSlots().contains("budgetYuan"));
-        assertEquals("我来帮你查房源。", result.getAssistantReply());
+        assertNotEquals("I can search listings now.", result.getAssistantReply());
         verify(houseService, never()).smartGuide(any(SmartGuideReqDTO.class));
     }
 
@@ -274,10 +307,10 @@ class AiRecommendServiceTest {
         when(stateStore.loadOrCreate(1001L)).thenReturn(session);
         when(decisionClient.decide(any(AiRecommendSessionState.class), any(String.class)))
                 .thenReturn(AiRecommendDecision.builder()
-                        .reply("我先按条件帮你查一批。")
+                        .reply("I will search with these constraints.")
                         .slots(AiRecommendSlots.builder()
-                                .city("上海")
-                                .locationName("浦东")
+                                .city("Shanghai")
+                                .locationName("Pudong")
                                 .budgetYuan(3500)
                                 .budgetScope("RENT_ONLY")
                                 .rentMode("WHOLE")
@@ -286,7 +319,7 @@ class AiRecommendServiceTest {
         when(houseService.smartGuide(any(SmartGuideReqDTO.class)))
                 .thenThrow(new RuntimeException("smart guide unavailable"));
 
-        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("预算3500，浦东整租"));
+        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("budget 3500, whole rent in Pudong"));
 
         assertEquals("ADVISE", result.getAction());
         assertNull(result.getRecommendation());
@@ -296,19 +329,122 @@ class AiRecommendServiceTest {
     }
 
     @Test
+    void chatShouldPersistSummaryAndReturnBackendGeneratedSearchAction() {
+        AiRecommendSessionState session = AiRecommendSessionState.empty(1001L);
+        when(stateStore.loadOrCreate(1001L)).thenReturn(session);
+        when(decisionClient.decide(any(AiRecommendSessionState.class), any(String.class)))
+                .thenReturn(AiRecommendDecision.builder()
+                        .reply("I have enough information now.")
+                        .slots(AiRecommendSlots.builder()
+                                .city("Shanghai")
+                                .locationName("Pudong")
+                                .budgetYuan(4200)
+                                .budgetScope("RENT_ONLY")
+                                .rentMode("WHOLE")
+                                .priority("COMMUTE")
+                                .preferences(List.of("near subway"))
+                                .build())
+                        .build());
+        when(houseService.smartGuide(any(SmartGuideReqDTO.class))).thenReturn(new SmartGuideResultVO());
+
+        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("budget 4200, whole rent in Pudong"));
+
+        assertEquals("SEARCH", result.getAction());
+
+        ArgumentCaptor<AiRecommendSessionState> stateCaptor = ArgumentCaptor.forClass(AiRecommendSessionState.class);
+        verify(stateStore).save(stateCaptor.capture());
+        assertTrue(stateCaptor.getValue().getSummary().contains("Shanghai"));
+        assertTrue(stateCaptor.getValue().getSummary().contains("Pudong"));
+        assertTrue(stateCaptor.getValue().getSummary().contains("4200"));
+    }
+
+    @Test
+    void chatShouldOverrideMisleadingModelReplyWhenSearchIsNotReady() {
+        AiRecommendSessionState session = AiRecommendSessionState.empty(1001L);
+        session.setHistory(new ArrayList<>());
+        when(stateStore.loadOrCreate(1001L)).thenReturn(session);
+        when(decisionClient.decide(any(AiRecommendSessionState.class), any(String.class)))
+                .thenReturn(AiRecommendDecision.builder()
+                        .reply("I can search listings now.")
+                        .slots(AiRecommendSlots.builder()
+                                .city("Shanghai")
+                                .budgetYuan(3600)
+                                .budgetScope("RENT_ONLY")
+                                .rentMode("WHOLE")
+                                .build())
+                        .build());
+
+        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("budget 3600 whole rent"));
+
+        assertEquals("ASK", result.getAction());
+        assertNotEquals("I can search listings now.", result.getAssistantReply());
+        assertEquals(List.of("locationName"), result.getMissingSlots());
+        verify(houseService, never()).smartGuide(any(SmartGuideReqDTO.class));
+    }
+
+    @Test
     void chatShouldFallbackToAskWhenDecisionClientThrows() {
         AiRecommendSessionState session = AiRecommendSessionState.empty(1001L);
         when(stateStore.loadOrCreate(1001L)).thenReturn(session);
         when(decisionClient.decide(any(AiRecommendSessionState.class), any(String.class)))
                 .thenThrow(new RuntimeException("ai unavailable"));
 
-        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("帮我推荐一个"));
+        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("help me choose"));
 
         assertEquals("ASK", result.getAction());
         assertNull(result.getRecommendation());
         assertNotNull(result.getAssistantReply());
         verify(houseService, never()).smartGuide(any(SmartGuideReqDTO.class));
         verify(stateStore).save(any(AiRecommendSessionState.class));
+    }
+
+    @Test
+    void chatShouldNormalizeChineseSharedRentModeFromModelOutput() {
+        AiRecommendSessionState session = AiRecommendSessionState.empty(1001L);
+        when(stateStore.loadOrCreate(1001L)).thenReturn(session);
+        when(decisionClient.decide(any(AiRecommendSessionState.class), any(String.class)))
+                .thenReturn(AiRecommendDecision.builder()
+                        .reply("我已经记下来了。")
+                        .slots(AiRecommendSlots.builder()
+                                .city("Shanghai")
+                                .locationName("Minhang")
+                                .budgetYuan(2000)
+                                .budgetScope("RENT_ONLY")
+                                .rentMode("合租")
+                                .build())
+                        .build());
+        when(houseService.smartGuide(any(SmartGuideReqDTO.class))).thenReturn(new SmartGuideResultVO());
+
+        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("闵行，预算2000，合租"));
+
+        assertEquals("SEARCH", result.getAction());
+        assertEquals("SHARED", result.getSlots().getRentMode());
+
+        ArgumentCaptor<SmartGuideReqDTO> captor = ArgumentCaptor.forClass(SmartGuideReqDTO.class);
+        verify(houseService).smartGuide(captor.capture());
+        assertEquals("SHARED", captor.getValue().getRentMode());
+    }
+
+    @Test
+    void chatShouldReturnReadableMissingSlotLabelsWhenRentModeIsMissing() {
+        AiRecommendSessionState session = AiRecommendSessionState.empty(1001L);
+        when(stateStore.loadOrCreate(1001L)).thenReturn(session);
+        when(decisionClient.decide(any(AiRecommendSessionState.class), any(String.class)))
+                .thenReturn(AiRecommendDecision.builder()
+                        .reply("I can search now.")
+                        .slots(AiRecommendSlots.builder()
+                                .city("Shanghai")
+                                .locationName("Minhang")
+                                .budgetYuan(2200)
+                                .budgetScope("RENT_ONLY")
+                                .build())
+                        .build());
+
+        AiRecommendChatVO result = aiRecommendService.chat(1001L, req("闵行，预算2200"));
+
+        assertEquals("ASK", result.getAction());
+        assertEquals(List.of("rentMode"), result.getMissingSlots());
+        assertTrue(result.getAssistantReply().contains("整租/合租"));
     }
 
     @Test

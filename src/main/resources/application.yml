@@ -56,5 +56,6 @@ myrent:
     recommend:
       enabled: ${MYRENT_AI_RECOMMEND_ENABLED:true}
       state-ttl-hours: 48
-      history-limit: 10
+      history-limit: 30
+      prompt-history-limit: 6
       default-budget-scope: STRICT

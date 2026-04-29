@@ -21,7 +21,7 @@ describe('AiRecommendView', () => {
     fetchAiRecommendSession.mockResolvedValue({
       sessionId: 'ai-u1001',
       action: 'ASK',
-      assistantReply: '先告诉我你的预算或更在意通勤还是价格。',
+      assistantReply: '先告诉我你的预算，或者你更在意通勤还是价格。',
       slots: {
         city: '上海',
         budgetScope: 'RENT_ONLY'

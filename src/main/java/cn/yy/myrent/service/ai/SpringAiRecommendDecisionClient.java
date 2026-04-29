@@ -14,8 +14,6 @@ import java.util.List;
 @ConditionalOnProperty(value = "spring.ai.openai.chat.enabled", havingValue = "true")
 public class SpringAiRecommendDecisionClient implements AiRecommendDecisionClient {
 
-    private static final String EMPTY_SUMMARY = "";
-
     private final ChatClient chatClient;
     private final ObjectMapper objectMapper;
     private final AiRecommendPromptBundle promptBundle;
@@ -33,10 +31,10 @@ public class SpringAiRecommendDecisionClient implements AiRecommendDecisionClien
         BeanOutputConverter<AiRecommendDecision> outputConverter = new BeanOutputConverter<>(AiRecommendDecision.class);
         String prompt = promptBundle.userContextTemplate()
                 .replace("${slots}", toJson(sessionState.getSlots()))
-                .replace("${summary}", EMPTY_SUMMARY)
+                .replace("${summary}", safeText(sessionState.getSummary()))
                 .replace("${recentHistory}", formatHistory(sessionState.getHistory()))
                 .replace("${userMessage}", userMessage)
-                .replace("${format}", promptBundle.outputFormatPrompt());
+                .replace("${format}", promptBundle.outputFormatPrompt() + "\n" + outputConverter.getFormat());
 
         AiRecommendDecision decision = chatClient.prompt()
                 .system(promptBundle.systemPrompt())
@@ -65,5 +63,9 @@ public class SpringAiRecommendDecisionClient implements AiRecommendDecisionClien
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("serialize ai recommend context failed", ex);
         }
+    }
+
+    private String safeText(String text) {
+        return text == null ? "" : text;
     }
 }

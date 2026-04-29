@@ -22,7 +22,7 @@
         <dd>{{ rentModeText }}</dd>
       </div>
       <div class="summary-item">
-        <dt>优先级</dt>
+        <dt>优先项</dt>
         <dd>{{ priorityText }}</dd>
       </div>
       <div class="summary-item">
@@ -66,7 +66,7 @@ const budgetText = computed(() => {
   if (!props.slots?.budgetYuan) {
     return '待补充'
   }
-  return `${props.slots.budgetYuan} 元 / 月`
+  return `${props.slots.budgetYuan} 元/月`
 })
 
 const rentModeText = computed(() => {

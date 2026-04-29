@@ -33,7 +33,7 @@
         </div>
       </article>
     </div>
-    <p v-else class="recommend-empty">暂时还没有可以展示的房源结果。</p>
+    <p v-else class="recommend-empty">暂时还没有可展示的房源结果。</p>
   </section>
 </template>
 

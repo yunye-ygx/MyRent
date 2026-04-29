@@ -27,18 +27,24 @@ public class AiRecommendServiceImpl implements AiRecommendService {
     private final AiRecommendDecisionClient decisionClient;
     private final AiRecommendStateStore stateStore;
     private final IHouseService houseService;
+    private final AiRecommendSummaryBuilder summaryBuilder;
     private final int historyLimit;
+    private final int promptHistoryLimit;
     private final String defaultBudgetScope;
 
     public AiRecommendServiceImpl(AiRecommendDecisionClient decisionClient,
                                   AiRecommendStateStore stateStore,
                                   IHouseService houseService,
+                                  AiRecommendSummaryBuilder summaryBuilder,
                                   @Value("${myrent.ai.recommend.history-limit:10}") int historyLimit,
+                                  @Value("${myrent.ai.recommend.prompt-history-limit:6}") int promptHistoryLimit,
                                   @Value("${myrent.ai.recommend.default-budget-scope:RENT_ONLY}") String defaultBudgetScope) {
         this.decisionClient = decisionClient;
         this.stateStore = stateStore;
         this.houseService = houseService;
+        this.summaryBuilder = summaryBuilder;
         this.historyLimit = historyLimit;
+        this.promptHistoryLimit = promptHistoryLimit;
         this.defaultBudgetScope = normalizeBudgetScope(defaultBudgetScope);
     }
 
@@ -46,9 +52,9 @@ public class AiRecommendServiceImpl implements AiRecommendService {
     public AiRecommendChatVO getOrCreateSession(Long userId) {
         AiRecommendSessionState state = normalizeState(stateStore.loadOrCreate(userId), userId);
         if (state.getHistory().isEmpty()) {
-            String opening = "鍏堝憡璇夋垜浣犵殑棰勭畻銆佹兂鏁寸杩樻槸鍚堢锛屾垨鑰呬綘鐩墠鏇村湪鎰忓摢涓尯鍩熷拰閫氬嫟銆?";
-
-            appendAssistant(state, opening); //鍒濆鍖杊istory
+            String opening = "你好，可以先告诉我预算、区域、整租/合租，或者直接说你想找什么样的房子。";
+            appendAssistant(state, opening);
+            state.setSummary(summaryBuilder.build(state.getSlots(), buildMissingSlots(state.getSlots())));
             stateStore.save(state);
             return toChatVO(state, "ASK", opening, buildMissingSlots(state.getSlots()), null);
         }
@@ -63,7 +69,7 @@ public class AiRecommendServiceImpl implements AiRecommendService {
 
         AiRecommendDecision decision;
         try {
-            decision = decisionClient.decide(state, message);
+            decision = decisionClient.decide(buildPromptState(state), message);
         } catch (Exception ex) {
             decision = fallbackDecision(state.getSlots());
         }
@@ -76,8 +82,9 @@ public class AiRecommendServiceImpl implements AiRecommendService {
         state.setSlots(mergedSlots);
 
         List<String> missingSlots = buildMissingSlots(mergedSlots);
+        state.setSummary(summaryBuilder.build(mergedSlots, missingSlots));
         SmartGuideResultVO recommendation = null;
-        String action = missingSlots.isEmpty() ? "SEARCH" : "ASK";
+        String action = deriveAction(mergedSlots, message, missingSlots);
         String assistantReply = normalizeReply(decision.getReply(), "SEARCH".equals(action));
 
         if ("SEARCH".equals(action)) {
@@ -85,8 +92,12 @@ public class AiRecommendServiceImpl implements AiRecommendService {
                 recommendation = houseService.smartGuide(buildSmartGuideReq(mergedSlots));
             } catch (Exception ex) {
                 action = "ADVISE";
-                assistantReply = "鎴戝垰鎵嶆煡璇㈢湡瀹炴埧婧愭椂鍑轰簡鐐归棶棰樸€備綘鍙互绋嶅悗鍐嶈瘯锛屾垨鑰呭厛鎹竴涓尯鍩熴€侀绠楀尯闂达紝鎴戠户缁府浣犵缉灏忚寖鍥淬€?";
+                assistantReply = "我先记下你的条件了，不过刚才查询房源时出了点问题。你可以稍后再试，或者继续补充偏好，我先帮你整理需求。";
             }
+        } else if ("ASK".equals(action)) {
+            assistantReply = ensureAskReply(assistantReply, missingSlots, mergedSlots);
+        } else {
+            assistantReply = ensureAdviseReply(assistantReply, mergedSlots);
         }
 
         appendAssistant(state, assistantReply);
@@ -99,15 +110,16 @@ public class AiRecommendServiceImpl implements AiRecommendService {
         stateStore.reset(userId);
         AiRecommendSessionState state = AiRecommendSessionState.empty(userId);
         state.setSlots(normalizeSlots(state.getSlots()));
-        String opening = "鎴戜滑閲嶆柊寮€濮嬨€備綘鍏堣ˉ鍏呴绠椼€佸尯鍩熷拰鏁寸/鍚堢鍋忓ソ銆?";
+        String opening = "已经帮你重新开始了。你可以直接告诉我预算、区域、整租/合租。";
         appendAssistant(state, opening);
+        state.setSummary(summaryBuilder.build(state.getSlots(), buildMissingSlots(state.getSlots())));
         stateStore.save(state);
         return toChatVO(state, "ASK", opening, buildMissingSlots(state.getSlots()), null);
     }
 
     private AiRecommendDecision fallbackDecision(AiRecommendSlots slots) {
         return AiRecommendDecision.builder()
-                .reply("鎴戣繖杈规殏鏃舵病娉曠ǔ瀹氬垽鏂紝浣犲厛琛ュ厖棰勭畻銆佸尯鍩熷拰鏁寸/鍚堢淇℃伅锛屾垜缁х画甯綘鏀舵暃鏉′欢銆?")
+                .reply("我先继续帮你整理条件。你可以补充预算、区域，或者告诉我是整租还是合租。")
                 .slots(slots)
                 .build();
     }
@@ -123,6 +135,9 @@ public class AiRecommendServiceImpl implements AiRecommendService {
         resolved.setSlots(normalizeSlots(resolved.getSlots()));
         if (resolved.getHistory() == null) {
             resolved.setHistory(new ArrayList<>());
+        }
+        if (resolved.getSummary() == null) {
+            resolved.setSummary("");
         }
         resolved.setHistory(trimHistory(resolved.getHistory()));
         return resolved;
@@ -171,6 +186,29 @@ public class AiRecommendServiceImpl implements AiRecommendService {
             missing.add("locationName");
         }
         return missing;
+    }
+
+    private String deriveAction(AiRecommendSlots slots, String userMessage, List<String> missingSlots) {
+        if (missingSlots.isEmpty()) {
+            return "SEARCH";
+        }
+        if (shouldAdviseInsteadOfAsk(userMessage)) {
+            return "ADVISE";
+        }
+        return "ASK";
+    }
+
+    private boolean shouldAdviseInsteadOfAsk(String userMessage) {
+        if (!StringUtils.hasText(userMessage)) {
+            return false;
+        }
+        String normalized = userMessage.replace(" ", "").toLowerCase(Locale.ROOT);
+        return normalized.contains("建议")
+                || normalized.contains("怎么选")
+                || normalized.contains("没想好")
+                || normalized.contains("先聊")
+                || normalized.contains("advice")
+                || normalized.contains("suggest");
     }
 
     private SmartGuideReqDTO buildSmartGuideReq(AiRecommendSlots slots) {
@@ -223,6 +261,16 @@ public class AiRecommendServiceImpl implements AiRecommendService {
         state.setHistory(trimHistory(history));
     }
 
+    private AiRecommendSessionState buildPromptState(AiRecommendSessionState state) {
+        return AiRecommendSessionState.builder()
+                .userId(state.getUserId())
+                .sessionId(state.getSessionId())
+                .summary(state.getSummary())
+                .slots(state.getSlots())
+                .history(trimPromptHistory(state.getHistory()))
+                .build();
+    }
+
     private List<AiRecommendTurn> trimHistory(List<AiRecommendTurn> history) {
         int limit = Math.max(historyLimit, 1);
         if (history.size() <= limit) {
@@ -231,25 +279,80 @@ public class AiRecommendServiceImpl implements AiRecommendService {
         return new ArrayList<>(history.subList(history.size() - limit, history.size()));
     }
 
+    private List<AiRecommendTurn> trimPromptHistory(List<AiRecommendTurn> history) {
+        List<AiRecommendTurn> safeHistory = history == null ? new ArrayList<>() : history;
+        int limit = Math.max(promptHistoryLimit, 1);
+        if (safeHistory.size() <= limit) {
+            return new ArrayList<>(safeHistory);
+        }
+        return new ArrayList<>(safeHistory.subList(safeHistory.size() - limit, safeHistory.size()));
+    }
+
     private String normalizeReply(String reply, boolean searchReady) {
         if (StringUtils.hasText(reply)) {
             return reply.trim();
         }
         if (searchReady) {
-            return "浣犲彲浠ュ厛鍛婅瘔鎴戞洿鍦ㄦ剰棰勭畻銆侀€氬嫟杩樻槸灞呬綇璐ㄩ噺锛屾垜鍐嶇粰浣犳洿鍏蜂綋鐨勫缓璁€?";
+            return "条件已经齐了，我现在开始帮你查找房源。";
         }
-        return "鍏堣ˉ鍏呴绠椼€佸尯鍩熷拰鏁寸/鍚堢淇℃伅锛屾垜鍐嶇户缁府浣犲垽鏂€?";
+        return "我先帮你整理需求。你可以继续补充预算、区域，或者告诉我是整租还是合租。";
+    }
+
+    private String ensureAskReply(String reply, List<String> missingSlots, AiRecommendSlots slots) {
+        if (!StringUtils.hasText(reply) || looksLikeSearchCommitment(reply)) {
+            return buildSearchBlockedReply(missingSlots, slots);
+        }
+        return reply.trim();
+    }
+
+    private String ensureAdviseReply(String reply, AiRecommendSlots slots) {
+        if (!StringUtils.hasText(reply) || looksLikeSearchCommitment(reply)) {
+            return buildAdviseReply(slots);
+        }
+        return reply.trim();
+    }
+
+    private boolean looksLikeSearchCommitment(String reply) {
+        if (!StringUtils.hasText(reply)) {
+            return false;
+        }
+        String normalized = reply.replace(" ", "").toLowerCase(Locale.ROOT);
+        return normalized.contains("search")
+                || normalized.contains("listing")
+                || normalized.contains("find")
+                || normalized.contains("搜")
+                || normalized.contains("查")
+                || normalized.contains("房源")
+                || normalized.contains("匹配");
     }
 
     private String buildDowngradeReply(List<String> missingSlots, AiRecommendSlots slots) {
         if (missingSlots.contains("budgetYuan") && slots.getBudgetYuan() != null && !isBudgetUsable(slots.getBudgetYuan())) {
-            return "涓轰簡缁х画绛涚湡瀹炴埧婧愶紝鎴戣繕闇€瑕佷綘纭涓€涓悎鐞嗙殑鏈堥绠楋紝褰撳墠寤鸿濉啓 300 鍒?50000 鍏冧箣闂淬€?";
+            return "你给的预算目前不在可用范围内，请给我一个 300 到 50000 之间的月租预算。";
         }
 
         List<String> labels = missingSlots.stream()
                 .map(this::toSlotLabel)
                 .toList();
-        return "瑕佸紑濮嬫煡鐪熷疄鎴挎簮锛岃繕宸繖浜涘叧閿俊鎭細" + String.join("銆?", labels) + "銆?";
+        return "条件还不够完整，我先不查房。你还可以继续补充 " + String.join("、", labels) + "。";
+    }
+
+    private String buildSearchBlockedReply(List<String> missingSlots, AiRecommendSlots slots) {
+        if (missingSlots.contains("budgetYuan") && slots.getBudgetYuan() != null && !isBudgetUsable(slots.getBudgetYuan())) {
+            return "你给的预算目前不在可用范围内，请给我一个 300 到 50000 之间的月租预算。";
+        }
+
+        List<String> labels = missingSlots.stream()
+                .map(this::toSlotLabel)
+                .toList();
+        return "我还不能开始查房，还差 " + String.join("、", labels) + "。";
+    }
+
+    private String buildAdviseReply(AiRecommendSlots slots) {
+        String rentModeHint = slots != null && StringUtils.hasText(slots.getRentMode())
+                ? slots.getRentMode()
+                : "整租/合租";
+        return "可以先不查房源，我先根据你的偏好给你一些方向建议。你更在意通勤、预算，还是 " + rentModeHint + " 呢？";
     }
 
     private String latestAssistantReply(AiRecommendSessionState state) {
@@ -260,7 +363,7 @@ public class AiRecommendServiceImpl implements AiRecommendService {
                 return turn.getContent();
             }
         }
-        return "鍏堝憡璇夋垜浣犵殑棰勭畻銆佹兂鏁寸杩樻槸鍚堢锛屾垨鑰呬綘鐩墠鏇村湪鎰忓摢涓尯鍩熷拰閫氬嫟銆?";
+        return "你好，可以先告诉我预算、区域、整租/合租，或者直接说你想找什么样的房子。";
     }
 
     private String normalizeBudgetScope(String value) {
@@ -284,10 +387,10 @@ public class AiRecommendServiceImpl implements AiRecommendService {
             return "SHARED";
         }
         String compact = trimmed.replace(" ", "").toLowerCase(Locale.ROOT);
-        if (compact.contains("鏁寸") || compact.contains("whole") || compact.contains("entire")) {
+        if (compact.contains("整租") || compact.contains("whole") || compact.contains("entire")) {
             return "WHOLE";
         }
-        if (compact.contains("鍚堢") || compact.contains("shared") || compact.contains("roommate")) {
+        if (compact.contains("合租") || compact.contains("shared") || compact.contains("roommate")) {
             return "SHARED";
         }
         return null;
@@ -314,9 +417,9 @@ public class AiRecommendServiceImpl implements AiRecommendService {
 
     private String toSlotLabel(String slot) {
         return switch (slot) {
-            case "budgetYuan" -> "棰勭畻";
-            case "rentMode" -> "鏁寸/鍚堢";
-            case "locationName" -> "鍖哄煙";
+            case "budgetYuan" -> "预算";
+            case "rentMode" -> "整租/合租";
+            case "locationName" -> "区域";
             default -> slot;
         };
     }

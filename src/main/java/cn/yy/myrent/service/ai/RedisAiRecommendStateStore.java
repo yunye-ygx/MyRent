@@ -17,51 +17,43 @@ import java.util.List;
 @ConditionalOnProperty(value = "myrent.ai.recommend.enabled", havingValue = "true")
 public class RedisAiRecommendStateStore implements AiRecommendStateStore {
 
+    private static final int STORED_HISTORY_LIMIT = 30;
+
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
     private final Duration ttl;
-    private final int historyLimit;
 
     @Autowired
     public RedisAiRecommendStateStore(StringRedisTemplate stringRedisTemplate,
                                       ObjectMapper objectMapper,
-                                      @Value("${myrent.ai.recommend.state-ttl-hours:48}") long ttlHours,
-                                      @Value("${myrent.ai.recommend.history-limit:10}") int historyLimit) {
-        this(stringRedisTemplate, objectMapper, Duration.ofHours(ttlHours), historyLimit);
+                                      @Value("${myrent.ai.recommend.state-ttl-hours:48}") long ttlHours) {
+        this(stringRedisTemplate, objectMapper, Duration.ofHours(ttlHours));
     }
 
     RedisAiRecommendStateStore(StringRedisTemplate stringRedisTemplate,
                                ObjectMapper objectMapper,
                                Duration ttl) {
-        this(stringRedisTemplate, objectMapper, ttl, 10);
-    }
-
-    RedisAiRecommendStateStore(StringRedisTemplate stringRedisTemplate,
-                               ObjectMapper objectMapper,
-                               Duration ttl,
-                               int historyLimit) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.objectMapper = objectMapper;
         this.ttl = ttl;
-        this.historyLimit = historyLimit;
     }
 
     @Override
     public AiRecommendSessionState loadOrCreate(Long userId) {
         try {
-            String stateJson = stringRedisTemplate.opsForValue().get(stateKey(userId));
+            String slotsJson = stringRedisTemplate.opsForValue().get(slotsKey(userId));
             String historyJson = stringRedisTemplate.opsForValue().get(historyKey(userId));
-            LoadedState loadedState = readState(userId, stateJson);
-            if (loadedState == null || loadedState.state() == null) {
-                return AiRecommendSessionState.empty(userId);
+            String summaryText = stringRedisTemplate.opsForValue().get(summaryKey(userId));
+            if (!StringUtils.hasText(slotsJson)
+                    && !StringUtils.hasText(historyJson)
+                    && !StringUtils.hasText(summaryText)) {
+                return loadLegacyOrEmpty(userId);
             }
-            AiRecommendSessionState state = loadedState.state();
-            if (loadedState.canUseStandaloneHistory()
-                    && (state.getHistory() == null || state.getHistory().isEmpty())
-                    && StringUtils.hasText(historyJson)) {
-                state.setHistory(readHistory(historyJson));
-            }
-            state.setHistory(trimHistory(state.getHistory()));
+
+            AiRecommendSessionState state = AiRecommendSessionState.empty(userId);
+            state.setSlots(readSlots(slotsJson, state.getSlots()));
+            state.setHistory(trimHistory(readHistory(historyJson)));
+            state.setSummary(StringUtils.hasText(summaryText) ? summaryText : "");
             return state;
         } catch (Exception ex) {
             return AiRecommendSessionState.empty(userId);
@@ -73,18 +65,14 @@ public class RedisAiRecommendStateStore implements AiRecommendStateStore {
         Long userId = resolveUserId(state);
         try {
             List<AiRecommendTurn> trimmedHistory = trimHistory(state.getHistory());
-            AiRecommendSessionState stateToSave = AiRecommendSessionState.builder()
-                    .userId(userId)
-                    .sessionId(StringUtils.hasText(state.getSessionId())
-                            ? state.getSessionId()
-                            : AiRecommendSessionState.buildSessionId(userId))
-                    .slots(state.getSlots() == null
-                            ? AiRecommendSlots.builder().preferences(new ArrayList<>()).build()
-                            : state.getSlots())
-                    .history(trimmedHistory)
-                    .build();
-            stringRedisTemplate.opsForValue().set(stateKey(userId), objectMapper.writeValueAsString(stateToSave), ttl);
+            AiRecommendSlots slotsToSave = state.getSlots() == null
+                    ? AiRecommendSlots.builder().preferences(new ArrayList<>()).build()
+                    : state.getSlots();
+            String summaryToSave = state.getSummary() == null ? "" : state.getSummary();
+
+            stringRedisTemplate.opsForValue().set(slotsKey(userId), objectMapper.writeValueAsString(slotsToSave), ttl);
             stringRedisTemplate.opsForValue().set(historyKey(userId), objectMapper.writeValueAsString(trimmedHistory), ttl);
+            stringRedisTemplate.opsForValue().set(summaryKey(userId), summaryToSave, ttl);
         } catch (Exception ex) {
             throw new IllegalStateException("failed to save ai recommend state", ex);
         }
@@ -92,8 +80,10 @@ public class RedisAiRecommendStateStore implements AiRecommendStateStore {
 
     @Override
     public void reset(Long userId) {
-        stringRedisTemplate.delete(stateKey(userId));
+        stringRedisTemplate.delete(slotsKey(userId));
         stringRedisTemplate.delete(historyKey(userId));
+        stringRedisTemplate.delete(summaryKey(userId));
+        stringRedisTemplate.delete(stateKey(userId));
     }
 
     private Long resolveUserId(AiRecommendSessionState state) {
@@ -107,17 +97,29 @@ public class RedisAiRecommendStateStore implements AiRecommendStateStore {
         throw new IllegalArgumentException("userId is required");
     }
 
-    private LoadedState readState(Long userId, String stateJson) throws Exception {
-        if (!StringUtils.hasText(stateJson)) {
-            return null;
+    private AiRecommendSlots readSlots(String slotsJson, AiRecommendSlots fallbackSlots) throws Exception {
+        if (!StringUtils.hasText(slotsJson)) {
+            return fallbackSlots;
+        }
+        AiRecommendSlots slots = objectMapper.readValue(slotsJson, AiRecommendSlots.class);
+        return slots == null ? fallbackSlots : slots;
+    }
+
+    private AiRecommendSessionState loadLegacyOrEmpty(Long userId) throws Exception {
+        String legacyStateJson = stringRedisTemplate.opsForValue().get(stateKey(userId));
+        if (!StringUtils.hasText(legacyStateJson)) {
+            return AiRecommendSessionState.empty(userId);
         }
         try {
-            AiRecommendSessionState state = objectMapper.readValue(stateJson, AiRecommendSessionState.class);
+            AiRecommendSessionState state = objectMapper.readValue(legacyStateJson, AiRecommendSessionState.class);
             if (state.getUserId() == null) {
                 state.setUserId(userId);
             }
             if (!StringUtils.hasText(state.getSessionId())) {
                 state.setSessionId(AiRecommendSessionState.buildSessionId(userId));
+            }
+            if (state.getSummary() == null) {
+                state.setSummary("");
             }
             if (state.getSlots() == null) {
                 state.setSlots(AiRecommendSlots.builder().preferences(new ArrayList<>()).build());
@@ -125,16 +127,20 @@ public class RedisAiRecommendStateStore implements AiRecommendStateStore {
             if (state.getHistory() == null) {
                 state.setHistory(new ArrayList<>());
             }
-            return new LoadedState(state, true);
+            state.setHistory(trimHistory(state.getHistory()));
+            return state;
         } catch (Exception ex) {
-            AiRecommendSlots slots = objectMapper.readValue(stateJson, AiRecommendSlots.class);
+            AiRecommendSlots slots = objectMapper.readValue(legacyStateJson, AiRecommendSlots.class);
             AiRecommendSessionState state = AiRecommendSessionState.empty(userId);
             state.setSlots(slots == null ? state.getSlots() : slots);
-            return new LoadedState(state, false);
+            return state;
         }
     }
 
     private List<AiRecommendTurn> readHistory(String historyJson) throws Exception {
+        if (!StringUtils.hasText(historyJson)) {
+            return new ArrayList<>();
+        }
         List<AiRecommendTurn> history = objectMapper.readValue(historyJson, new TypeReference<List<AiRecommendTurn>>() {
         });
         return history == null ? new ArrayList<>() : history;
@@ -142,11 +148,15 @@ public class RedisAiRecommendStateStore implements AiRecommendStateStore {
 
     private List<AiRecommendTurn> trimHistory(List<AiRecommendTurn> history) {
         List<AiRecommendTurn> safeHistory = history == null ? new ArrayList<>() : history;
-        int limit = Math.max(historyLimit, 1);
+        int limit = STORED_HISTORY_LIMIT;
         if (safeHistory.size() <= limit) {
             return new ArrayList<>(safeHistory);
         }
         return new ArrayList<>(safeHistory.subList(safeHistory.size() - limit, safeHistory.size()));
+    }
+
+    private String slotsKey(Long userId) {
+        return "ai:recommend:slots:" + userId;
     }
 
     private String stateKey(Long userId) {
@@ -157,6 +167,7 @@ public class RedisAiRecommendStateStore implements AiRecommendStateStore {
         return "ai:recommend:history:" + userId;
     }
 
-    private record LoadedState(AiRecommendSessionState state, boolean canUseStandaloneHistory) {
+    private String summaryKey(Long userId) {
+        return "ai:recommend:summary:" + userId;
     }
 }

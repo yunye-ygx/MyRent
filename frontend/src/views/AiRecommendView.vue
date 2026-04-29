@@ -6,7 +6,7 @@
       </div>
       <div class="hero-copy">
         <p class="hero-eyebrow">智能推荐</p>
-        <h1>先聊天，再收敛需求，再查真实房源</h1>
+        <h1>先聊天，收集需求，再查真实房源</h1>
         <p class="hero-text">
           你可以先说预算、区域、整租/合租，也可以只说“我想在上海租房”。信息不够时，它会继续追问；条件够用时，它才去查真实房源。
         </p>
@@ -221,18 +221,18 @@ function openHouse(houseId) {
 }
 
 .hero-text {
-  margin: 12px 0 0;
+  margin: 10px 0 0;
   color: var(--color-text-muted);
-  max-width: 720px;
+  line-height: 1.7;
 }
 
 .hero-reset {
-  justify-self: end;
+  align-self: start;
 }
 
 .ai-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.72fr);
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.9fr);
   gap: 16px;
   align-items: start;
 }
@@ -245,11 +245,7 @@ function openHouse(houseId) {
 
 .chat-head {
   display: grid;
-  gap: 6px;
-}
-
-.chat-head .section-title {
-  margin-bottom: 0;
+  gap: 4px;
 }
 
 .chat-tip {
@@ -258,19 +254,20 @@ function openHouse(houseId) {
 }
 
 .chat-thread {
-  display: grid;
-  gap: 12px;
   min-height: 320px;
+  display: grid;
+  gap: 14px;
+  align-content: start;
 }
 
 .chat-form {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .chat-input {
+  min-height: 120px;
   resize: vertical;
-  min-height: 96px;
 }
 
 .chat-actions {
@@ -285,29 +282,23 @@ function openHouse(houseId) {
   font-size: 13px;
 }
 
-@media (max-width: 1024px) {
+.error-text {
+  margin: 0;
+  color: #b04f2d;
+  font-size: 14px;
+}
+
+@media (max-width: 960px) {
   .ai-layout {
     grid-template-columns: 1fr;
   }
 
-  .ai-side-card {
-    order: -1;
-  }
-}
-
-@media (max-width: 768px) {
   .ai-hero {
     grid-template-columns: 1fr;
   }
 
-  .hero-mark,
   .hero-reset {
     justify-self: start;
-  }
-
-  .chat-actions {
-    flex-direction: column;
-    align-items: stretch;
   }
 }
 </style>

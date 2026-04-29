@@ -18,6 +18,8 @@ public class AiRecommendSessionState {
 
     private String sessionId;
 
+    private String summary;
+
     private AiRecommendSlots slots;
 
     @Builder.Default
@@ -27,6 +29,7 @@ public class AiRecommendSessionState {
         return AiRecommendSessionState.builder()
                 .userId(userId)
                 .sessionId(buildSessionId(userId))
+                .summary("")
                 .slots(AiRecommendSlots.builder()
                         .preferences(new ArrayList<>())
                         .build())

@@ -13,6 +13,7 @@ import org.springframework.data.redis.core.ValueOperations;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -20,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -41,129 +43,122 @@ class RedisAiRecommendStateStoreTest {
     }
 
     @Test
-    void saveShouldPersistStateAndHistoryWithTtl() {
+    void saveShouldPersistSlotsHistoryAndSummarySeparately() {
         AiRecommendSessionState state = AiRecommendSessionState.builder()
                 .userId(1001L)
                 .sessionId("ai-u1001")
+                .summary("confirmed city: Shanghai")
                 .slots(AiRecommendSlots.builder()
-                        .city("上海")
-                        .locationName("浦东")
+                        .city("Shanghai")
+                        .locationName("Pudong")
                         .budgetYuan(3500)
                         .budgetScope("RENT_ONLY")
                         .rentMode("WHOLE")
-                        .priority("COMMUTE")
-                        .preferences(List.of("近地铁"))
                         .build())
-                .history(List.of(
-                        AiRecommendTurn.user("预算3500"),
-                        AiRecommendTurn.assistant("再告诉我想住哪里")
-                ))
+                .history(List.of(AiRecommendTurn.user("hello")))
                 .build();
 
         stateStore.save(state);
 
-        verify(valueOperations).set(eq("ai:recommend:state:1001"), any(String.class), eq(Duration.ofHours(48)));
+        verify(valueOperations).set(eq("ai:recommend:slots:1001"), any(String.class), eq(Duration.ofHours(48)));
         verify(valueOperations).set(eq("ai:recommend:history:1001"), any(String.class), eq(Duration.ofHours(48)));
+        verify(valueOperations).set(eq("ai:recommend:summary:1001"), eq("confirmed city: Shanghai"), eq(Duration.ofHours(48)));
     }
 
     @Test
-    void loadOrCreateShouldReadStateAndHistory() throws Exception {
-        List<AiRecommendTurn> history = List.of(
-                AiRecommendTurn.user("预算3500"),
-                AiRecommendTurn.assistant("再告诉我想住哪里")
-        );
+    void loadOrCreateShouldReadSlotsHistoryAndSummarySeparately() throws Exception {
         ObjectMapper objectMapper = new ObjectMapper();
-        AiRecommendSessionState persistedState = AiRecommendSessionState.builder()
-                .userId(1001L)
-                .sessionId("ai-u1001")
-                .slots(AiRecommendSlots.builder()
-                        .city("上海")
-                        .locationName("浦东")
-                        .budgetYuan(3500)
-                        .budgetScope("RENT_ONLY")
-                        .rentMode("WHOLE")
-                        .priority("COMMUTE")
-                        .preferences(List.of("近地铁"))
-                        .build())
-                .history(history)
-                .build();
-        when(valueOperations.get("ai:recommend:state:1001")).thenReturn(objectMapper.writeValueAsString(persistedState));
-        when(valueOperations.get("ai:recommend:history:1001")).thenReturn(objectMapper.writeValueAsString(history));
-
-        AiRecommendSessionState state = stateStore.loadOrCreate(1001L);
-
-        assertEquals("ai-u1001", state.getSessionId());
-        assertEquals("上海", state.getSlots().getCity());
-        assertEquals("浦东", state.getSlots().getLocationName());
-        assertEquals(2, state.getHistory().size());
-    }
-
-    @Test
-    void loadOrCreateShouldPreferEmbeddedHistoryWhenStandaloneHistoryIsStale() throws Exception {
-        ObjectMapper objectMapper = new ObjectMapper();
-        AiRecommendSessionState persistedState = AiRecommendSessionState.builder()
-                .userId(1001L)
-                .sessionId("ai-u1001")
-                .slots(AiRecommendSlots.builder()
-                        .city("上海")
-                        .locationName("浦东")
-                        .budgetYuan(3500)
-                        .budgetScope("RENT_ONLY")
-                        .rentMode("WHOLE")
-                        .build())
-                .history(List.of(AiRecommendTurn.assistant("使用 state 内的历史")))
-                .build();
-        when(valueOperations.get("ai:recommend:state:1001")).thenReturn(objectMapper.writeValueAsString(persistedState));
-        when(valueOperations.get("ai:recommend:history:1001"))
-                .thenReturn(objectMapper.writeValueAsString(List.of(AiRecommendTurn.assistant("旧 history key"))));
-
-        AiRecommendSessionState state = stateStore.loadOrCreate(1001L);
-
-        assertEquals(1, state.getHistory().size());
-        assertEquals("使用 state 内的历史", state.getHistory().get(0).getContent());
-    }
-
-    @Test
-    void loadOrCreateShouldIgnoreStandaloneHistoryForLegacySlotOnlyState() throws Exception {
-        ObjectMapper objectMapper = new ObjectMapper();
-        AiRecommendSlots legacySlots = AiRecommendSlots.builder()
-                .city("上海")
-                .locationName("浦东")
+        AiRecommendSlots slots = AiRecommendSlots.builder()
+                .city("Shanghai")
+                .locationName("Pudong")
                 .budgetYuan(3500)
                 .budgetScope("RENT_ONLY")
                 .rentMode("WHOLE")
                 .build();
-        when(valueOperations.get("ai:recommend:state:1001")).thenReturn(objectMapper.writeValueAsString(legacySlots));
-        when(valueOperations.get("ai:recommend:history:1001"))
-                .thenReturn(objectMapper.writeValueAsString(List.of(AiRecommendTurn.assistant("旧 history key"))));
+        List<AiRecommendTurn> history = List.of(
+                AiRecommendTurn.user("budget 3500"),
+                AiRecommendTurn.assistant("which area")
+        );
+        when(valueOperations.get("ai:recommend:slots:1001")).thenReturn(objectMapper.writeValueAsString(slots));
+        when(valueOperations.get("ai:recommend:history:1001")).thenReturn(objectMapper.writeValueAsString(history));
+        when(valueOperations.get("ai:recommend:summary:1001")).thenReturn("confirmed city: Shanghai");
 
         AiRecommendSessionState state = stateStore.loadOrCreate(1001L);
 
-        assertEquals("上海", state.getSlots().getCity());
-        assertTrue(state.getHistory().isEmpty());
+        assertEquals("ai-u1001", state.getSessionId());
+        assertEquals("Shanghai", state.getSlots().getCity());
+        assertEquals("Pudong", state.getSlots().getLocationName());
+        assertEquals(2, state.getHistory().size());
+        assertEquals("confirmed city: Shanghai", state.getSummary());
+    }
+
+    @Test
+    void loadOrCreateShouldTrimStoredHistoryToThirtyTurns() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        List<AiRecommendTurn> history = IntStream.range(0, 35)
+                .mapToObj(i -> new AiRecommendTurn(i % 2 == 0 ? "user" : "assistant", "turn-" + i))
+                .toList();
+        when(valueOperations.get("ai:recommend:slots:1001"))
+                .thenReturn(objectMapper.writeValueAsString(AiRecommendSlots.builder().city("Shanghai").build()));
+        when(valueOperations.get("ai:recommend:history:1001"))
+                .thenReturn(objectMapper.writeValueAsString(history));
+        when(valueOperations.get("ai:recommend:summary:1001")).thenReturn("summary");
+
+        AiRecommendSessionState state = stateStore.loadOrCreate(1001L);
+
+        assertEquals(30, state.getHistory().size());
+        assertEquals("turn-5", state.getHistory().get(0).getContent());
+        assertEquals("turn-34", state.getHistory().get(29).getContent());
+    }
+
+    @Test
+    void loadOrCreateShouldFallbackToLegacyStateKeyWhenSplitKeysAreMissing() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        AiRecommendSessionState persistedState = AiRecommendSessionState.builder()
+                .userId(1001L)
+                .sessionId("ai-u1001")
+                .slots(AiRecommendSlots.builder()
+                        .city("Shanghai")
+                        .locationName("Pudong")
+                        .budgetYuan(3500)
+                        .budgetScope("RENT_ONLY")
+                        .rentMode("WHOLE")
+                        .build())
+                .history(List.of(AiRecommendTurn.assistant("legacy history")))
+                .build();
+        when(valueOperations.get("ai:recommend:slots:1001")).thenReturn(null);
+        when(valueOperations.get("ai:recommend:history:1001")).thenReturn(null);
+        when(valueOperations.get("ai:recommend:summary:1001")).thenReturn(null);
+        when(valueOperations.get("ai:recommend:state:1001"))
+                .thenReturn(objectMapper.writeValueAsString(persistedState));
+
+        AiRecommendSessionState state = stateStore.loadOrCreate(1001L);
+
+        assertEquals("Shanghai", state.getSlots().getCity());
+        assertEquals(1, state.getHistory().size());
+        assertEquals("", state.getSummary());
     }
 
     @Test
     void loadOrCreateShouldFallbackToEmptySessionWhenRedisFails() {
-        when(valueOperations.get("ai:recommend:state:1001")).thenThrow(new RuntimeException("redis down"));
+        when(valueOperations.get("ai:recommend:slots:1001")).thenThrow(new RuntimeException("redis down"));
 
         AiRecommendSessionState state = stateStore.loadOrCreate(1001L);
 
         assertEquals("ai-u1001", state.getSessionId());
         assertNotNull(state.getSlots());
         assertTrue(state.getHistory().isEmpty());
+        assertEquals("", state.getSummary());
     }
 
     @Test
-    void loadOrCreateShouldFallbackToEmptySessionWhenJsonIsBroken() {
-        when(valueOperations.get("ai:recommend:state:1001")).thenReturn("{broken");
-       when(valueOperations.get("ai:recommend:history:1001")).thenReturn("[broken");
+    void resetShouldDeleteSplitKeysAndLegacyStateKey() {
+        stateStore.reset(1001L);
 
-        AiRecommendSessionState state = stateStore.loadOrCreate(1001L);
-
-        assertEquals("ai-u1001", state.getSessionId());
-        assertNotNull(state.getSlots());
-        assertTrue(state.getHistory().isEmpty());
+        verify(stringRedisTemplate).delete("ai:recommend:slots:1001");
+        verify(stringRedisTemplate).delete("ai:recommend:history:1001");
+        verify(stringRedisTemplate).delete("ai:recommend:summary:1001");
+        verify(stringRedisTemplate).delete("ai:recommend:state:1001");
     }
 
     @Test
