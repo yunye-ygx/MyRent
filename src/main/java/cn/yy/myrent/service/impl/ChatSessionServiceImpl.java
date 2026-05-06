@@ -76,6 +76,7 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
             throw new RuntimeException("接收方不存在");
         }
 
+        boolean createdNewSession = false;
         if (chatSession == null) {
             long userId1 = Math.min(senderId, receiverId);
             long userId2 = Math.max(senderId, receiverId);
@@ -96,6 +97,7 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
                             sessionId, senderId, receiverId, houseId);
                     throw new RuntimeException("创建会话失败");
                 }
+                createdNewSession = true;
                 log.info("create chat session success, sessionId={}, userId1={}, userId2={}, houseId={}",
                         sessionId, userId1, userId2, houseId);
             } catch (DuplicateKeyException ex) {
@@ -139,14 +141,18 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
         chatMessage.setSenderName(sender == null ? null : sender.getName());
         chatMessage.setReceiverName(receiver.getName());
 
+        boolean finalCreatedNewSession = createdNewSession;
+        House finalHouse = house;
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                try {
-                    houseHotService.recordChatInteraction(houseId, senderId, receiverId);
-                } catch (Exception e) {
-                    log.error("record chat interaction for hot rank failed, messageId={}, houseId={}",
-                            chatMessage.getId(), houseId, e);
+                if (finalCreatedNewSession && finalHouse != null) {
+                    try {
+                        houseHotService.incrementConsultScore(finalHouse.getCity(), houseId);
+                    } catch (Exception e) {
+                        log.error("increment consult hot rank failed, messageId={}, houseId={}",
+                                chatMessage.getId(), houseId, e);
+                    }
                 }
 
                 try {

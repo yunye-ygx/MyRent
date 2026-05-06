@@ -5,11 +5,15 @@ import cn.yy.myrent.entity.HouseFavorite;
 import cn.yy.myrent.mapper.HouseFavoriteMapper;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.service.IHouseFavoriteService;
+import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.vo.HouseFavoriteStatusVO;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 
@@ -20,6 +24,7 @@ public class HouseFavoriteServiceImpl extends ServiceImpl<HouseFavoriteMapper, H
     private static final int FAVORITE_STATUS_ACTIVE = 1;
 
     private final HouseMapper houseMapper;
+    private final HouseHotService houseHotService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -35,6 +40,7 @@ public class HouseFavoriteServiceImpl extends ServiceImpl<HouseFavoriteMapper, H
                 .eq(HouseFavorite::getHouseId, houseId)
                 .one();
 
+        boolean favoriteChanged = false;
         if (existing == null) {
             HouseFavorite favorite = new HouseFavorite()
                     .setUserId(userId)
@@ -44,12 +50,20 @@ public class HouseFavoriteServiceImpl extends ServiceImpl<HouseFavoriteMapper, H
                     .setCancelTime(null)
                     .setCreateTime(now)
                     .setUpdateTime(now);
-            this.save(favorite);
+            favoriteChanged = this.save(favorite);
         } else if (existing.getStatus() == null || existing.getStatus() != FAVORITE_STATUS_ACTIVE) {
-            existing.setStatus(FAVORITE_STATUS_ACTIVE);
-            existing.setFavoriteTime(now);
-            existing.setCancelTime(null);
-            this.updateById(existing);
+            favoriteChanged = this.lambdaUpdate()
+                    .set(HouseFavorite::getStatus, FAVORITE_STATUS_ACTIVE)
+                    .set(HouseFavorite::getFavoriteTime, now)
+                    .set(HouseFavorite::getCancelTime, null)
+                    .set(HouseFavorite::getUpdateTime, now)
+                    .eq(HouseFavorite::getId, existing.getId())
+                    .ne(HouseFavorite::getStatus, FAVORITE_STATUS_ACTIVE)
+                    .update();
+        }
+
+        if (favoriteChanged) {
+            incrementFavoriteHotScoreAfterCommit(house.getCity(), houseId);
         }
 
         return buildStatus(houseId, userId, true);
@@ -102,6 +116,22 @@ public class HouseFavoriteServiceImpl extends ServiceImpl<HouseFavoriteMapper, H
             statusVO.setFavorited(defaultFavorited);
         }
         return statusVO;
+    }
+
+    private void incrementFavoriteHotScoreAfterCommit(String city, Long houseId) {
+        if (!StringUtils.hasText(city) || houseId == null) {
+            return;
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    houseHotService.incrementFavoriteScore(city, houseId);
+                }
+            });
+            return;
+        }
+        houseHotService.incrementFavoriteScore(city, houseId);
     }
 
     private House requireHouse(Long houseId) {

@@ -26,6 +26,13 @@
         order by browse_date asc
     </select>
 
+    <select id="selectBrowseCountsSince" resultType="cn.yy.myrent.service.hot.HouseSignalCountRow">
+        select house_id as houseId, count(*) as count
+        from house_history
+        where browse_date >= #{startDate}
+        group by house_id
+    </select>
+
     <select id="selectMyHistoryPage" resultType="cn.yy.myrent.vo.HouseHistoryItemVO">
         select hh.id as historyId,
                hh.house_id as houseId,

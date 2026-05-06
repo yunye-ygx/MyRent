@@ -145,8 +145,10 @@ import listingImage2 from '@/assets/home/listing-2.jpg'
 import listingImage3 from '@/assets/home/listing-3.jpg'
 import listingImage4 from '@/assets/home/listing-4.jpg'
 import { useHouseFeed } from '@/composables/useHouseFeed'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 const searchKeyword = ref('')
 
 const presetTags = [
@@ -285,7 +287,8 @@ const mockListings = [
 ]
 
 const feed = useHouseFeed({
-  hotLoader: fetchHotHousePage
+  hotLoader: fetchHotHousePage,
+  defaultCity: authStore.currentCity
 })
 
 const displayListings = computed(() => {

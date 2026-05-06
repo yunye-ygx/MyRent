@@ -6,8 +6,10 @@ import cn.yy.myrent.entity.House;
 import cn.yy.myrent.entity.User;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.service.IUserService;
+import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.service.location.LocationResolveService;
 import cn.yy.myrent.vo.HouseSearchResultVO;
+import cn.yy.myrent.vo.HouseVO;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,6 +48,9 @@ class HouseKeywordSearchServiceTest {
 
     @Mock
     private IUserService userService;
+
+    @Mock
+    private HouseHotService houseHotService;
 
     @InjectMocks
     private HouseKeywordSearchService houseKeywordSearchService;
@@ -249,6 +254,37 @@ class HouseKeywordSearchServiceTest {
         assertEquals(0L, result.getTotal());
         assertEquals(Boolean.TRUE, result.getEsDown());
         assertEquals("KEYWORD_SEARCH_DEGRADED", result.getFallbackSource());
+    }
+
+    @Test
+    void searchShouldFallbackToCityHotHousesWhenRecallIsEmptyAndCityIsPresent() {
+        @SuppressWarnings("unchecked")
+        SearchHits<HouseDoc> emptyHits = (SearchHits<HouseDoc>) mock(SearchHits.class);
+        when(emptyHits.iterator()).thenReturn(List.<SearchHit<HouseDoc>>of().iterator());
+
+        when(locationResolveService.resolveRequired("苏州园区")).thenThrow(new IllegalArgumentException("not found"));
+        when(elasticsearchOperations.search(any(NativeQuery.class), eq(HouseDoc.class))).thenReturn(emptyHits);
+
+        HouseVO hotHouse = new HouseVO();
+        hotHouse.setId(88L);
+        hotHouse.setCity("苏州");
+        hotHouse.setTitle("园区可租热房");
+        when(houseHotService.queryHotHouses("苏州", 0, 2)).thenReturn(List.of(hotHouse));
+
+        HouseKeywordSearchReqDTO reqDTO = new HouseKeywordSearchReqDTO();
+        reqDTO.setKeyword("苏州园区");
+        reqDTO.setCity("苏州");
+        reqDTO.setPage(1);
+        reqDTO.setSize(2);
+
+        HouseSearchResultVO result = houseKeywordSearchService.search(reqDTO);
+
+        assertEquals(1, result.getHouses().size());
+        assertEquals(1L, result.getTotal());
+        assertEquals(88L, result.getHouses().get(0).getId());
+        assertEquals("REDIS_HOT", result.getFallbackSource());
+        assertEquals("当前未找到匹配房源，已为你展示当前城市热门在租房源", result.getTipMessage());
+        verify(houseHotService).queryHotHouses("苏州", 0, 2);
     }
 
     private boolean isLocationQuery(NativeQuery nativeQuery) {

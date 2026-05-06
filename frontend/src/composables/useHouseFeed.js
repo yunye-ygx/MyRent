@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { formatRequestError } from '@/utils/format'
 
-export function useHouseFeed({ hotLoader, searchLoader }) {
+export function useHouseFeed({ hotLoader, searchLoader, defaultCity = '' }) {
   const houses = ref([])
   const loading = ref(false)
   const error = ref('')
@@ -30,11 +30,13 @@ export function useHouseFeed({ hotLoader, searchLoader }) {
     try {
       const result = mode.value === 'search'
         ? await searchLoader({
+            city: defaultCity,
             keyword: activeKeyword.value,
             page: current.value,
             size: size.value
           })
         : await hotLoader({
+            city: defaultCity,
             page: current.value,
             size: size.value
           })

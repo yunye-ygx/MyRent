@@ -76,6 +76,7 @@ describe('HouseListView', () => {
         total: 17,
         tipMessage: `关键词搜索结果已刷新：${payload.keyword}`,
         houses: [buildHouse(200 + (payload.page || 1), {
+          city: payload.city || '广州',
           title: `${payload.keyword || '关键词'}房源-${payload.page || 1}`
         })],
         fallbackSource: 'KEYWORD_SEARCH'
@@ -144,6 +145,7 @@ describe('HouseListView', () => {
     await flushPromises()
 
     expect(fetchHouseKeywordSearch).toHaveBeenCalledWith({
+      city: '广州',
       keyword: '豪园',
       page: 1,
       size: 10
@@ -154,6 +156,7 @@ describe('HouseListView', () => {
     await flushPromises()
 
     expect(fetchHouseKeywordSearch).toHaveBeenLastCalledWith({
+      city: '广州',
       keyword: '豪园',
       page: 2,
       size: 10

@@ -11,6 +11,8 @@ public class HouseKeywordSearchReqDTO {
     @NotBlank(message = "keyword cannot be blank")
     private String keyword;
 
+    private String city;
+
     @Min(value = 1, message = "page must be at least 1")
     private Integer page = 1;
 

@@ -16,6 +16,14 @@
            OR s.user_id_2 = #{userId}
     </select>
 
+    <select id="selectConsultCountsSince" resultType="cn.yy.myrent.service.hot.HouseSignalCountRow">
+        select house_id as houseId, count(*) as count
+        from chat_session
+        where house_id is not null
+          and create_time >= #{recentSince}
+        group by house_id
+    </select>
+
     <select id="selectSessionSummaries" resultType="cn.yy.myrent.vo.ChatSessionSummaryVO">
         SELECT
             s.session_id AS sessionId,

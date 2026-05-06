@@ -11,9 +11,11 @@ public class HouseHotScoreSnapshot {
 
     private long recentFavoriteCount;
 
+    private long recentBrowseCount;
+
     private long recentConsultCount;
 
-    private long recentReplyCount;
+    private double freshnessBonus;
 
     private double hotScore;
 }

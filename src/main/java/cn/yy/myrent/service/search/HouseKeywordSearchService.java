@@ -6,6 +6,7 @@ import cn.yy.myrent.entity.House;
 import cn.yy.myrent.entity.User;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.service.IUserService;
+import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.service.location.LocationResolveService;
 import cn.yy.myrent.vo.HouseSearchResultVO;
 import cn.yy.myrent.vo.HouseVO;
@@ -47,14 +48,17 @@ public class HouseKeywordSearchService {
     private static final int MAX_SIZE = 50;
     private static final int OVERSAMPLE_MULTIPLIER = 3;
     private static final double LOCATION_RADIUS_KM = 10.0d;
+    private static final String EMPTY_SEARCH_HOT_TIP = "当前未找到匹配房源，已为你展示当前城市热门在租房源";
 
     private final ElasticsearchOperations elasticsearchOperations;
     private final HouseMapper houseMapper;
     private final LocationResolveService locationResolveService;
     private final IUserService userService;
+    private final HouseHotService houseHotService;
 
     public HouseSearchResultVO search(HouseKeywordSearchReqDTO reqDTO) {
         String keyword = reqDTO == null || reqDTO.getKeyword() == null ? "" : reqDTO.getKeyword().trim();
+        String city = reqDTO == null ? null : reqDTO.getCity();
         int page = reqDTO == null || reqDTO.getPage() == null ? DEFAULT_PAGE : Math.max(reqDTO.getPage(), 1);
         int size = reqDTO == null || reqDTO.getSize() == null
                 ? DEFAULT_SIZE
@@ -86,15 +90,40 @@ public class HouseKeywordSearchService {
                 .collect(Collectors.toList());
         log.info("对房源进行排序，并计算评分，{}", rankedHouses.size());
 
+        boolean degraded = locationEnvelope.degraded() || textEnvelope.degraded();
+        if (rankedHouses.isEmpty() && StringUtils.hasText(city)) {
+            return buildCityHotFallbackResult(city, page, size, degraded);
+        }
+
         List<House> pageRecords = slicePage(rankedHouses, page, size);
 
         HouseSearchResultVO result = new HouseSearchResultVO();
         result.setTotal((long) rankedHouses.size());
         result.setHouses(enrichPublisherNames(toHouseVos(pageRecords)));
-        boolean degraded = locationEnvelope.degraded() || textEnvelope.degraded();
         result.setEsDown(degraded);
         result.setFallbackSource(degraded ? "KEYWORD_SEARCH_DEGRADED" : "KEYWORD_SEARCH");
         result.setTipMessage(pageRecords.isEmpty() ? "当前未找到匹配房源" : null);
+        return result;
+    }
+
+    private HouseSearchResultVO buildCityHotFallbackResult(String city, int page, int size, boolean degraded) {
+        List<HouseVO> hotHouses = List.of();
+        try {
+            if (!houseHotService.hasHotRankingCache(city)) {
+                houseHotService.rebuildHotRanking();
+            }
+            hotHouses = houseHotService.queryHotHouses(city, page - 1, size);
+        } catch (Exception ex) {
+            log.warn("keyword search empty fallback to city hot houses failed, city={}, page={}, size={}",
+                    city, page, size, ex);
+        }
+
+        HouseSearchResultVO result = new HouseSearchResultVO();
+        result.setTotal((long) hotHouses.size());
+        result.setHouses(enrichPublisherNames(hotHouses));
+        result.setEsDown(degraded);
+        result.setFallbackSource("REDIS_HOT");
+        result.setTipMessage(EMPTY_SEARCH_HOT_TIP);
         return result;
     }
 

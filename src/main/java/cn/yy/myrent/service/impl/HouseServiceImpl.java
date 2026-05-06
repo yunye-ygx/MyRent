@@ -169,15 +169,16 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
     }
 
     @Override
-    public HouseSearchResultVO hotHouses(Integer page, Integer size) {
+    public HouseSearchResultVO hotHouses(String city, Integer page, Integer size) {
         int pageIndex = (page != null ? page : 1) - 1;
         int pageSize = size != null ? size : 10;
         try {
-            List<HouseVO> hotHouses = searchHotFromRedis(null, pageIndex, pageSize);
+            List<HouseVO> hotHouses = searchHotFromRedis(city, pageIndex, pageSize);
             return buildSearchResult(hotHouses, null, false, FALLBACK_SOURCE_REDIS_HOT, null);
         } catch (Exception e) {
-            log.error("hot-house query via Redis failed, fallback to DB, pageIndex={}, pageSize={}", pageIndex, pageSize, e);
-            return buildSearchResult(searchHotFromDb(pageIndex, pageSize), null, false, FALLBACK_SOURCE_DB_HOT, null);
+            log.error("hot-house query via Redis failed, fallback to DB, city={}, pageIndex={}, pageSize={}",
+                    city, pageIndex, pageSize, e);
+            return buildSearchResult(searchHotFromDb(city, pageIndex, pageSize), null, false, FALLBACK_SOURCE_DB_HOT, null);
         }
     }
 
@@ -222,7 +223,7 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
                     city, pageIndex, pageSize, e);
         }
 
-        List<HouseVO> dbRecommended = searchHotFromDb(pageIndex, pageSize);
+        List<HouseVO> dbRecommended = searchHotFromDb(city, pageIndex, pageSize);
         return buildSearchResult(dbRecommended, null, true, FALLBACK_SOURCE_DB_HOT, TIP_ES_DOWN);
     }
 
@@ -400,22 +401,26 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
             throw new IllegalStateException("Redis connection factory is not configured");
         }
 
-        if (!houseHotService.hasHotRankingCache()) {
+        if (!houseHotService.hasHotRankingCache(city)) {
             log.info("hot ranking cache is empty, trigger rebuild, city={}, pageIndex={}, pageSize={}",
                     city, pageIndex, pageSize);
             houseHotService.rebuildHotRanking();
         }
 
-        List<HouseVO> hotHouses = houseHotService.queryHotHouses(pageIndex, pageSize);
+        List<HouseVO> hotHouses = houseHotService.queryHotHouses(city, pageIndex, pageSize);
         log.info("Redis hot-house query finished, city={}, pageIndex={}, pageSize={}, count={}",
                 city, pageIndex, pageSize, hotHouses.size());
         return hotHouses;
     }
 
-    private List<HouseVO> searchHotFromDb(int pageIndex, int pageSize) {
+    private List<HouseVO> searchHotFromDb(String city, int pageIndex, int pageSize) {
         Page<House> page = new Page<>(pageIndex + 1L, pageSize);
-        Page<House> housePage = this.lambdaQuery()
-                .eq(House::getStatus, HOUSE_STATUS_AVAILABLE)
+        var query = this.lambdaQuery()
+                .eq(House::getStatus, HOUSE_STATUS_AVAILABLE);
+        if (StringUtils.hasText(city)) {
+            query.eq(House::getCity, city);
+        }
+        Page<House> housePage = query
                 .orderByDesc(House::getCreateTime)
                 .orderByDesc(House::getId)
                 .page(page);
