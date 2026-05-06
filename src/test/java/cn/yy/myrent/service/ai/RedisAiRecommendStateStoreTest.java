@@ -48,6 +48,7 @@ class RedisAiRecommendStateStoreTest {
                 .userId(1001L)
                 .sessionId("ai-u1001")
                 .summary("confirmed city: Shanghai")
+                .stage("PREVIEW")
                 .slots(AiRecommendSlots.builder()
                         .city("Shanghai")
                         .locationName("Pudong")
@@ -63,6 +64,7 @@ class RedisAiRecommendStateStoreTest {
         verify(valueOperations).set(eq("ai:recommend:slots:1001"), any(String.class), eq(Duration.ofHours(48)));
         verify(valueOperations).set(eq("ai:recommend:history:1001"), any(String.class), eq(Duration.ofHours(48)));
         verify(valueOperations).set(eq("ai:recommend:summary:1001"), eq("confirmed city: Shanghai"), eq(Duration.ofHours(48)));
+        verify(valueOperations).set(eq("ai:recommend:stage:1001"), eq("PREVIEW"), eq(Duration.ofHours(48)));
     }
 
     @Test
@@ -82,6 +84,7 @@ class RedisAiRecommendStateStoreTest {
         when(valueOperations.get("ai:recommend:slots:1001")).thenReturn(objectMapper.writeValueAsString(slots));
         when(valueOperations.get("ai:recommend:history:1001")).thenReturn(objectMapper.writeValueAsString(history));
         when(valueOperations.get("ai:recommend:summary:1001")).thenReturn("confirmed city: Shanghai");
+        when(valueOperations.get("ai:recommend:stage:1001")).thenReturn("REFINE");
 
         AiRecommendSessionState state = stateStore.loadOrCreate(1001L);
 
@@ -90,6 +93,7 @@ class RedisAiRecommendStateStoreTest {
         assertEquals("Pudong", state.getSlots().getLocationName());
         assertEquals(2, state.getHistory().size());
         assertEquals("confirmed city: Shanghai", state.getSummary());
+        assertEquals("REFINE", state.getStage());
     }
 
     @Test
@@ -103,12 +107,14 @@ class RedisAiRecommendStateStoreTest {
         when(valueOperations.get("ai:recommend:history:1001"))
                 .thenReturn(objectMapper.writeValueAsString(history));
         when(valueOperations.get("ai:recommend:summary:1001")).thenReturn("summary");
+        when(valueOperations.get("ai:recommend:stage:1001")).thenReturn("PREVIEW");
 
         AiRecommendSessionState state = stateStore.loadOrCreate(1001L);
 
         assertEquals(30, state.getHistory().size());
         assertEquals("turn-5", state.getHistory().get(0).getContent());
         assertEquals("turn-34", state.getHistory().get(29).getContent());
+        assertEquals("PREVIEW", state.getStage());
     }
 
     @Test
@@ -117,6 +123,7 @@ class RedisAiRecommendStateStoreTest {
         AiRecommendSessionState persistedState = AiRecommendSessionState.builder()
                 .userId(1001L)
                 .sessionId("ai-u1001")
+                .stage("SEARCH")
                 .slots(AiRecommendSlots.builder()
                         .city("Shanghai")
                         .locationName("Pudong")
@@ -129,6 +136,7 @@ class RedisAiRecommendStateStoreTest {
         when(valueOperations.get("ai:recommend:slots:1001")).thenReturn(null);
         when(valueOperations.get("ai:recommend:history:1001")).thenReturn(null);
         when(valueOperations.get("ai:recommend:summary:1001")).thenReturn(null);
+        when(valueOperations.get("ai:recommend:stage:1001")).thenReturn(null);
         when(valueOperations.get("ai:recommend:state:1001"))
                 .thenReturn(objectMapper.writeValueAsString(persistedState));
 
@@ -137,6 +145,7 @@ class RedisAiRecommendStateStoreTest {
         assertEquals("Shanghai", state.getSlots().getCity());
         assertEquals(1, state.getHistory().size());
         assertEquals("", state.getSummary());
+        assertEquals("SEARCH", state.getStage());
     }
 
     @Test
@@ -149,6 +158,7 @@ class RedisAiRecommendStateStoreTest {
         assertNotNull(state.getSlots());
         assertTrue(state.getHistory().isEmpty());
         assertEquals("", state.getSummary());
+        assertEquals("ASK", state.getStage());
     }
 
     @Test
@@ -158,6 +168,7 @@ class RedisAiRecommendStateStoreTest {
         verify(stringRedisTemplate).delete("ai:recommend:slots:1001");
         verify(stringRedisTemplate).delete("ai:recommend:history:1001");
         verify(stringRedisTemplate).delete("ai:recommend:summary:1001");
+        verify(stringRedisTemplate).delete("ai:recommend:stage:1001");
         verify(stringRedisTemplate).delete("ai:recommend:state:1001");
     }
 

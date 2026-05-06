@@ -44,9 +44,11 @@ public class RedisAiRecommendStateStore implements AiRecommendStateStore {
             String slotsJson = stringRedisTemplate.opsForValue().get(slotsKey(userId));
             String historyJson = stringRedisTemplate.opsForValue().get(historyKey(userId));
             String summaryText = stringRedisTemplate.opsForValue().get(summaryKey(userId));
+            String stageText = stringRedisTemplate.opsForValue().get(stageKey(userId));
             if (!StringUtils.hasText(slotsJson)
                     && !StringUtils.hasText(historyJson)
-                    && !StringUtils.hasText(summaryText)) {
+                    && !StringUtils.hasText(summaryText)
+                    && !StringUtils.hasText(stageText)) {
                 return loadLegacyOrEmpty(userId);
             }
 
@@ -54,6 +56,7 @@ public class RedisAiRecommendStateStore implements AiRecommendStateStore {
             state.setSlots(readSlots(slotsJson, state.getSlots()));
             state.setHistory(trimHistory(readHistory(historyJson)));
             state.setSummary(StringUtils.hasText(summaryText) ? summaryText : "");
+            state.setStage(StringUtils.hasText(stageText) ? stageText : AiRecommendStage.ASK.name());
             return state;
         } catch (Exception ex) {
             return AiRecommendSessionState.empty(userId);
@@ -69,10 +72,12 @@ public class RedisAiRecommendStateStore implements AiRecommendStateStore {
                     ? AiRecommendSlots.builder().preferences(new ArrayList<>()).build()
                     : state.getSlots();
             String summaryToSave = state.getSummary() == null ? "" : state.getSummary();
+            String stageToSave = StringUtils.hasText(state.getStage()) ? state.getStage() : AiRecommendStage.ASK.name();
 
             stringRedisTemplate.opsForValue().set(slotsKey(userId), objectMapper.writeValueAsString(slotsToSave), ttl);
             stringRedisTemplate.opsForValue().set(historyKey(userId), objectMapper.writeValueAsString(trimmedHistory), ttl);
             stringRedisTemplate.opsForValue().set(summaryKey(userId), summaryToSave, ttl);
+            stringRedisTemplate.opsForValue().set(stageKey(userId), stageToSave, ttl);
         } catch (Exception ex) {
             throw new IllegalStateException("failed to save ai recommend state", ex);
         }
@@ -83,6 +88,7 @@ public class RedisAiRecommendStateStore implements AiRecommendStateStore {
         stringRedisTemplate.delete(slotsKey(userId));
         stringRedisTemplate.delete(historyKey(userId));
         stringRedisTemplate.delete(summaryKey(userId));
+        stringRedisTemplate.delete(stageKey(userId));
         stringRedisTemplate.delete(stateKey(userId));
     }
 
@@ -120,6 +126,9 @@ public class RedisAiRecommendStateStore implements AiRecommendStateStore {
             }
             if (state.getSummary() == null) {
                 state.setSummary("");
+            }
+            if (!StringUtils.hasText(state.getStage())) {
+                state.setStage(AiRecommendStage.ASK.name());
             }
             if (state.getSlots() == null) {
                 state.setSlots(AiRecommendSlots.builder().preferences(new ArrayList<>()).build());
@@ -169,5 +178,9 @@ public class RedisAiRecommendStateStore implements AiRecommendStateStore {
 
     private String summaryKey(Long userId) {
         return "ai:recommend:summary:" + userId;
+    }
+
+    private String stageKey(Long userId) {
+        return "ai:recommend:stage:" + userId;
     }
 }

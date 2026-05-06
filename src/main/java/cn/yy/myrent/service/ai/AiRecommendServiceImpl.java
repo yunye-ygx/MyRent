@@ -1,8 +1,11 @@
 package cn.yy.myrent.service.ai;
 
 import cn.yy.myrent.dto.AiRecommendChatReqDTO;
+import cn.yy.myrent.dto.AiRecommendInteractionDTO;
+import cn.yy.myrent.dto.AiRecommendInteractionSlotPatchDTO;
 import cn.yy.myrent.dto.SmartGuideReqDTO;
 import cn.yy.myrent.service.IHouseService;
+import cn.yy.myrent.vo.AiPreviewVO;
 import cn.yy.myrent.vo.AiRecommendChatVO;
 import cn.yy.myrent.vo.AiRecommendSlotsVO;
 import cn.yy.myrent.vo.SmartGuideResultVO;
@@ -23,11 +26,13 @@ public class AiRecommendServiceImpl implements AiRecommendService {
 
     private static final int MIN_BUDGET_YUAN = 300;
     private static final int MAX_BUDGET_YUAN = 50000;
+    private static final String PREVIEW_SELECTION_TYPE = "PREVIEW_SELECTION";
 
     private final AiRecommendDecisionClient decisionClient;
     private final AiRecommendStateStore stateStore;
     private final IHouseService houseService;
     private final AiRecommendSummaryBuilder summaryBuilder;
+    private final AiPreviewService previewService;
     private final int historyLimit;
     private final int promptHistoryLimit;
     private final String defaultBudgetScope;
@@ -36,6 +41,7 @@ public class AiRecommendServiceImpl implements AiRecommendService {
                                   AiRecommendStateStore stateStore,
                                   IHouseService houseService,
                                   AiRecommendSummaryBuilder summaryBuilder,
+                                  AiPreviewService previewService,
                                   @Value("${myrent.ai.recommend.history-limit:10}") int historyLimit,
                                   @Value("${myrent.ai.recommend.prompt-history-limit:6}") int promptHistoryLimit,
                                   @Value("${myrent.ai.recommend.default-budget-scope:RENT_ONLY}") String defaultBudgetScope) {
@@ -43,6 +49,7 @@ public class AiRecommendServiceImpl implements AiRecommendService {
         this.stateStore = stateStore;
         this.houseService = houseService;
         this.summaryBuilder = summaryBuilder;
+        this.previewService = previewService;
         this.historyLimit = historyLimit;
         this.promptHistoryLimit = promptHistoryLimit;
         this.defaultBudgetScope = normalizeBudgetScope(defaultBudgetScope);
@@ -52,57 +59,83 @@ public class AiRecommendServiceImpl implements AiRecommendService {
     public AiRecommendChatVO getOrCreateSession(Long userId) {
         AiRecommendSessionState state = normalizeState(stateStore.loadOrCreate(userId), userId);
         if (state.getHistory().isEmpty()) {
-            String opening = "你好，可以先告诉我预算、区域、整租/合租，或者直接说你想找什么样的房子。";
+            String opening = "你好，可以先告诉我想看的区域，或者直接说你想找什么样的房子。";
             appendAssistant(state, opening);
+            state.setStage(AiRecommendStage.ASK.name());
             state.setSummary(summaryBuilder.build(state.getSlots(), buildMissingSlots(state.getSlots())));
             stateStore.save(state);
-            return toChatVO(state, "ASK", opening, buildMissingSlots(state.getSlots()), null);
+            return toChatVO(state, AiRecommendStage.ASK, opening, buildMissingSlots(state.getSlots()), null, null);
         }
-        return toChatVO(state, "ASK", latestAssistantReply(state), buildMissingSlots(state.getSlots()), null);
+        return toChatVO(
+                state,
+                parseStage(state.getStage()),
+                latestAssistantReply(state),
+                buildMissingSlots(state.getSlots()),
+                null,
+                null
+        );
     }
 
     @Override
     public AiRecommendChatVO chat(Long userId, AiRecommendChatReqDTO reqDTO) {
         AiRecommendSessionState state = normalizeState(stateStore.loadOrCreate(userId), userId);
-        String message = reqDTO.getMessage().trim();
-        appendUser(state, message);
+        TurnInput input = normalizeInput(reqDTO);
+        appendUser(state, input.transcriptMessage());
+
+        AiRecommendSlots baseSlots = mergeSlots(state.getSlots(), input.slotPatch());
+        state.setSlots(baseSlots);
+        if (input.isPreviewSelection()) {
+            state.setSelectedPreviewGroupKey(input.previewGroupKey());
+        }
 
         AiRecommendDecision decision;
         try {
-            decision = decisionClient.decide(buildPromptState(state), message);
+            decision = decisionClient.decide(buildPromptState(state), input.promptMessage());
         } catch (Exception ex) {
-            decision = fallbackDecision(state.getSlots());
+            decision = fallbackDecision(baseSlots);
         }
 
-        AiRecommendSlots mergedSlots = mergeSlots(state.getSlots(), decision.getSlots());
-        String inferredRentMode = normalizeRentMode(message);
+        AiRecommendSlots mergedSlots = mergeSlots(baseSlots, decision.getSlots());
+        String inferredRentMode = normalizeRentMode(input.promptMessage());
         if (StringUtils.hasText(inferredRentMode)) {
             mergedSlots.setRentMode(inferredRentMode);
         }
         state.setSlots(mergedSlots);
 
         List<String> missingSlots = buildMissingSlots(mergedSlots);
-        state.setSummary(summaryBuilder.build(mergedSlots, missingSlots));
-        SmartGuideResultVO recommendation = null;
-        String action = deriveAction(mergedSlots, message, missingSlots);
-        String assistantReply = normalizeReply(decision.getReply(), "SEARCH".equals(action));
+        AiRecommendStage stage = deriveStage(state.getStage(), input, mergedSlots, missingSlots);
 
-        if ("SEARCH".equals(action)) {
+        AiPreviewVO preview = null;
+        SmartGuideResultVO recommendation = null;
+        String assistantReply = decision.getReply();
+
+        if (stage == AiRecommendStage.PREVIEW) {
+            preview = buildPreviewSafely(mergedSlots);
+            if (preview == null || preview.getGroups() == null || preview.getGroups().isEmpty()) {
+                stage = AiRecommendStage.ASK;
+                preview = null;
+                assistantReply = buildPreviewUnavailableReply(missingSlots, mergedSlots);
+            }
+        }
+
+        if (stage == AiRecommendStage.SEARCH) {
             try {
                 recommendation = houseService.smartGuide(buildSmartGuideReq(mergedSlots));
             } catch (Exception ex) {
-                action = "ADVISE";
-                assistantReply = "我先记下你的条件了，不过刚才查询房源时出了点问题。你可以稍后再试，或者继续补充偏好，我先帮你整理需求。";
+                preview = buildPreviewSafely(mergedSlots);
+                stage = preview != null && preview.getGroups() != null && !preview.getGroups().isEmpty()
+                        ? AiRecommendStage.REFINE
+                        : AiRecommendStage.ASK;
+                assistantReply = "我先记下你的条件了，不过刚才正式查房时出了点问题。你可以继续收窄方向，我再帮你试一次。";
             }
-        } else if ("ASK".equals(action)) {
-            assistantReply = ensureAskReply(assistantReply, missingSlots, mergedSlots);
-        } else {
-            assistantReply = ensureAdviseReply(assistantReply, mergedSlots);
         }
 
+        assistantReply = finalizeReply(stage, assistantReply, preview, recommendation, missingSlots, mergedSlots);
+        state.setStage(stage.name());
+        state.setSummary(summaryBuilder.build(mergedSlots, buildMissingSlots(mergedSlots)));
         appendAssistant(state, assistantReply);
         stateStore.save(state);
-        return toChatVO(state, action, assistantReply, missingSlots, recommendation);
+        return toChatVO(state, stage, assistantReply, buildMissingSlots(mergedSlots), preview, recommendation);
     }
 
     @Override
@@ -110,16 +143,18 @@ public class AiRecommendServiceImpl implements AiRecommendService {
         stateStore.reset(userId);
         AiRecommendSessionState state = AiRecommendSessionState.empty(userId);
         state.setSlots(normalizeSlots(state.getSlots()));
-        String opening = "已经帮你重新开始了。你可以直接告诉我预算、区域、整租/合租。";
+        state.setStage(AiRecommendStage.ASK.name());
+        state.setSelectedPreviewGroupKey(null);
+        String opening = "已经帮你重新开始了。你可以直接告诉我想看的区域、预算，或者整租/合租偏好。";
         appendAssistant(state, opening);
         state.setSummary(summaryBuilder.build(state.getSlots(), buildMissingSlots(state.getSlots())));
         stateStore.save(state);
-        return toChatVO(state, "ASK", opening, buildMissingSlots(state.getSlots()), null);
+        return toChatVO(state, AiRecommendStage.ASK, opening, buildMissingSlots(state.getSlots()), null, null);
     }
 
     private AiRecommendDecision fallbackDecision(AiRecommendSlots slots) {
         return AiRecommendDecision.builder()
-                .reply("我先继续帮你整理条件。你可以补充预算、区域，或者告诉我是整租还是合租。")
+                .reply("我先继续帮你整理条件。你可以补充区域、预算，或者告诉我是整租还是合租。")
                 .slots(slots)
                 .build();
     }
@@ -132,6 +167,12 @@ public class AiRecommendServiceImpl implements AiRecommendService {
         if (!StringUtils.hasText(resolved.getSessionId())) {
             resolved.setSessionId(AiRecommendSessionState.buildSessionId(userId));
         }
+        if (!StringUtils.hasText(resolved.getStage())) {
+            resolved.setStage(AiRecommendStage.ASK.name());
+        }
+        if (!StringUtils.hasText(resolved.getSelectedPreviewGroupKey())) {
+            resolved.setSelectedPreviewGroupKey(null);
+        }
         resolved.setSlots(normalizeSlots(resolved.getSlots()));
         if (resolved.getHistory() == null) {
             resolved.setHistory(new ArrayList<>());
@@ -141,6 +182,20 @@ public class AiRecommendServiceImpl implements AiRecommendService {
         }
         resolved.setHistory(trimHistory(resolved.getHistory()));
         return resolved;
+    }
+
+    private TurnInput normalizeInput(AiRecommendChatReqDTO reqDTO) {
+        String promptMessage = resolvePromptMessage(reqDTO);
+        AiRecommendInteractionDTO interaction = reqDTO == null ? null : reqDTO.getInteraction();
+        boolean previewSelection = interaction != null
+                && PREVIEW_SELECTION_TYPE.equals(normalizeToken(interaction.getType()));
+        return new TurnInput(
+                promptMessage,
+                promptMessage,
+                toSlotsPatch(interaction),
+                previewSelection,
+                previewSelection ? normalizeText(interaction.getGroupKey()) : null
+        );
     }
 
     private AiRecommendSlots normalizeSlots(AiRecommendSlots slots) {
@@ -182,33 +237,29 @@ public class AiRecommendServiceImpl implements AiRecommendService {
         if (!StringUtils.hasText(slots.getRentMode())) {
             missing.add("rentMode");
         }
-        if (!StringUtils.hasText(slots.getLocationName())) {
+        if (!hasResolvableLocation(slots.getLocationName())) {
             missing.add("locationName");
         }
         return missing;
     }
 
-    private String deriveAction(AiRecommendSlots slots, String userMessage, List<String> missingSlots) {
+    private AiRecommendStage deriveStage(String lastStage,
+                                         TurnInput input,
+                                         AiRecommendSlots slots,
+                                         List<String> missingSlots) {
+        if (!hasResolvableLocation(slots.getLocationName())) {
+            return AiRecommendStage.ASK;
+        }
         if (missingSlots.isEmpty()) {
-            return "SEARCH";
+            return AiRecommendStage.SEARCH;
         }
-        if (shouldAdviseInsteadOfAsk(userMessage)) {
-            return "ADVISE";
+        if (input.isPreviewSelection()) {
+            return AiRecommendStage.REFINE;
         }
-        return "ASK";
-    }
-
-    private boolean shouldAdviseInsteadOfAsk(String userMessage) {
-        if (!StringUtils.hasText(userMessage)) {
-            return false;
+        if (AiRecommendStage.PREVIEW.name().equals(lastStage) || AiRecommendStage.REFINE.name().equals(lastStage)) {
+            return AiRecommendStage.REFINE;
         }
-        String normalized = userMessage.replace(" ", "").toLowerCase(Locale.ROOT);
-        return normalized.contains("建议")
-                || normalized.contains("怎么选")
-                || normalized.contains("没想好")
-                || normalized.contains("先聊")
-                || normalized.contains("advice")
-                || normalized.contains("suggest");
+        return AiRecommendStage.PREVIEW;
     }
 
     private SmartGuideReqDTO buildSmartGuideReq(AiRecommendSlots slots) {
@@ -223,16 +274,18 @@ public class AiRecommendServiceImpl implements AiRecommendService {
     }
 
     private AiRecommendChatVO toChatVO(AiRecommendSessionState state,
-                                       String action,
+                                       AiRecommendStage stage,
                                        String assistantReply,
                                        List<String> missingSlots,
+                                       AiPreviewVO preview,
                                        SmartGuideResultVO recommendation) {
         AiRecommendChatVO vo = new AiRecommendChatVO();
         vo.setSessionId(state.getSessionId());
-        vo.setAction(action);
+        vo.setStage(stage.name());
         vo.setAssistantReply(assistantReply);
         vo.setSlots(toSlotsVO(state.getSlots()));
         vo.setMissingSlots(new ArrayList<>(missingSlots));
+        vo.setPreview(preview);
         vo.setRecommendation(recommendation);
         return vo;
     }
@@ -266,6 +319,7 @@ public class AiRecommendServiceImpl implements AiRecommendService {
                 .userId(state.getUserId())
                 .sessionId(state.getSessionId())
                 .summary(state.getSummary())
+                .stage(state.getStage())
                 .slots(state.getSlots())
                 .history(trimPromptHistory(state.getHistory()))
                 .build();
@@ -288,6 +342,20 @@ public class AiRecommendServiceImpl implements AiRecommendService {
         return new ArrayList<>(safeHistory.subList(safeHistory.size() - limit, safeHistory.size()));
     }
 
+    private String finalizeReply(AiRecommendStage stage,
+                                 String reply,
+                                 AiPreviewVO preview,
+                                 SmartGuideResultVO recommendation,
+                                 List<String> missingSlots,
+                                 AiRecommendSlots slots) {
+        return switch (stage) {
+            case ASK -> ensureAskReply(reply, missingSlots, slots);
+            case PREVIEW -> ensurePreviewReply(reply, preview);
+            case REFINE -> ensureRefineReply(reply, preview, missingSlots);
+            case SEARCH -> normalizeReply(reply, recommendation != null);
+        };
+    }
+
     private String normalizeReply(String reply, boolean searchReady) {
         if (StringUtils.hasText(reply)) {
             return reply.trim();
@@ -295,7 +363,7 @@ public class AiRecommendServiceImpl implements AiRecommendService {
         if (searchReady) {
             return "条件已经齐了，我现在开始帮你查找房源。";
         }
-        return "我先帮你整理需求。你可以继续补充预算、区域，或者告诉我是整租还是合租。";
+        return "我先帮你整理需求。你可以继续补充区域、预算，或者告诉我是整租还是合租。";
     }
 
     private String ensureAskReply(String reply, List<String> missingSlots, AiRecommendSlots slots) {
@@ -305,9 +373,16 @@ public class AiRecommendServiceImpl implements AiRecommendService {
         return reply.trim();
     }
 
-    private String ensureAdviseReply(String reply, AiRecommendSlots slots) {
+    private String ensurePreviewReply(String reply, AiPreviewVO preview) {
         if (!StringUtils.hasText(reply) || looksLikeSearchCommitment(reply)) {
-            return buildAdviseReply(slots);
+            return buildPreviewReply(preview);
+        }
+        return reply.trim();
+    }
+
+    private String ensureRefineReply(String reply, AiPreviewVO preview, List<String> missingSlots) {
+        if (!StringUtils.hasText(reply) || looksLikeSearchCommitment(reply)) {
+            return buildRefineReply(preview, missingSlots);
         }
         return reply.trim();
     }
@@ -326,33 +401,55 @@ public class AiRecommendServiceImpl implements AiRecommendService {
                 || normalized.contains("匹配");
     }
 
-    private String buildDowngradeReply(List<String> missingSlots, AiRecommendSlots slots) {
-        if (missingSlots.contains("budgetYuan") && slots.getBudgetYuan() != null && !isBudgetUsable(slots.getBudgetYuan())) {
-            return "你给的预算目前不在可用范围内，请给我一个 300 到 50000 之间的月租预算。";
-        }
-
-        List<String> labels = missingSlots.stream()
-                .map(this::toSlotLabel)
-                .toList();
-        return "条件还不够完整，我先不查房。你还可以继续补充 " + String.join("、", labels) + "。";
-    }
-
     private String buildSearchBlockedReply(List<String> missingSlots, AiRecommendSlots slots) {
         if (missingSlots.contains("budgetYuan") && slots.getBudgetYuan() != null && !isBudgetUsable(slots.getBudgetYuan())) {
             return "你给的预算目前不在可用范围内，请给我一个 300 到 50000 之间的月租预算。";
         }
+        if (missingSlots.contains("locationName")) {
+            return "我还不能开始查房，先告诉我你想看的区域，我再基于真实房源给你几个方向。";
+        }
 
         List<String> labels = missingSlots.stream()
                 .map(this::toSlotLabel)
                 .toList();
-        return "我还不能开始查房，还差 " + String.join("、", labels) + "。";
+        return "我先把方向理一理，还差 " + String.join("、", labels) + "，补上后我就能继续往下收窄。";
     }
 
-    private String buildAdviseReply(AiRecommendSlots slots) {
-        String rentModeHint = slots != null && StringUtils.hasText(slots.getRentMode())
-                ? slots.getRentMode()
-                : "整租/合租";
-        return "可以先不查房源，我先根据你的偏好给你一些方向建议。你更在意通勤、预算，还是 " + rentModeHint + " 呢？";
+    private String buildPreviewReply(AiPreviewVO preview) {
+        if (preview == null || !StringUtils.hasText(preview.getLocationName())) {
+            return "我先看了下这个区域附近的真实房源，目前可以先挑一个方向继续收窄。";
+        }
+        int groupCount = preview.getGroups() == null ? 0 : preview.getGroups().size();
+        if (groupCount > 0) {
+            return "我先看了下" + preview.getLocationName() + "附近的真实房源，目前大致有" + groupCount + "种方向可以继续收窄。";
+        }
+        return "我先看了下" + preview.getLocationName() + "附近的真实房源，我们可以继续挑一个方向往下看。";
+    }
+
+    private String buildPreviewUnavailableReply(List<String> missingSlots, AiRecommendSlots slots) {
+        if (missingSlots.contains("locationName")) {
+            return "我还没法形成可靠的预览，先告诉我更具体的区域。";
+        }
+        if (missingSlots.isEmpty()) {
+            return "我还没法形成可靠的预览，你可以换一个区域，或者继续补充偏好。";
+        }
+        List<String> labels = missingSlots.stream()
+                .map(this::toSlotLabel)
+                .toList();
+        return "我还没法形成可靠的预览，先补充 " + String.join("、", labels) + "，我再继续帮你缩小范围。";
+    }
+
+    private String buildRefineReply(AiPreviewVO preview, List<String> missingSlots) {
+        if (missingSlots.isEmpty()) {
+            return "方向已经收窄好了，我现在开始按这个思路正式找房。";
+        }
+        List<String> labels = missingSlots.stream()
+                .map(this::toSlotLabel)
+                .toList();
+        String prefix = preview != null && StringUtils.hasText(preview.getLocationName())
+                ? "我先按这个方向继续收窄。"
+                : "这个方向我记下来了。";
+        return prefix + " 接下来还差 " + String.join("、", labels) + "，补上后我就能正式开始找房。";
     }
 
     private String latestAssistantReply(AiRecommendSessionState state) {
@@ -363,7 +460,61 @@ public class AiRecommendServiceImpl implements AiRecommendService {
                 return turn.getContent();
             }
         }
-        return "你好，可以先告诉我预算、区域、整租/合租，或者直接说你想找什么样的房子。";
+        return "你好，可以先告诉我想看的区域，或者直接说你想找什么样的房子。";
+    }
+
+    private String resolvePromptMessage(AiRecommendChatReqDTO reqDTO) {
+        if (reqDTO != null && StringUtils.hasText(reqDTO.getMessage())) {
+            return reqDTO.getMessage().trim();
+        }
+        AiRecommendInteractionDTO interaction = reqDTO == null ? null : reqDTO.getInteraction();
+        if (interaction != null && StringUtils.hasText(interaction.getLabel())) {
+            return interaction.getLabel().trim();
+        }
+        return "interaction";
+    }
+
+    private AiRecommendSlots toSlotsPatch(AiRecommendInteractionDTO interaction) {
+        if (interaction == null || interaction.getSlotPatch() == null) {
+            return new AiRecommendSlots();
+        }
+        AiRecommendInteractionSlotPatchDTO slotPatch = interaction.getSlotPatch();
+        List<String> preferences = slotPatch.getPreferences() == null ? List.of() : slotPatch.getPreferences();
+        return AiRecommendSlots.builder()
+                .locationName(slotPatch.getLocationName())
+                .budgetYuan(slotPatch.getBudgetYuan())
+                .budgetScope(slotPatch.getBudgetScope())
+                .rentMode(slotPatch.getRentMode())
+                .priority(slotPatch.getPriority())
+                .preferences(preferences)
+                .build();
+    }
+
+    private AiPreviewVO buildPreviewSafely(AiRecommendSlots slots) {
+        if (!hasResolvableLocation(slots.getLocationName())) {
+            return null;
+        }
+        try {
+            return previewService.build(
+                    slots.getLocationName(),
+                    slots.getBudgetYuan(),
+                    slots.getBudgetScope(),
+                    slots.getRentMode()
+            );
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private AiRecommendStage parseStage(String value) {
+        if (!StringUtils.hasText(value)) {
+            return AiRecommendStage.ASK;
+        }
+        try {
+            return AiRecommendStage.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            return AiRecommendStage.ASK;
+        }
     }
 
     private String normalizeBudgetScope(String value) {
@@ -415,6 +566,10 @@ public class AiRecommendServiceImpl implements AiRecommendService {
         return budgetYuan != null && budgetYuan >= MIN_BUDGET_YUAN && budgetYuan <= MAX_BUDGET_YUAN;
     }
 
+    private boolean hasResolvableLocation(String locationName) {
+        return StringUtils.hasText(locationName);
+    }
+
     private String toSlotLabel(String slot) {
         return switch (slot) {
             case "budgetYuan" -> "预算";
@@ -422,5 +577,14 @@ public class AiRecommendServiceImpl implements AiRecommendService {
             case "locationName" -> "区域";
             default -> slot;
         };
+    }
+
+    private record TurnInput(
+            String promptMessage,
+            String transcriptMessage,
+            AiRecommendSlots slotPatch,
+            boolean isPreviewSelection,
+            String previewGroupKey
+    ) {
     }
 }

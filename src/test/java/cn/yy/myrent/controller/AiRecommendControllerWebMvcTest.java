@@ -26,6 +26,9 @@ import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.service.search.HouseKeywordSearchService;
 import cn.yy.myrent.sync.house.service.HouseEsSyncService;
 import cn.yy.myrent.common.UserContext;
+import cn.yy.myrent.vo.AiPreviewGroupVO;
+import cn.yy.myrent.vo.AiPreviewSlotPatchVO;
+import cn.yy.myrent.vo.AiPreviewVO;
 import cn.yy.myrent.vo.AiRecommendChatVO;
 import cn.yy.myrent.vo.AiRecommendSlotsVO;
 import cn.yy.myrent.vo.SmartGuideResultVO;
@@ -135,7 +138,7 @@ class AiRecommendControllerWebMvcTest {
 
         AiRecommendChatVO vo = new AiRecommendChatVO();
         vo.setSessionId("ai-u1001");
-        vo.setAction("ASK");
+        vo.setStage("ASK");
         vo.setAssistantReply("Tell me your budget first.");
         AiRecommendSlotsVO slots = new AiRecommendSlotsVO();
         slots.setCity("Shanghai");
@@ -151,7 +154,7 @@ class AiRecommendControllerWebMvcTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.sessionId").value("ai-u1001"))
-                .andExpect(jsonPath("$.data.action").value("ASK"))
+                .andExpect(jsonPath("$.data.stage").value("ASK"))
                 .andExpect(jsonPath("$.data.assistantReply").value("Tell me your budget first."))
                 .andExpect(jsonPath("$.data.slots.city").value("Shanghai"))
                 .andExpect(jsonPath("$.data.slots.budgetScope").value("STRICT"))
@@ -188,6 +191,21 @@ class AiRecommendControllerWebMvcTest {
     }
 
     @Test
+    void chatShouldRejectRequestWithoutMessageOrInteraction() throws Exception {
+        given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
+
+        mockMvc.perform(post("/ai-recommend/chat")
+                        .header("token", "test-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value("message or interaction must be provided"));
+
+        verifyNoInteractions(aiRecommendService);
+    }
+
+    @Test
     void chatShouldForwardPayloadAndReturnRecommendation() throws Exception {
         given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
 
@@ -196,7 +214,7 @@ class AiRecommendControllerWebMvcTest {
 
         AiRecommendChatVO vo = new AiRecommendChatVO();
         vo.setSessionId("ai-u1001");
-        vo.setAction("SEARCH");
+        vo.setStage("SEARCH");
         vo.setAssistantReply("I will search based on those filters.");
         vo.setRecommendation(recommendation);
 
@@ -212,7 +230,7 @@ class AiRecommendControllerWebMvcTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.action").value("SEARCH"))
+                .andExpect(jsonPath("$.data.stage").value("SEARCH"))
                 .andExpect(jsonPath("$.data.recommendation.tipMessage").value("Found matching houses."));
 
         ArgumentCaptor<cn.yy.myrent.dto.AiRecommendChatReqDTO> captor =
@@ -222,12 +240,86 @@ class AiRecommendControllerWebMvcTest {
     }
 
     @Test
+    void chatShouldAcceptPreviewSelectionPayload() throws Exception {
+        given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
+
+        AiPreviewSlotPatchVO slotPatch = new AiPreviewSlotPatchVO();
+        slotPatch.setPriority("COMMUTE");
+        slotPatch.setPreferences(java.util.List.of("nearSubway"));
+
+        AiPreviewGroupVO group = new AiPreviewGroupVO();
+        group.setGroupKey("near_metro");
+        group.setTitle("Closer to metro");
+        group.setSummary("Shorter commute with somewhat higher first-month cost.");
+        group.setHighlights(java.util.List.of("Near subway", "Shorter commute"));
+        group.setSampleCount(6);
+        group.setSlotPatch(slotPatch);
+
+        AiPreviewVO preview = new AiPreviewVO();
+        preview.setLocationName("Pudong");
+        preview.setCandidateCount(18);
+        preview.setGroups(java.util.List.of(group));
+
+        AiRecommendChatVO vo = new AiRecommendChatVO();
+        vo.setSessionId("ai-u1001");
+        vo.setStage("REFINE");
+        vo.setAssistantReply("I will continue with the near-metro direction.");
+        vo.setPreview(preview);
+
+        given(aiRecommendService.chat(any(Long.class), any())).willReturn(vo);
+
+        mockMvc.perform(post("/ai-recommend/chat")
+                        .header("token", "test-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "interaction": {
+                                    "type": "PREVIEW_SELECTION",
+                                    "groupKey": "near_metro",
+                                    "label": "Start with near metro",
+                                    "slotPatch": {
+                                      "priority": "COMMUTE",
+                                      "preferences": ["nearSubway"]
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.stage").value("REFINE"))
+                .andExpect(jsonPath("$.data.preview.groups[0].groupKey").value("near_metro"));
+    }
+
+    @Test
+    void chatShouldRejectUnsupportedInteractionType() throws Exception {
+        given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
+
+        mockMvc.perform(post("/ai-recommend/chat")
+                        .header("token", "test-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "interaction": {
+                                    "type": "UNKNOWN",
+                                    "groupKey": "near_metro",
+                                    "label": "Start with near metro"
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value("interaction.type must be PREVIEW_SELECTION"));
+
+        verifyNoInteractions(aiRecommendService);
+    }
+
+    @Test
     void resetShouldReturnFreshState() throws Exception {
         given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
 
         AiRecommendChatVO vo = new AiRecommendChatVO();
         vo.setSessionId("ai-u1001");
-        vo.setAction("ASK");
+        vo.setStage("ASK");
         vo.setAssistantReply("Let's start over.");
 
         given(aiRecommendService.reset(1001L)).willReturn(vo);

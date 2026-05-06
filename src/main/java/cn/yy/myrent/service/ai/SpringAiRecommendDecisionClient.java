@@ -6,6 +6,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
 
@@ -33,6 +34,7 @@ public class SpringAiRecommendDecisionClient implements AiRecommendDecisionClien
                 .replace("${slots}", toJson(sessionState.getSlots()))
                 .replace("${summary}", safeText(sessionState.getSummary()))
                 .replace("${recentHistory}", formatHistory(sessionState.getHistory()))
+                .replace("${previewDigest}", buildPreviewDigest(sessionState))
                 .replace("${userMessage}", userMessage)
                 .replace("${format}", promptBundle.outputFormatPrompt() + "\n" + outputConverter.getFormat());
 
@@ -67,5 +69,16 @@ public class SpringAiRecommendDecisionClient implements AiRecommendDecisionClien
 
     private String safeText(String text) {
         return text == null ? "" : text;
+    }
+
+    private String buildPreviewDigest(AiRecommendSessionState sessionState) {
+        if (sessionState == null || !StringUtils.hasText(sessionState.getStage())) {
+            return "";
+        }
+        if (!AiRecommendStage.PREVIEW.name().equals(sessionState.getStage())
+                && !AiRecommendStage.REFINE.name().equals(sessionState.getStage())) {
+            return "";
+        }
+        return "backendStage=" + sessionState.getStage();
     }
 }

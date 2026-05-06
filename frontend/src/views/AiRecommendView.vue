@@ -32,8 +32,14 @@
             :role="message.role"
             :text="message.text"
           />
+          <AiPreviewPanel
+            v-if="stage === 'PREVIEW' && preview?.groups?.length"
+            :preview="preview"
+            :loading="loading"
+            @select-group="sendPreviewSelection"
+          />
           <AiRecommendationPanel
-            v-if="recommendation"
+            v-if="stage === 'SEARCH' && recommendation"
             :recommendation="recommendation"
             @open-house="openHouse"
           />
@@ -68,6 +74,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { chatAiRecommend, fetchAiRecommendSession, resetAiRecommendSession } from '@/api/aiRecommend'
 import AiChatBubble from '@/components/ai/AiChatBubble.vue'
+import AiPreviewPanel from '@/components/ai/AiPreviewPanel.vue'
 import AiQuickPromptChips from '@/components/ai/AiQuickPromptChips.vue'
 import AiRecommendationPanel from '@/components/ai/AiRecommendationPanel.vue'
 import AiRequirementSummary from '@/components/ai/AiRequirementSummary.vue'
@@ -78,7 +85,9 @@ const router = useRouter()
 const transcript = ref([])
 const slots = ref({})
 const missingSlots = ref([])
+const preview = ref(null)
 const recommendation = ref(null)
+const stage = ref('ASK')
 const draft = ref('')
 const loading = ref(false)
 const errorText = ref('')
@@ -149,13 +158,44 @@ async function resetSession() {
   }
 }
 
+async function sendPreviewSelection(group) {
+  if (!group || loading.value) {
+    return
+  }
+
+  const previousPreview = preview.value
+  transcript.value.push({ role: 'user', text: group.title })
+  preview.value = null
+  loading.value = true
+  errorText.value = ''
+
+  try {
+    const result = await chatAiRecommend({
+      interaction: {
+        type: 'PREVIEW_SELECTION',
+        groupKey: group.groupKey,
+        label: group.title,
+        slotPatch: group.slotPatch || {}
+      }
+    })
+    applyResponse(result)
+  } catch (error) {
+    preview.value = previousPreview
+    errorText.value = error?.message || '选择方向失败，请稍后再试'
+  } finally {
+    loading.value = false
+  }
+}
+
 function applyResponse(payload, options = {}) {
+  stage.value = payload?.stage || payload?.action || 'ASK'
   slots.value = payload?.slots || {}
   missingSlots.value = payload?.missingSlots || []
+  preview.value = payload?.preview || null
   recommendation.value = payload?.recommendation || null
 
   const assistantMessage = payload?.assistantReply
-    ? { role: 'assistant', text: payload.assistantReply, action: payload?.action || 'ASK' }
+    ? { role: 'assistant', text: payload.assistantReply, stage: stage.value }
     : null
 
   if (options.reset) {

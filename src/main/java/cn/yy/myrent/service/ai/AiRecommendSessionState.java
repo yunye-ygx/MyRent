@@ -20,7 +20,11 @@ public class AiRecommendSessionState {
 
     private String summary;
 
+    private String stage;
+
     private AiRecommendSlots slots;
+
+    private String selectedPreviewGroupKey;
 
     @Builder.Default
     private List<AiRecommendTurn> history = new ArrayList<>();
@@ -30,9 +34,11 @@ public class AiRecommendSessionState {
                 .userId(userId)
                 .sessionId(buildSessionId(userId))
                 .summary("")
+                .stage(AiRecommendStage.ASK.name())
                 .slots(AiRecommendSlots.builder()
                         .preferences(new ArrayList<>())
                         .build())
+                .selectedPreviewGroupKey(null)
                 .history(new ArrayList<>())
                 .build();
     }
