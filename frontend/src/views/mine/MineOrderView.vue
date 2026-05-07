@@ -416,7 +416,7 @@ function isPaidOrder(order) {
 }
 
 function isCancelledOrder(order) {
-  return order?.status === 3
+  return order?.status === 2 || order?.status === 3
 }
 
 function isPendingReviewOrder(order) {
