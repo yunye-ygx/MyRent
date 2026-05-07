@@ -91,7 +91,7 @@ public class HouseController {
             reqDTO.setPage(1);
         }
         if (reqDTO.getSize() == null) {
-            reqDTO.setSize(10);
+             reqDTO.setSize(10);
         }
         return Result.success(houseKeywordSearchService.search(reqDTO));
     }
