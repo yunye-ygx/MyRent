@@ -1,5 +1,8 @@
 function normalizeWsBaseUrl(rawValue) {
   if (!rawValue) {
+    if (typeof window !== 'undefined' && /^https?:\/\//.test(window.location.origin)) {
+      return window.location.origin.replace(/^http/, 'ws')
+    }
     throw new Error('VITE_WS_BASE_URL is required')
   }
 

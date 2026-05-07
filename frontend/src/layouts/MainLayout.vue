@@ -11,7 +11,7 @@
     <div class="app-frame flex min-h-screen flex-col">
       <AppTopNav :items="topNavItems" :current-path="route.path" />
       <main class="app-main min-h-0 flex-1">
-        <router-view />
+        <router-view :key="route.fullPath" />
       </main>
     </div>
     <AppTabBar class="lg:hidden" />
