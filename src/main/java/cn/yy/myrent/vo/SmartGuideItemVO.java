@@ -43,6 +43,18 @@ public class SmartGuideItemVO {
     @Schema(description = "综合评分（降序排序）")
     private BigDecimal score;
 
+    @Schema(description = "推荐摘要")
+    private String recommendationSummary;
+
+    @Schema(description = "主要匹配理由")
+    private List<String> primaryReasons;
+
+    @Schema(description = "次要匹配理由")
+    private List<String> secondaryReasons;
+
+    @Schema(description = "放宽说明")
+    private List<String> relaxationNotes;
+
     @Schema(description = "推荐理由（最多3条）")
     private List<String> reasons;
 }

@@ -10,6 +10,16 @@ import cn.yy.myrent.entity.User;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.service.IHouseService;
 import cn.yy.myrent.service.IUserService;
+import cn.yy.myrent.service.discovery.HouseRecallProfile;
+import cn.yy.myrent.service.discovery.HouseRecallQuery;
+import cn.yy.myrent.service.discovery.HouseRecallResult;
+import cn.yy.myrent.service.discovery.HouseRecallService;
+import cn.yy.myrent.service.discovery.HouseRankQuery;
+import cn.yy.myrent.service.discovery.HouseRankedItem;
+import cn.yy.myrent.service.discovery.HouseRankResult;
+import cn.yy.myrent.service.discovery.HouseReasonCode;
+import cn.yy.myrent.service.discovery.HouseRankingProfile;
+import cn.yy.myrent.service.discovery.HouseRankingService;
 import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.service.location.LocationResolveService;
 import cn.yy.myrent.service.smartguide.SmartGuideRecommendationService;
@@ -34,6 +44,7 @@ import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -45,8 +56,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
-
-import org.springframework.util.StringUtils;
 
 @Service
 @RequiredArgsConstructor
@@ -62,9 +71,11 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
     private static final String FALLBACK_SOURCE_DB_HOT = "DB_HOT";
     private static final String FILTER_SOURCE_ES = "ES_FILTER";
     private static final String FILTER_SOURCE_DB = "DB_FILTER";
+    private static final String UNKNOWN_PUBLISHER_NAME = "\u672a\u77e5\u53d1\u5e03\u8005";
+    private static final int MAX_OUTWARD_REASON_COUNT = 2;
 
-    private static final String TIP_ES_DOWN = "附近房源加载异常，已为你展示热门房源";
-    private static final String TIP_OUT_OF_RANGE = "当前范围内暂无可租房源";
+    private static final String TIP_ES_DOWN = "闄勮繎鎴挎簮鍔犺浇寮傚父锛屽凡涓轰綘灞曠ず鐑棬鎴挎簮";
+    private static final String TIP_OUT_OF_RANGE = "褰撳墠鑼冨洿鍐呮殏鏃犲彲绉熸埧婧?";
 
     private final ElasticsearchOperations elasticsearchOperations;
     private final StringRedisTemplate stringRedisTemplate;
@@ -72,6 +83,8 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
     private final HouseHotService houseHotService;
     private final LocationResolveService locationResolveService;
     private final IUserService userService;
+    private final HouseRecallService houseRecallService;
+    private final HouseRankingService houseRankingService;
 
     @Override
     public List<HouseSuggestItemVO> suggest(HouseSuggestReqDTO reqDTO) {
@@ -192,19 +205,45 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         int size = reqDTO == null || reqDTO.getSize() == null ? 8 : reqDTO.getSize();
         page = Math.max(page, 1);
         size = Math.min(Math.max(size, 1), 50);
-        int pageIndex = page - 1;
-        int offset = (page - 1) * size;
+        HouseRecallResult recallResult = houseRecallService.recall(HouseRecallQuery.builder()
+                .city(reqDTO == null ? null : reqDTO.getCity())
+                .region(reqDTO == null ? null : reqDTO.getRegion())
+                .rentType(reqDTO == null ? null : reqDTO.getRentType())
+                .minPriceYuan(reqDTO == null ? null : reqDTO.getMinPriceYuan())
+                .maxPriceYuan(reqDTO == null ? null : reqDTO.getMaxPriceYuan())
+                .page(page)
+                .size(size)
+                .nearSubway(reqDTO == null ? null : reqDTO.getNearSubway())
+                .privateBathroom(reqDTO == null ? null : reqDTO.getPrivateBathroom())
+                .hasBalcony(reqDTO == null ? null : reqDTO.getHasBalcony())
+                .civilWaterElectric(reqDTO == null ? null : reqDTO.getCivilWaterElectric())
+                .supportStudentDepositFree(reqDTO == null ? null : reqDTO.getSupportStudentDepositFree())
+                .recallProfile(HouseRecallProfile.LIST_FILTER)
+                .build());
+        HouseRankResult rankResult = houseRankingService.rank(
+                recallResult.candidates(),
+                HouseRankQuery.builder()
+                        .minPriceYuan(reqDTO == null ? null : reqDTO.getMinPriceYuan())
+                        .maxPriceYuan(reqDTO == null ? null : reqDTO.getMaxPriceYuan())
+                        .page(page)
+                        .size(size)
+                        .rentMode(reqDTO == null || reqDTO.getRentType() == null ? null : String.valueOf(reqDTO.getRentType()))
+                        .nearSubway(reqDTO == null ? null : reqDTO.getNearSubway())
+                        .privateBathroom(reqDTO == null ? null : reqDTO.getPrivateBathroom())
+                        .hasBalcony(reqDTO == null ? null : reqDTO.getHasBalcony())
+                        .civilWaterElectric(reqDTO == null ? null : reqDTO.getCivilWaterElectric())
+                        .supportStudentDepositFree(reqDTO == null ? null : reqDTO.getSupportStudentDepositFree())
+                        .rankingProfile(HouseRankingProfile.SEARCH_DEFAULT)
+                        .build()
+        );
 
-        log.info("根据条件筛选房源，优先查询 ES");
-        try {
-            PagedHouseResult houses = searchFilterInEs(reqDTO, pageIndex, size);
-            return buildSearchResult(houses.houses(), houses.total(), false, FILTER_SOURCE_ES, null);
-        } catch (Exception e) {
-            log.warn("ES filter query failed, fallback to DB, page={}, size={}", page, size, e);
-        }
-
-        List<HouseVO> dbHouses = filterListFromDb(reqDTO, offset, size);
-        return buildSearchResult(dbHouses, countFilteredHousesInDb(reqDTO), true, FILTER_SOURCE_DB, null);
+        return buildSearchResult(
+                mapRankedCandidates(rankResult),
+                countFilteredHousesInDb(reqDTO),
+                recallResult.degraded(),
+                recallResult.degraded() ? FILTER_SOURCE_DB : FILTER_SOURCE_ES,
+                null
+        );
     }
 
     private HouseSearchResultVO searchWhenEsUnavailable(String city, int pageIndex, int pageSize) {
@@ -270,7 +309,7 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
                 .filter(user -> user.getId() != null)
                 .collect(Collectors.toMap(
                         User::getId,
-                        user -> StringUtils.hasText(user.getName()) ? user.getName() : "未知发布人",
+                        user -> StringUtils.hasText(user.getName()) ? user.getName() : UNKNOWN_PUBLISHER_NAME,
                         (left, right) -> left
                 ));
 
@@ -280,10 +319,10 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
             }
             Long publisherUserId = house.getPublisherUserId();
             if (publisherUserId == null) {
-                house.setPublisherName("未知发布人");
+                house.setPublisherName(UNKNOWN_PUBLISHER_NAME);
                 continue;
             }
-            house.setPublisherName(userNameMap.getOrDefault(publisherUserId, "未知发布人"));
+            house.setPublisherName(userNameMap.getOrDefault(publisherUserId, UNKNOWN_PUBLISHER_NAME));
         }
         return houses;
     }
@@ -291,7 +330,7 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
     private void fillUnknownPublisherNames(List<HouseVO> houses) {
         for (HouseVO house : houses) {
             if (house != null && !StringUtils.hasText(house.getPublisherName())) {
-                house.setPublisherName("未知发布人");
+                house.setPublisherName(UNKNOWN_PUBLISHER_NAME);
             }
         }
     }
@@ -335,122 +374,59 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         return voList;
     }
 
-    private PagedHouseResult searchFilterInEs(HouseListFilterReqDTO reqDTO, int pageIndex, int pageSize) {
-        Integer minPriceCent = yuanToCent(reqDTO == null ? null : reqDTO.getMinPriceYuan());
-        Integer maxPriceCent = yuanToCent(reqDTO == null ? null : reqDTO.getMaxPriceYuan());
-
-        Query boolQuery = Query.of(q -> q.bool(b -> {
-            b.filter(f -> f.term(t -> t.field("status").value(HOUSE_STATUS_AVAILABLE)));
-            if (reqDTO != null) {
-                if (StringUtils.hasText(reqDTO.getCity())) {
-                    b.filter(f -> f.term(t -> t.field("city").value(reqDTO.getCity())));
-                }
-                if (StringUtils.hasText(reqDTO.getRegion())) {
-                    b.filter(f -> f.term(t -> t.field("region").value(reqDTO.getRegion())));
-                }
-                if (reqDTO.getRentType() != null) {
-                    b.filter(f -> f.term(t -> t.field("rentType").value(reqDTO.getRentType())));
-                }
-                if (minPriceCent != null) {
-                    b.filter(f -> f.range(r -> r.number(n -> n.field("price").gte((double) minPriceCent))));
-                }
-                if (maxPriceCent != null) {
-                    b.filter(f -> f.range(r -> r.number(n -> n.field("price").lte((double) maxPriceCent))));
-                }
-                if (Boolean.TRUE.equals(reqDTO.getNearSubway())) {
-                    b.filter(f -> f.term(t -> t.field("nearSubway").value(true)));
-                }
-                if (Boolean.TRUE.equals(reqDTO.getPrivateBathroom())) {
-                    b.filter(f -> f.term(t -> t.field("privateBathroom").value(true)));
-                }
-                if (Boolean.TRUE.equals(reqDTO.getHasBalcony())) {
-                    b.filter(f -> f.term(t -> t.field("hasBalcony").value(true)));
-                }
-                if (Boolean.TRUE.equals(reqDTO.getCivilWaterElectric())) {
-                    b.filter(f -> f.term(t -> t.field("civilWaterElectric").value(true)));
-                }
-                if (Boolean.TRUE.equals(reqDTO.getSupportStudentDepositFree())) {
-                    b.filter(f -> f.term(t -> t.field("supportStudentDepositFree").value(true)));
-                }
-            }
-            return b;
-        }));
-
-        NativeQuery nativeQuery = NativeQuery.builder()
-                .withQuery(boolQuery)
-                .withSort(SortOptions.of(s -> s.field(f -> f.field("createTime").order(SortOrder.Desc))))
-                .withSort(SortOptions.of(s -> s.field(f -> f.field("id").order(SortOrder.Desc))))
-                .withPageable(PageRequest.of(pageIndex, pageSize))
-                .build();
-
-        SearchHits<HouseDoc> hits = elasticsearchOperations.search(nativeQuery, HouseDoc.class);
-        List<HouseVO> voList = new ArrayList<>();
-        for (SearchHit<HouseDoc> hit : hits) {
-            HouseDoc doc = hit.getContent();
-            if (doc != null) {
-                voList.add(convertDocToVo(doc));
-            }
-        }
-        log.info("ES filter query success, count={}, pageIndex={}, pageSize={}", voList.size(), pageIndex, pageSize);
-        return new PagedHouseResult(voList, hits.getTotalHits());
+    private List<HouseVO> mapRecallCandidates(HouseRecallResult recallResult) {
+        return recallResult.candidates().stream()
+                .map(candidate -> convertHouseToVo(candidate.house()))
+                .collect(Collectors.toList());
     }
 
-    private List<HouseVO> searchHotFromRedis(String city, int pageIndex, int pageSize) {
-        if (stringRedisTemplate.getConnectionFactory() == null) {
-            throw new IllegalStateException("Redis connection factory is not configured");
-        }
-
-        if (!houseHotService.hasHotRankingCache()) {
-            log.info("hot ranking cache is empty, trigger rebuild, city={}, pageIndex={}, pageSize={}",
-                    city, pageIndex, pageSize);
-            houseHotService.rebuildHotRanking();
-        }
-
-        List<HouseVO> hotHouses = houseHotService.queryHotHouses(pageIndex, pageSize);
-        log.info("Redis hot-house query finished, city={}, pageIndex={}, pageSize={}, count={}",
-                city, pageIndex, pageSize, hotHouses.size());
-        return hotHouses;
+    private List<HouseVO> mapRankedCandidates(HouseRankResult rankResult) {
+        return rankResult.currentPageItems().stream()
+                .map(this::convertRankedItemToVo)
+                .collect(Collectors.toList());
     }
 
-    private List<HouseVO> searchHotFromDb(int pageIndex, int pageSize) {
-        Page<House> page = new Page<>(pageIndex + 1L, pageSize);
-        Page<House> housePage = this.lambdaQuery()
-                .eq(House::getStatus, HOUSE_STATUS_AVAILABLE)
-                .orderByDesc(House::getCreateTime)
-                .orderByDesc(House::getId)
-                .page(page);
-
-        List<HouseVO> voList = new ArrayList<>();
-        for (House house : housePage.getRecords()) {
-            voList.add(convertHouseToVo(house));
-        }
-
-        log.info("DB hot fallback finished, pageIndex={}, pageSize={}, count={}",
-                pageIndex, pageSize, voList.size());
-        return voList;
+    private HouseVO convertRankedItemToVo(HouseRankedItem rankedItem) {
+        HouseVO vo = convertHouseToVo(rankedItem.house());
+        List<HouseReasonCode> reasonCodes = rankedItem.reasonCodes();
+        List<HouseReasonCode> outwardReasonCodes = reasonCodes.stream()
+                .filter(this::isFilterOutwardReasonCode)
+                .collect(Collectors.toList());
+        vo.setSearchReasonCodes(outwardReasonCodes.stream()
+                .map(Enum::name)
+                .collect(Collectors.toList()));
+        vo.setSearchReasons(buildFilterSearchReasons(reasonCodes));
+        return vo;
     }
 
-    private List<HouseVO> filterListFromDb(HouseListFilterReqDTO reqDTO, int offset, int size) {
-        List<House> records = baseMapper.selectListFilterPage(
-                reqDTO == null ? null : reqDTO.getCity(),
-                reqDTO == null ? null : reqDTO.getRegion(),
-                reqDTO == null ? null : reqDTO.getRentType(),
-                yuanToCent(reqDTO == null ? null : reqDTO.getMinPriceYuan()),
-                yuanToCent(reqDTO == null ? null : reqDTO.getMaxPriceYuan()),
-                reqDTO == null ? null : reqDTO.getNearSubway(),
-                reqDTO == null ? null : reqDTO.getPrivateBathroom(),
-                reqDTO == null ? null : reqDTO.getHasBalcony(),
-                reqDTO == null ? null : reqDTO.getCivilWaterElectric(),
-                reqDTO == null ? null : reqDTO.getSupportStudentDepositFree(),
-                offset,
-                size
-        );
-
-        List<HouseVO> houses = new ArrayList<>();
-        for (House house : records) {
-            houses.add(convertHouseToVo(house));
+    private List<String> buildFilterSearchReasons(List<HouseReasonCode> reasonCodes) {
+        List<String> reasons = new ArrayList<>();
+        if (reasonCodes.contains(HouseReasonCode.NEAR_SUBWAY_MATCH)) {
+            reasons.add("\u8fd1\u5730\u94c1\u6761\u4ef6\u547d\u4e2d");
         }
-        return houses;
+        if (reasonCodes.contains(HouseReasonCode.PRIVATE_BATHROOM_MATCH)) {
+            reasons.add("\u72ec\u7acb\u536b\u6d74\u6761\u4ef6\u547d\u4e2d");
+        }
+        if (reasonCodes.contains(HouseReasonCode.HAS_BALCONY_MATCH)) {
+            reasons.add("\u9633\u53f0\u6761\u4ef6\u547d\u4e2d");
+        }
+        if (reasonCodes.contains(HouseReasonCode.CIVIL_WATER_ELECTRIC_MATCH)) {
+            reasons.add("\u6c11\u6c34\u6c11\u7535\u6761\u4ef6\u547d\u4e2d");
+        }
+        if (reasonCodes.contains(HouseReasonCode.SUPPORT_STUDENT_DEPOSIT_FREE_MATCH)) {
+            reasons.add("\u5b66\u751f\u514d\u62bc\u6761\u4ef6\u547d\u4e2d");
+        }
+        return reasons.stream()
+                .limit(MAX_OUTWARD_REASON_COUNT)
+                .collect(Collectors.toList());
+    }
+
+    private boolean isFilterOutwardReasonCode(HouseReasonCode reasonCode) {
+        return reasonCode == HouseReasonCode.NEAR_SUBWAY_MATCH
+                || reasonCode == HouseReasonCode.PRIVATE_BATHROOM_MATCH
+                || reasonCode == HouseReasonCode.HAS_BALCONY_MATCH
+                || reasonCode == HouseReasonCode.CIVIL_WATER_ELECTRIC_MATCH
+                || reasonCode == HouseReasonCode.SUPPORT_STUDENT_DEPOSIT_FREE_MATCH;
     }
 
     private long countFilteredHousesInDb(HouseListFilterReqDTO reqDTO) {
@@ -492,6 +468,41 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
             queryWrapper.eq("support_student_deposit_free", 1);
         }
         return baseMapper.selectCount(queryWrapper);
+    }
+
+    private List<HouseVO> searchHotFromRedis(String city, int pageIndex, int pageSize) {
+        if (stringRedisTemplate.getConnectionFactory() == null) {
+            throw new IllegalStateException("Redis connection factory is not configured");
+        }
+
+        if (!houseHotService.hasHotRankingCache()) {
+            log.info("hot ranking cache is empty, trigger rebuild, city={}, pageIndex={}, pageSize={}",
+                    city, pageIndex, pageSize);
+            houseHotService.rebuildHotRanking();
+        }
+
+        List<HouseVO> hotHouses = houseHotService.queryHotHouses(pageIndex, pageSize);
+        log.info("Redis hot-house query finished, city={}, pageIndex={}, pageSize={}, count={}",
+                city, pageIndex, pageSize, hotHouses.size());
+        return hotHouses;
+    }
+
+    private List<HouseVO> searchHotFromDb(int pageIndex, int pageSize) {
+        Page<House> page = new Page<>(pageIndex + 1L, pageSize);
+        Page<House> housePage = this.lambdaQuery()
+                .eq(House::getStatus, HOUSE_STATUS_AVAILABLE)
+                .orderByDesc(House::getCreateTime)
+                .orderByDesc(House::getId)
+                .page(page);
+
+        List<HouseVO> voList = new ArrayList<>();
+        for (House house : housePage.getRecords()) {
+            voList.add(convertHouseToVo(house));
+        }
+
+        log.info("DB hot fallback finished, pageIndex={}, pageSize={}, count={}",
+                pageIndex, pageSize, voList.size());
+        return voList;
     }
 
     private HouseVO convertDocToVo(HouseDoc doc) {
@@ -575,8 +586,5 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
     }
 
     private record SearchPoint(double latitude, double longitude) {
-    }
-
-    private record PagedHouseResult(List<HouseVO> houses, long total) {
     }
 }

@@ -22,14 +22,23 @@
             <h4>{{ item.title || '未命名房源' }}</h4>
             <p class="recommend-price">{{ formatPrice(item.price) }}/月</p>
           </div>
-          <span class="recommend-score">评分 {{ formatScore(item.score) }}</span>
         </div>
         <div class="recommend-meta">
-          <span v-if="item.distanceToMetroKm != null">距地铁 {{ item.distanceToMetroKm }} km</span>
-          <span v-if="item.estimatedCommuteMinutes != null">通勤约 {{ item.estimatedCommuteMinutes }} 分钟</span>
+          <span v-if="item.distanceToMetroKm != null">距目标地点 {{ item.distanceToMetroKm }} km</span>
+          <span v-if="item.estimatedCommuteMinutes != null">预计通勤 {{ item.estimatedCommuteMinutes }} 分钟</span>
         </div>
-        <div v-if="item.reasons?.length" class="recommend-tags">
-          <span v-for="reason in item.reasons" :key="reason" class="recommend-tag">{{ reason }}</span>
+        <p v-if="item.recommendationSummary" class="recommend-summary">{{ item.recommendationSummary }}</p>
+        <div v-if="item.primaryReasons?.length" class="recommend-tags recommend-tags--primary">
+          <span v-for="reason in item.primaryReasons" :key="reason" class="recommend-tag recommend-tag--primary">{{ reason }}</span>
+        </div>
+        <div v-if="item.secondaryReasons?.length" class="recommend-tags">
+          <span v-for="reason in item.secondaryReasons" :key="reason" class="recommend-tag recommend-tag--secondary">{{ reason }}</span>
+        </div>
+        <div v-if="item.relaxationNotes?.length" class="recommend-tags recommend-tags--relaxation">
+          <span v-for="reason in item.relaxationNotes" :key="reason" class="recommend-tag recommend-tag--relaxation">{{ reason }}</span>
+        </div>
+        <div v-else-if="item.reasons?.length" class="recommend-tags">
+          <span v-for="reason in item.reasons" :key="reason" class="recommend-tag recommend-tag--secondary">{{ reason }}</span>
         </div>
       </article>
     </div>
@@ -52,13 +61,6 @@ defineEmits(['open-house'])
 const items = computed(() => props.recommendation?.recommendations || [])
 
 function formatPrice(value) {
-  if (value == null || value === '') {
-    return '--'
-  }
-  return String(value)
-}
-
-function formatScore(value) {
   if (value == null || value === '') {
     return '--'
   }
@@ -136,12 +138,6 @@ function formatScore(value) {
   font-weight: 700;
 }
 
-.recommend-score {
-  color: var(--color-text-muted);
-  font-size: 13px;
-  font-weight: 600;
-}
-
 .recommend-meta {
   display: flex;
   flex-wrap: wrap;
@@ -149,6 +145,14 @@ function formatScore(value) {
   margin-top: 10px;
   color: var(--color-text-muted);
   font-size: 13px;
+}
+
+.recommend-summary {
+  margin: 12px 0 0;
+  color: #2f4d3a;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
 }
 
 .recommend-tags {
@@ -161,10 +165,23 @@ function formatScore(value) {
 .recommend-tag {
   border-radius: 999px;
   padding: 6px 10px;
-  background: rgba(77, 107, 66, 0.12);
-  color: #446b55;
   font-size: 12px;
   font-weight: 600;
+}
+
+.recommend-tag--primary {
+  background: rgba(77, 107, 66, 0.16);
+  color: #2f6443;
+}
+
+.recommend-tag--secondary {
+  background: rgba(92, 108, 98, 0.1);
+  color: #54655b;
+}
+
+.recommend-tag--relaxation {
+  background: rgba(154, 107, 51, 0.14);
+  color: #8f5a22;
 }
 
 .recommend-empty {

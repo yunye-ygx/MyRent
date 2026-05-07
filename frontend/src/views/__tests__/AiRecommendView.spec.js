@@ -40,7 +40,7 @@ describe('AiRecommendView', () => {
         budgetScope: 'RENT_ONLY',
         rentMode: 'WHOLE',
         priority: 'COMMUTE',
-        preferences: ['近地铁']
+        preferences: ['nearSubway']
       },
       missingSlots: [],
       recommendation: {
@@ -51,7 +51,12 @@ describe('AiRecommendView', () => {
             title: '浦东近地铁一居',
             price: 3500,
             score: 92,
+            distanceToMetroKm: 1.2,
             estimatedCommuteMinutes: 26,
+            recommendationSummary: '优先满足通勤诉求，近地铁匹配更强',
+            primaryReasons: ['优先满足通勤诉求，近地铁匹配更强'],
+            secondaryReasons: ['租金和你的预算更接近', '整租/合租方式匹配'],
+            relaxationNotes: ['为了保留更强匹配，这套房接受了轻度预算放宽'],
             reasons: ['近地铁', '预算内']
           }
         ]
@@ -247,5 +252,30 @@ describe('AiRecommendView', () => {
       missingSlots: ['budgetYuan', 'rentMode']
     })
     await flushPromises()
+  })
+
+  it('renders ai recommendation distance details without exposing score text', async () => {
+    const { wrapper } = await mountView()
+
+    await wrapper.get('.chat-input').setValue('预算3500，想在浦东整租')
+    await wrapper.get('.chat-form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('1.2 km')
+    expect(wrapper.text()).toContain('26')
+    expect(wrapper.text()).not.toContain('评分 92')
+  })
+
+  it('renders primary, secondary and relaxation reasons with different copy levels', async () => {
+    const { wrapper } = await mountView()
+
+    await wrapper.get('.chat-input').setValue('预算3500，我更在意通勤，阳台最好有')
+    await wrapper.get('.chat-form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('优先满足通勤诉求，近地铁匹配更强')
+    expect(wrapper.text()).toContain('租金和你的预算更接近')
+    expect(wrapper.text()).toContain('整租/合租方式匹配')
+    expect(wrapper.text()).toContain('为了保留更强匹配，这套房接受了轻度预算放宽')
   })
 })

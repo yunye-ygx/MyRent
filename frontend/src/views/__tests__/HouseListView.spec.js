@@ -76,7 +76,8 @@ describe('HouseListView', () => {
         total: 17,
         tipMessage: `关键词搜索结果已刷新：${payload.keyword}`,
         houses: [buildHouse(200 + (payload.page || 1), {
-          title: `${payload.keyword || '关键词'}房源-${payload.page || 1}`
+          title: `${payload.keyword || '关键词'}房源-${payload.page || 1}`,
+          searchReasons: ['同时命中关键词与位置', '距目标地点约 1.2km']
         })],
         fallbackSource: 'KEYWORD_SEARCH'
       })
@@ -161,6 +162,20 @@ describe('HouseListView', () => {
     expect(wrapper.findAll('[data-test="result-card"]')).toHaveLength(2)
     expect(wrapper.get('[data-test="result-count"]').text()).toContain('17')
     expect(fetchHouseListFilter).not.toHaveBeenCalled()
+  })
+
+  it('renders search ordering copy and lightweight search reasons separately from feature tags', async () => {
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-test="house-keyword"]').setValue('豫园')
+    await wrapper.get('[data-test="house-search-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已按关键词匹配度和位置相关性排序')
+    expect(wrapper.text()).toContain('同时命中关键词与位置')
+    expect(wrapper.text()).toContain('距目标地点约 1.2km')
+    expect(wrapper.text()).toContain('近地铁')
+    expect(wrapper.text()).toContain('独立卫浴')
   })
 
   it('hydrates filters from homepage query params before requesting data', async () => {

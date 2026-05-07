@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 public class HouseVO {
@@ -49,4 +50,8 @@ public class HouseVO {
     private Long recentReplyCount;
 
     private Double hotScore;
+
+    private List<String> searchReasons;
+
+    private List<String> searchReasonCodes;
 }

@@ -15,3 +15,4 @@ ${userMessage}
 
 Follow this output format exactly:
 ${format}
+If the user says things like "更在意", "最好有", or "预算可以稍微放一点", preserve that relative strength in the slot output whenever possible.

@@ -193,6 +193,9 @@
                 <div v-if="house.tags.length" class="tag-row">
                   <span v-for="tag in house.tags" :key="tag" class="info-tag">{{ tag }}</span>
                 </div>
+                <div v-if="house.searchReasons.length" class="search-reason-row">
+                  <span v-for="reason in house.searchReasons" :key="reason" class="search-reason-tag">{{ reason }}</span>
+                </div>
               </div>
 
               <div class="price-block">
@@ -387,7 +390,7 @@ const resultSummaryText = computed(() => {
     return `${currentCity.value} 房源列表`
   }
   if (currentMode.value === 'keyword' && payload.keyword) {
-    return `关键词：${payload.keyword}`
+    return `关键词：${payload.keyword} · 已按关键词匹配度和位置相关性排序`
   }
 
   const pieces = [payload.city]
@@ -397,7 +400,7 @@ const resultSummaryText = computed(() => {
   if (activeFeatureLabels.value.length) {
     pieces.push(activeFeatureLabels.value.join(' / '))
   }
-  return pieces.join(' · ')
+  return `${pieces.join(' · ')} · 已按筛选条件匹配度排序`
 })
 const mapCopyText = computed(() => {
   const payload = lastFilterPayload.value
@@ -736,6 +739,9 @@ function normalizeHouseRecord(item, index) {
   const publisherName = item?.publisherName || '未知发布者'
   const rentMode = normalizeRentMode(item?.rentType || item?.rentMode)
   const tags = buildHouseTags(item)
+  const searchReasons = Array.isArray(item?.searchReasons)
+    ? item.searchReasons.filter(Boolean).slice(0, 2)
+    : []
   const price = toAmount(item?.price)
   const depositAmount = toAmount(item?.depositAmount)
 
@@ -748,6 +754,7 @@ function normalizeHouseRecord(item, index) {
     price,
     publisherName,
     tags,
+    searchReasons,
     cover: item?.cover || `https://picsum.photos/seed/myrent-house-${id}/240/168`,
     roomSummary: [rentModeText(rentMode), city, region].filter(Boolean).join(' · '),
     metaLine: buildMetaLine({ publisherName, depositAmount, city, region })
@@ -1270,6 +1277,22 @@ function formatAmount(value) {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 14px;
+}
+
+.search-reason-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.search-reason-tag {
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: rgba(68, 107, 85, 0.08);
+  color: #5b7466;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .info-tag {

@@ -28,4 +28,13 @@ public class AiRecommendSlots {
 
     @Builder.Default
     private List<String> preferences = new ArrayList<>();
+
+    @Builder.Default
+    private List<AiWeightedPreference> weightedPreferences = new ArrayList<>();
+
+    private Boolean budgetRelaxable;
+
+    private Integer budgetRelaxLimitYuan;
+
+    private String tradeoffReason;
 }

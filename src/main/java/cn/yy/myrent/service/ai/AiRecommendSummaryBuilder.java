@@ -11,6 +11,9 @@ public class AiRecommendSummaryBuilder {
     public String build(AiRecommendSlots slots, List<String> missingSlots) {
         AiRecommendSlots safeSlots = slots == null ? new AiRecommendSlots() : slots;
         List<String> safePreferences = safeSlots.getPreferences() == null ? List.of() : safeSlots.getPreferences();
+        List<AiWeightedPreference> safeWeightedPreferences = safeSlots.getWeightedPreferences() == null
+                ? List.of()
+                : safeSlots.getWeightedPreferences();
         List<String> safeMissingSlots = missingSlots == null ? List.of() : missingSlots;
 
         StringJoiner joiner = new StringJoiner("; ");
@@ -21,6 +24,8 @@ public class AiRecommendSummaryBuilder {
         joiner.add("rentMode=" + safe(safeSlots.getRentMode()));
         joiner.add("priority=" + safe(safeSlots.getPriority()));
         joiner.add("preferences=" + safePreferences);
+        joiner.add("weightedPreferences=" + safeWeightedPreferences);
+        joiner.add("budgetRelaxable=" + safe(safeSlots.getBudgetRelaxable()));
         joiner.add("missing=" + safeMissingSlots);
         return joiner.toString();
     }

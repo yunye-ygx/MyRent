@@ -1,34 +1,37 @@
 package cn.yy.myrent.service.search;
 
-import cn.yy.myrent.document.HouseDoc;
 import cn.yy.myrent.dto.HouseKeywordSearchReqDTO;
 import cn.yy.myrent.entity.House;
 import cn.yy.myrent.entity.User;
-import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.service.IUserService;
-import cn.yy.myrent.service.location.LocationResolveService;
+import cn.yy.myrent.service.discovery.HouseRankResult;
+import cn.yy.myrent.service.discovery.HouseRankedItem;
+import cn.yy.myrent.service.discovery.HouseRankingService;
+import cn.yy.myrent.service.discovery.HouseRankingServiceImpl;
+import cn.yy.myrent.service.discovery.HouseRecallCandidate;
+import cn.yy.myrent.service.discovery.HouseRecallEvidence;
+import cn.yy.myrent.service.discovery.HouseRecallMatchTier;
+import cn.yy.myrent.service.discovery.HouseRecallProfile;
+import cn.yy.myrent.service.discovery.HouseRecallQuery;
+import cn.yy.myrent.service.discovery.HouseRecallResult;
+import cn.yy.myrent.service.discovery.HouseRecallService;
+import cn.yy.myrent.service.discovery.HouseReasonCode;
+import cn.yy.myrent.service.discovery.HouseScoreBreakdown;
 import cn.yy.myrent.vo.HouseSearchResultVO;
-import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.elasticsearch.client.elc.NativeQuery;
-import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
-import org.springframework.data.elasticsearch.core.SearchHit;
-import org.springframework.data.elasticsearch.core.SearchHits;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,106 +39,57 @@ import static org.mockito.Mockito.when;
 class HouseKeywordSearchServiceTest {
 
     @Mock
-    private ElasticsearchOperations elasticsearchOperations;
-
-    @Mock
-    private HouseMapper houseMapper;
-
-    @Mock
-    private LocationResolveService locationResolveService;
+    private HouseRecallService houseRecallService;
 
     @Mock
     private IUserService userService;
 
-    @InjectMocks
-    private HouseKeywordSearchService houseKeywordSearchService;
+    private final HouseRankingService houseRankingService = new HouseRankingServiceImpl();
 
     @Test
-    void searchShouldMergeDualRecallAndDropUnavailableDbRows() {
-        HouseDoc locationDoc = new HouseDoc();
-        locationDoc.setId(11L);
-        locationDoc.setStatus(1);
-        locationDoc.setTitle("体育西路地铁口单间");
+    void searchShouldDelegateToRecallAndKeepRankingOrderWhileTotalReflectsFullCandidateSet() {
+        House locationOnly = buildHouse(11L, 1001L, "location", LocalDateTime.of(2026, 4, 25, 10, 0));
+        House bothMatched = buildHouse(12L, 1002L, "both", LocalDateTime.of(2026, 4, 25, 11, 0));
+        House textOnly = buildHouse(13L, 1003L, "text", LocalDateTime.of(2026, 4, 25, 9, 0));
+        House tail = buildHouse(14L, 1004L, "tail", LocalDateTime.of(2026, 4, 20, 9, 0));
 
-        HouseDoc sharedDoc = new HouseDoc();
-        sharedDoc.setId(12L);
-        sharedDoc.setStatus(1);
-        sharedDoc.setTitle("天河公园精装单间");
+        when(houseRecallService.recall(any(HouseRecallQuery.class))).thenReturn(new HouseRecallResult(
+                List.of(
+                        new HouseRecallCandidate(locationOnly, HouseRecallMatchTier.LOCATION_ONLY,
+                                HouseRecallEvidence.builder()
+                                        .locationMatched(true)
+                                        .locationDistanceMeters(120.0d)
+                                        .locationRank(0)
+                                        .build()),
+                        new HouseRecallCandidate(bothMatched, HouseRecallMatchTier.EXACT,
+                                HouseRecallEvidence.builder()
+                                        .locationMatched(true)
+                                        .textMatched(true)
+                                        .locationDistanceMeters(260.0d)
+                                        .locationRank(1)
+                                        .textRank(0)
+                                        .textScore(2.1f)
+                                        .build()),
+                        new HouseRecallCandidate(textOnly, HouseRecallMatchTier.TEXT_ONLY,
+                                HouseRecallEvidence.builder()
+                                        .textMatched(true)
+                                        .textRank(1)
+                                        .textScore(1.4f)
+                                        .build()),
+                        new HouseRecallCandidate(tail, HouseRecallMatchTier.TEXT_ONLY,
+                                HouseRecallEvidence.builder()
+                                        .textMatched(true)
+                                        .textRank(20)
+                                        .textScore(0.2f)
+                                        .build())
+                ),
+                true,
+                false
+        ));
+        when(userService.listByIds(List.of(1002L, 1001L))).thenReturn(List.of(user(1002L, "B"), user(1001L, "A")));
 
-        HouseDoc textDoc = new HouseDoc();
-        textDoc.setId(13L);
-        textDoc.setStatus(1);
-        textDoc.setTitle("天河公园主卧");
-
-        @SuppressWarnings("unchecked")
-        SearchHit<HouseDoc> locationHitOne = (SearchHit<HouseDoc>) mock(SearchHit.class);
-        @SuppressWarnings("unchecked")
-        SearchHit<HouseDoc> locationHitTwo = (SearchHit<HouseDoc>) mock(SearchHit.class);
-        @SuppressWarnings("unchecked")
-        SearchHit<HouseDoc> textHitOne = (SearchHit<HouseDoc>) mock(SearchHit.class);
-        @SuppressWarnings("unchecked")
-        SearchHit<HouseDoc> textHitTwo = (SearchHit<HouseDoc>) mock(SearchHit.class);
-
-        when(locationHitOne.getContent()).thenReturn(locationDoc);
-        when(locationHitOne.getSortValues()).thenReturn(List.of(120.0));
-        when(locationHitTwo.getContent()).thenReturn(sharedDoc);
-        when(locationHitTwo.getSortValues()).thenReturn(List.of(260.0));
-        when(textHitOne.getContent()).thenReturn(sharedDoc);
-        when(textHitOne.getScore()).thenReturn(2.1f);
-        when(textHitTwo.getContent()).thenReturn(textDoc);
-        when(textHitTwo.getScore()).thenReturn(1.4f);
-
-        @SuppressWarnings("unchecked")
-        SearchHits<HouseDoc> locationHits = (SearchHits<HouseDoc>) mock(SearchHits.class);
-        @SuppressWarnings("unchecked")
-        SearchHits<HouseDoc> textHits = (SearchHits<HouseDoc>) mock(SearchHits.class);
-        when(locationHits.iterator()).thenReturn(List.of(locationHitOne, locationHitTwo).iterator());
-        when(textHits.iterator()).thenReturn(List.of(textHitOne, textHitTwo).iterator());
-
-        when(locationResolveService.resolveRequired("天河公园单间"))
-                .thenReturn(new LocationResolveService.ResolvedLocation("天河公园", 23.145d, 113.333d));
-        when(elasticsearchOperations.search(any(NativeQuery.class), eq(HouseDoc.class)))
-                .thenAnswer(invocation -> isLocationQuery(invocation.getArgument(0)) ? locationHits : textHits);
-
-        House availableLocation = new House();
-        availableLocation.setId(11L);
-        availableLocation.setPublisherUserId(1001L);
-        availableLocation.setTitle("体育西路地铁口单间");
-        availableLocation.setCity("广州");
-        availableLocation.setRegion("天河");
-        availableLocation.setPrice(300000);
-        availableLocation.setDepositAmount(300000);
-        availableLocation.setStatus(1);
-        availableLocation.setCreateTime(LocalDateTime.of(2026, 4, 25, 10, 0));
-
-        House dualHit = new House();
-        dualHit.setId(12L);
-        dualHit.setPublisherUserId(1002L);
-        dualHit.setTitle("天河公园精装单间");
-        dualHit.setCity("广州");
-        dualHit.setRegion("天河");
-        dualHit.setPrice(320000);
-        dualHit.setDepositAmount(320000);
-        dualHit.setStatus(1);
-        dualHit.setCreateTime(LocalDateTime.of(2026, 4, 25, 11, 0));
-
-        House unavailableTextOnly = new House();
-        unavailableTextOnly.setId(13L);
-        unavailableTextOnly.setPublisherUserId(1003L);
-        unavailableTextOnly.setTitle("天河公园主卧");
-        unavailableTextOnly.setStatus(2);
-
-        when(houseMapper.selectBatchIds(List.of(11L, 12L, 13L)))
-                .thenReturn(List.of(dualHit, unavailableTextOnly, availableLocation));
-
-        User publisherOne = new User();
-        publisherOne.setId(1001L);
-        publisherOne.setName("房东A");
-        User publisherTwo = new User();
-        publisherTwo.setId(1002L);
-        publisherTwo.setName("房东B");
-        when(userService.listByIds(List.of(1002L, 1001L))).thenReturn(List.of(publisherTwo, publisherOne));
-
+        HouseKeywordSearchService houseKeywordSearchService =
+                new HouseKeywordSearchService(houseRecallService, houseRankingService, userService);
         HouseKeywordSearchReqDTO reqDTO = new HouseKeywordSearchReqDTO();
         reqDTO.setKeyword("天河公园单间");
         reqDTO.setPage(1);
@@ -144,57 +98,44 @@ class HouseKeywordSearchServiceTest {
         HouseSearchResultVO result = houseKeywordSearchService.search(reqDTO);
 
         assertEquals(2, result.getHouses().size());
-        assertEquals(2L, result.getTotal());
+        assertEquals(4L, result.getTotal());
         assertEquals(12L, result.getHouses().get(0).getId());
         assertEquals(11L, result.getHouses().get(1).getId());
+        assertEquals(
+                List.of("\u540c\u65f6\u547d\u4e2d\u5173\u952e\u8bcd\u4e0e\u4f4d\u7f6e", "\u8ddd\u76ee\u6807\u5730\u70b9\u7ea6 0.3km"),
+                result.getHouses().get(0).getSearchReasons()
+        );
+        assertEquals(
+                List.of("RECALL_LOCATION_MATCH", "RECALL_TEXT_MATCH", "LOCATION_DISTANCE_ADVANTAGE"),
+                result.getHouses().get(0).getSearchReasonCodes()
+        );
         assertEquals("KEYWORD_SEARCH", result.getFallbackSource());
         assertEquals(Boolean.FALSE, result.getEsDown());
+        assertNull(result.getTipMessage());
+
+        ArgumentCaptor<HouseRecallQuery> queryCaptor = ArgumentCaptor.forClass(HouseRecallQuery.class);
+        verify(houseRecallService).recall(queryCaptor.capture());
+        assertEquals("天河公园单间", queryCaptor.getValue().keyword());
+        assertEquals(1, queryCaptor.getValue().page());
+        assertEquals(2, queryCaptor.getValue().size());
+        assertEquals(HouseRecallProfile.KEYWORD_SEARCH, queryCaptor.getValue().recallProfile());
     }
 
     @Test
-    void searchShouldMarkDegradedWhenTextRecallFailsButLocationRecallSucceeds() {
-        HouseDoc locationDoc = new HouseDoc();
-        locationDoc.setId(31L);
-        locationDoc.setStatus(1);
-        locationDoc.setTitle("体育西路地铁口单间");
+    void searchShouldExposeDegradedStatusFromRecall() {
+        when(houseRecallService.recall(any(HouseRecallQuery.class))).thenReturn(new HouseRecallResult(
+                List.of(new HouseRecallCandidate(
+                        buildHouse(31L, 2001L, "only", LocalDateTime.of(2026, 4, 25, 9, 0)),
+                        HouseRecallMatchTier.LOCATION_ONLY,
+                        HouseRecallEvidence.builder().locationMatched(true).locationDistanceMeters(88.0d).build()
+                )),
+                false,
+                true
+        ));
+        when(userService.listByIds(List.of(2001L))).thenReturn(List.of(user(2001L, "C")));
 
-        @SuppressWarnings("unchecked")
-        SearchHit<HouseDoc> locationHit = (SearchHit<HouseDoc>) mock(SearchHit.class);
-        when(locationHit.getContent()).thenReturn(locationDoc);
-        when(locationHit.getSortValues()).thenReturn(List.of(88.0));
-
-        @SuppressWarnings("unchecked")
-        SearchHits<HouseDoc> locationHits = (SearchHits<HouseDoc>) mock(SearchHits.class);
-        when(locationHits.iterator()).thenReturn(List.of(locationHit).iterator());
-
-        when(locationResolveService.resolveRequired("体育西路"))
-                .thenReturn(new LocationResolveService.ResolvedLocation("体育西路", 23.132d, 113.321d));
-        when(elasticsearchOperations.search(any(NativeQuery.class), eq(HouseDoc.class)))
-                .thenAnswer(invocation -> {
-                    NativeQuery query = invocation.getArgument(0);
-                    if (isLocationQuery(query)) {
-                        return locationHits;
-                    }
-                    throw new RuntimeException("ES text path down");
-                });
-
-        House dbHouse = new House();
-        dbHouse.setId(31L);
-        dbHouse.setPublisherUserId(2001L);
-        dbHouse.setTitle("体育西路地铁口单间");
-        dbHouse.setCity("广州");
-        dbHouse.setRegion("天河");
-        dbHouse.setPrice(280000);
-        dbHouse.setDepositAmount(280000);
-        dbHouse.setStatus(1);
-        dbHouse.setCreateTime(LocalDateTime.of(2026, 4, 25, 9, 0));
-        when(houseMapper.selectBatchIds(List.of(31L))).thenReturn(List.of(dbHouse));
-
-        User publisher = new User();
-        publisher.setId(2001L);
-        publisher.setName("房东C");
-        when(userService.listByIds(List.of(2001L))).thenReturn(List.of(publisher));
-
+        HouseKeywordSearchService houseKeywordSearchService =
+                new HouseKeywordSearchService(houseRecallService, houseRankingService, userService);
         HouseKeywordSearchReqDTO reqDTO = new HouseKeywordSearchReqDTO();
         reqDTO.setKeyword("体育西路");
         reqDTO.setPage(1);
@@ -209,35 +150,109 @@ class HouseKeywordSearchServiceTest {
     }
 
     @Test
-    void searchShouldOversampleEachRecallPathWithSizeTimesThree() {
-        @SuppressWarnings("unchecked")
-        SearchHits<HouseDoc> emptyHits = (SearchHits<HouseDoc>) mock(SearchHits.class);
-        when(emptyHits.iterator()).thenReturn(List.<SearchHit<HouseDoc>>of().iterator());
+    void searchShouldBuildDistanceReasonFromRecallEvidenceInsteadOfRankingScore() {
+        House bothMatched = buildHouse(41L, 3001L, "both", LocalDateTime.of(2026, 4, 25, 11, 0));
+        HouseRecallResult recallResult = new HouseRecallResult(
+                List.of(new HouseRecallCandidate(
+                        bothMatched,
+                        HouseRecallMatchTier.EXACT,
+                        HouseRecallEvidence.builder()
+                                .locationMatched(true)
+                                .textMatched(true)
+                                .locationDistanceMeters(1260.0d)
+                                .locationRank(0)
+                                .textRank(0)
+                                .textScore(2.0f)
+                                .build()
+                )),
+                true,
+                false
+        );
+        HouseRankingService rankingService = (candidates, query) -> new HouseRankResult(
+                List.of(new HouseRankedItem(
+                        bothMatched,
+                        999.0d,
+                        HouseScoreBreakdown.builder()
+                                .locationDistanceScore(0.0d)
+                                .build(),
+                        List.of(HouseReasonCode.RECALL_LOCATION_MATCH,
+                                HouseReasonCode.RECALL_TEXT_MATCH,
+                                HouseReasonCode.LOCATION_DISTANCE_ADVANTAGE)
+                )),
+                List.of(new HouseRankedItem(
+                        bothMatched,
+                        999.0d,
+                        HouseScoreBreakdown.builder()
+                                .locationDistanceScore(0.0d)
+                                .build(),
+                        List.of(HouseReasonCode.RECALL_LOCATION_MATCH,
+                                HouseReasonCode.RECALL_TEXT_MATCH,
+                                HouseReasonCode.LOCATION_DISTANCE_ADVANTAGE)
+                )),
+                1L
+        );
+        when(houseRecallService.recall(any(HouseRecallQuery.class))).thenReturn(recallResult);
+        when(userService.listByIds(List.of(3001L))).thenReturn(List.of(user(3001L, "D")));
 
-        when(locationResolveService.resolveRequired("天河公园")).thenThrow(new IllegalArgumentException("not found"));
-        when(elasticsearchOperations.search(any(NativeQuery.class), eq(HouseDoc.class))).thenReturn(emptyHits);
-
+        HouseKeywordSearchService houseKeywordSearchService =
+                new HouseKeywordSearchService(houseRecallService, rankingService, userService);
         HouseKeywordSearchReqDTO reqDTO = new HouseKeywordSearchReqDTO();
-        reqDTO.setKeyword("天河公园");
+        reqDTO.setKeyword("体育西路");
         reqDTO.setPage(1);
-        reqDTO.setSize(4);
+        reqDTO.setSize(1);
 
-        houseKeywordSearchService.search(reqDTO);
+        HouseSearchResultVO result = houseKeywordSearchService.search(reqDTO);
 
-        ArgumentCaptor<NativeQuery> queryCaptor = ArgumentCaptor.forClass(NativeQuery.class);
-        verify(elasticsearchOperations).search(queryCaptor.capture(), eq(HouseDoc.class));
-
-        Pageable pageable = queryCaptor.getValue().getPageable();
-        assertEquals(0, pageable.getPageNumber());
-        assertEquals(12, pageable.getPageSize());
+        assertEquals(
+                List.of("同时命中关键词与位置", "距目标地点约 1.3km"),
+                result.getHouses().get(0).getSearchReasons()
+        );
     }
 
     @Test
-    void searchShouldReturnEmptyWhenBothRecallPathsFail() {
-        when(locationResolveService.resolveRequired("天河公园")).thenThrow(new RuntimeException("location path down"));
-        when(elasticsearchOperations.search(any(NativeQuery.class), eq(HouseDoc.class)))
-                .thenThrow(new RuntimeException("text path down"));
+    void searchShouldFailSoftWhenPublisherEnrichmentThrows() {
+        House bothMatched = buildHouse(51L, 4001L, "both", LocalDateTime.of(2026, 4, 25, 11, 0));
+        when(houseRecallService.recall(any(HouseRecallQuery.class))).thenReturn(new HouseRecallResult(
+                List.of(new HouseRecallCandidate(
+                        bothMatched,
+                        HouseRecallMatchTier.EXACT,
+                        HouseRecallEvidence.builder()
+                                .locationMatched(true)
+                                .textMatched(true)
+                                .locationDistanceMeters(260.0d)
+                                .locationRank(0)
+                                .textRank(0)
+                                .textScore(2.0f)
+                                .build()
+                )),
+                true,
+                false
+        ));
+        doThrow(new RuntimeException("lookup failed")).when(userService).listByIds(List.of(4001L));
 
+        HouseKeywordSearchService houseKeywordSearchService =
+                new HouseKeywordSearchService(houseRecallService, houseRankingService, userService);
+        HouseKeywordSearchReqDTO reqDTO = new HouseKeywordSearchReqDTO();
+        reqDTO.setKeyword("天河公园");
+        reqDTO.setPage(1);
+        reqDTO.setSize(1);
+
+        HouseSearchResultVO result = houseKeywordSearchService.search(reqDTO);
+
+        assertEquals(1, result.getHouses().size());
+        assertEquals(51L, result.getHouses().get(0).getId());
+        assertEquals("未知发布者", result.getHouses().get(0).getPublisherName());
+        assertEquals("KEYWORD_SEARCH", result.getFallbackSource());
+        assertEquals(Boolean.FALSE, result.getEsDown());
+    }
+
+    @Test
+    void searchShouldReturnReadableTipWhenRecallReturnsNoCandidates() {
+        when(houseRecallService.recall(any(HouseRecallQuery.class)))
+                .thenReturn(new HouseRecallResult(List.of(), false, true));
+
+        HouseKeywordSearchService houseKeywordSearchService =
+                new HouseKeywordSearchService(houseRecallService, houseRankingService, userService);
         HouseKeywordSearchReqDTO reqDTO = new HouseKeywordSearchReqDTO();
         reqDTO.setKeyword("天河公园");
         reqDTO.setPage(1);
@@ -249,13 +264,27 @@ class HouseKeywordSearchServiceTest {
         assertEquals(0L, result.getTotal());
         assertEquals(Boolean.TRUE, result.getEsDown());
         assertEquals("KEYWORD_SEARCH_DEGRADED", result.getFallbackSource());
+        assertEquals("当前未找到匹配房源", result.getTipMessage());
     }
 
-    private boolean isLocationQuery(NativeQuery nativeQuery) {
-        Query query = nativeQuery.getQuery();
-        return query != null
-                && query.isBool()
-                && query.bool().filter() != null
-                && !query.bool().filter().isEmpty();
+    private House buildHouse(Long id, Long publisherUserId, String title, LocalDateTime createTime) {
+        House house = new House();
+        house.setId(id);
+        house.setPublisherUserId(publisherUserId);
+        house.setTitle(title);
+        house.setCity("广州");
+        house.setRegion("天河");
+        house.setPrice(300000);
+        house.setDepositAmount(300000);
+        house.setStatus(1);
+        house.setCreateTime(createTime);
+        return house;
+    }
+
+    private User user(Long id, String name) {
+        User user = new User();
+        user.setId(id);
+        user.setName(name);
+        return user;
     }
 }
