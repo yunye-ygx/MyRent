@@ -92,6 +92,7 @@ import LoadingState from '@/components/LoadingState.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useMessageCenterStore } from '@/stores/messageCenter'
 import { formatPrice, getHouseStatusText } from '@/utils/format'
+import { buildChatWsUrl } from '@/utils/realtime'
 import { getToken } from '@/utils/storage'
 
 const quickActions = ['还在吗？', '能否周末看房', '押几付几', '是否可养宠物']
@@ -441,9 +442,7 @@ async function pullMissedMessages() {
 }
 
 function buildWsUrl() {
-  const token = getToken()
-  const wsBase = (import.meta.env.VITE_WS_BASE_URL || window.location.origin).replace(/^http/, 'ws')
-  return `${wsBase}/ws/chat?token=${encodeURIComponent(token)}`
+  return buildChatWsUrl(getToken())
 }
 
 function connectWs() {

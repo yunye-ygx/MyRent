@@ -2,6 +2,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { getToken } from '@/utils/storage'
 import { formatRequestError } from '@/utils/format'
+import { buildChatWsUrl } from '@/utils/realtime'
 
 function normalizeSession(session) {
   return {
@@ -70,9 +71,7 @@ export function useChatSessionList(fetchPage) {
   }
 
   function buildWsUrl() {
-    const token = getToken()
-    const wsBase = (import.meta.env.VITE_WS_BASE_URL || window.location.origin).replace(/^http/, 'ws')
-    return `${wsBase}/ws/chat?token=${encodeURIComponent(token)}`
+    return buildChatWsUrl(getToken())
   }
 
   function clearReconnectTimer() {

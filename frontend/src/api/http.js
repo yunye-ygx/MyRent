@@ -1,8 +1,14 @@
 import axios from 'axios'
 import { clearSession, getToken } from '@/utils/storage'
 
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL
+
+if (!apiBaseUrl) {
+  throw new Error('VITE_API_BASE_URL is required')
+}
+
 const http = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8081',
+  baseURL: apiBaseUrl,
   timeout: 12000
 })
 
