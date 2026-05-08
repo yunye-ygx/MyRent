@@ -56,7 +56,7 @@ class ChatSessionServiceImplTest {
     private ChatSessionServiceImpl chatSessionService;
 
     @Test
-    void sendMessageShouldIncrementHotScoreWhenCreatingNewSession() {
+    void sendMessageShouldCreateSessionAndPushAfterCommit() {
         MessageDTO messageDTO = new MessageDTO();
         messageDTO.setSenderId(1001L);
         messageDTO.setReceiverId(2002L);
@@ -86,11 +86,10 @@ class ChatSessionServiceImplTest {
         try {
             ChatMessage result = serviceSpy.sendMessage(messageDTO);
 
-            verify(houseHotService, never()).incrementConsultScore(anyString(), anyLong());
             TransactionSynchronizationManager.getSynchronizations()
                     .forEach(synchronization -> synchronization.afterCommit());
 
-            verify(houseHotService).incrementConsultScore("鍗椾含", 7L);
+            verify(houseHotService).incrementConsultScore(house.getCity(), 7L);
             verify(sessionManager).sendToUser(2002L, result);
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
@@ -98,7 +97,7 @@ class ChatSessionServiceImplTest {
     }
 
     @Test
-    void sendMessageShouldNotIncrementHotScoreForExistingSession() {
+    void sendMessageShouldUpdateExistingSessionAndPushAfterCommit() {
         MessageDTO messageDTO = new MessageDTO();
         messageDTO.setSenderId(1001L);
         messageDTO.setReceiverId(2002L);

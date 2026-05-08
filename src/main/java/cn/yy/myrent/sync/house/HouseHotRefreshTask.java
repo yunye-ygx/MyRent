@@ -15,7 +15,7 @@ public class HouseHotRefreshTask {
 
     @Scheduled(cron = "0 */10 * * * ?", zone = "Asia/Shanghai")
     public void refreshHotRanking() {
-        houseHotService.rebuildHotRanking();
+        houseHotService.rebuildAllHotRankings();
         log.info("city hot-house refresh completed");
     }
 }

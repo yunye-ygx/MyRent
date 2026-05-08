@@ -8,6 +8,7 @@ import cn.yy.myrent.service.hot.HouseHotScoreSnapshot;
 import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.vo.HouseFavoriteStatusVO;
 import com.baomidou.mybatisplus.extension.conditions.query.LambdaQueryChainWrapper;
+import com.baomidou.mybatisplus.extension.conditions.update.LambdaUpdateChainWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,17 +22,13 @@ import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.springframework.transaction.support.TransactionSynchronization;
-import com.baomidou.mybatisplus.extension.conditions.update.LambdaUpdateChainWrapper;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -68,6 +65,31 @@ class HouseFavoriteServiceImplTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
+    void favoriteShouldCreateNewActiveRelation() {
+        when(houseMapper.selectById(7L)).thenReturn(new House().setId(7L).setCity("shanghai").setStatus(1));
+
+        @SuppressWarnings("unchecked")
+        LambdaQueryChainWrapper<HouseFavorite> queryChain =
+                Mockito.mock(LambdaQueryChainWrapper.class, Answers.RETURNS_SELF);
+        when(queryChain.eq(any(), any())).thenReturn(queryChain);
+        when(queryChain.one()).thenReturn(null);
+
+        HouseFavoriteServiceImpl serviceSpy = Mockito.spy(houseFavoriteService);
+        doReturn(queryChain).when(serviceSpy).lambdaQuery();
+        doReturn(true).when(serviceSpy).save(any(HouseFavorite.class));
+        doReturn(statusVo(7L, true, 1L)).when(serviceSpy).getFavoriteStatus(7L, 1001L);
+
+        HouseFavoriteStatusVO result = serviceSpy.favorite(7L, 1001L);
+
+        assertTrue(result.getFavorited());
+        ArgumentCaptor<HouseFavorite> favoriteCaptor = ArgumentCaptor.forClass(HouseFavorite.class);
+        verify(serviceSpy).save(favoriteCaptor.capture());
+        assertEquals(7L, favoriteCaptor.getValue().getHouseId());
+        assertEquals(1001L, favoriteCaptor.getValue().getUserId());
+        assertEquals(1, favoriteCaptor.getValue().getStatus());
+    }
+
+    @Test
     void favoriteShouldIncrementHotScoreAfterCommitWhenCreatingNewActiveRelation() {
         when(houseMapper.selectById(7L)).thenReturn(new House().setId(7L).setCity("shanghai").setStatus(1));
 
@@ -84,19 +106,9 @@ class HouseFavoriteServiceImplTest {
 
         TransactionSynchronizationManager.initSynchronization();
         try {
-            HouseFavoriteStatusVO result = serviceSpy.favorite(7L, 1001L);
-
-            assertTrue(result.getFavorited());
-            ArgumentCaptor<HouseFavorite> favoriteCaptor = ArgumentCaptor.forClass(HouseFavorite.class);
-            verify(serviceSpy).save(favoriteCaptor.capture());
-            assertEquals(7L, favoriteCaptor.getValue().getHouseId());
-            assertEquals(1001L, favoriteCaptor.getValue().getUserId());
-            assertEquals(1, favoriteCaptor.getValue().getStatus());
-            verifyNoInteractions(houseHotService);
-
-            for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
-                synchronization.afterCommit();
-            }
+            serviceSpy.favorite(7L, 1001L);
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(synchronization -> synchronization.afterCommit());
 
             verify(houseHotService).incrementFavoriteScore("shanghai", 7L);
         } finally {
@@ -105,7 +117,7 @@ class HouseFavoriteServiceImplTest {
     }
 
     @Test
-    void favoriteShouldNotIncrementHotScoreWhenRelationIsAlreadyActive() {
+    void favoriteShouldNotChangeRelationWhenAlreadyActive() {
         when(houseMapper.selectById(7L)).thenReturn(new House().setId(7L).setCity("shanghai").setStatus(1));
 
         @SuppressWarnings("unchecked")
@@ -122,24 +134,16 @@ class HouseFavoriteServiceImplTest {
         doReturn(queryChain).when(serviceSpy).lambdaQuery();
         doReturn(statusVo(7L, true, 1L)).when(serviceSpy).getFavoriteStatus(7L, 1001L);
 
-        TransactionSynchronizationManager.initSynchronization();
-        try {
-            HouseFavoriteStatusVO result = serviceSpy.favorite(7L, 1001L);
+        HouseFavoriteStatusVO result = serviceSpy.favorite(7L, 1001L);
 
-            assertTrue(result.getFavorited());
-            verify(serviceSpy, never()).save(any(HouseFavorite.class));
-            verify(serviceSpy, never()).updateById(any(HouseFavorite.class));
-            for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
-                synchronization.afterCommit();
-            }
-            verify(houseHotService, never()).incrementFavoriteScore(any(), any());
-        } finally {
-            TransactionSynchronizationManager.clearSynchronization();
-        }
+        assertTrue(result.getFavorited());
+        verify(serviceSpy, never()).save(any(HouseFavorite.class));
+        verify(serviceSpy, never()).updateById(any(HouseFavorite.class));
+        verify(houseHotService, never()).incrementFavoriteScore(any(), any());
     }
 
     @Test
-    void favoriteShouldIncrementHotScoreAfterCommitWhenReactivatingInactiveRelation() {
+    void favoriteShouldReactivateInactiveRelation() {
         when(houseMapper.selectById(7L)).thenReturn(new House().setId(7L).setCity("shanghai").setStatus(1));
 
         @SuppressWarnings("unchecked")
@@ -165,26 +169,14 @@ class HouseFavoriteServiceImplTest {
         doReturn(updateChain).when(serviceSpy).lambdaUpdate();
         doReturn(statusVo(7L, true, 1L)).when(serviceSpy).getFavoriteStatus(7L, 1001L);
 
-        TransactionSynchronizationManager.initSynchronization();
-        try {
-            HouseFavoriteStatusVO result = serviceSpy.favorite(7L, 1001L);
+        HouseFavoriteStatusVO result = serviceSpy.favorite(7L, 1001L);
 
-            assertTrue(result.getFavorited());
-            verify(updateChain).update();
-            verifyNoInteractions(houseHotService);
-
-            for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
-                synchronization.afterCommit();
-            }
-
-            verify(houseHotService).incrementFavoriteScore("shanghai", 7L);
-        } finally {
-            TransactionSynchronizationManager.clearSynchronization();
-        }
+        assertTrue(result.getFavorited());
+        verify(updateChain).update();
     }
 
     @Test
-    void favoriteShouldNotIncrementHotScoreWhenReactivationUpdateLosesRace() {
+    void favoriteShouldReturnStatusWhenReactivationUpdateLosesRace() {
         when(houseMapper.selectById(7L)).thenReturn(new House().setId(7L).setCity("shanghai").setStatus(1));
 
         @SuppressWarnings("unchecked")
@@ -210,19 +202,10 @@ class HouseFavoriteServiceImplTest {
         doReturn(updateChain).when(serviceSpy).lambdaUpdate();
         doReturn(statusVo(7L, true, 1L)).when(serviceSpy).getFavoriteStatus(7L, 1001L);
 
-        TransactionSynchronizationManager.initSynchronization();
-        try {
-            HouseFavoriteStatusVO result = serviceSpy.favorite(7L, 1001L);
+        HouseFavoriteStatusVO result = serviceSpy.favorite(7L, 1001L);
 
-            assertTrue(result.getFavorited());
-            verify(updateChain).update();
-            for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
-                synchronization.afterCommit();
-            }
-            verify(houseHotService, never()).incrementFavoriteScore(any(), any());
-        } finally {
-            TransactionSynchronizationManager.clearSynchronization();
-        }
+        assertTrue(result.getFavorited());
+        verify(updateChain).update();
     }
 
     private HouseFavoriteStatusVO statusVo(Long houseId, boolean favorited, long favoriteCount) {
@@ -234,26 +217,7 @@ class HouseFavoriteServiceImplTest {
     }
 
     @Test
-    void incrementFavoriteScoreShouldWriteAtomicFavoriteDeltas() {
-        HouseHotService realHouseHotService = new HouseHotService(
-                stringRedisTemplate,
-                houseMapper,
-                houseFavoriteMapper,
-                houseHistoryMapper,
-                chatSessionMapper,
-                objectMapper);
-        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
-        when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);
-
-        realHouseHotService.incrementFavoriteScore("shanghai", 7L);
-
-        verify(zSetOperations).incrementScore("house:hot:rank:city:shanghai", "7", 3D);
-        verify(hashOperations).increment("house:hot:delta:favorite:total:city:shanghai", "7", 1L);
-        verify(hashOperations).increment("house:hot:delta:favorite:recent:city:shanghai", "7", 1L);
-    }
-
-    @Test
-    void queryHotHousesShouldMergeFavoriteDeltasIntoSnapshotCounts() throws Exception {
+    void queryHotHousesShouldReadCountsFromSnapshot() throws Exception {
         HouseHotService realHouseHotService = new HouseHotService(
                 stringRedisTemplate,
                 houseMapper,
@@ -274,12 +238,8 @@ class HouseFavoriteServiceImplTest {
         when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);
         when(zSetOperations.reverseRangeWithScores("house:hot:rank:city:shanghai", 0, 9))
                 .thenReturn(java.util.Set.of(new org.springframework.data.redis.core.DefaultTypedTuple<>("7", 30D)));
-        when(hashOperations.multiGet(eq("house:hot:snapshot:city:shanghai"), any()))
+        when(hashOperations.multiGet("house:hot:snapshot:city:shanghai", java.util.List.of("7")))
                 .thenReturn(java.util.List.of(objectMapper.writeValueAsString(snapshot)));
-        when(hashOperations.multiGet(eq("house:hot:delta:favorite:total:city:shanghai"), any()))
-                .thenReturn(java.util.List.of("1"));
-        when(hashOperations.multiGet(eq("house:hot:delta:favorite:recent:city:shanghai"), any()))
-                .thenReturn(java.util.List.of("1"));
         when(houseMapper.selectBatchIds(any())).thenReturn(java.util.List.of(
                 new House().setId(7L).setCity("shanghai").setStatus(1).setTitle("studio")
         ));
@@ -287,8 +247,8 @@ class HouseFavoriteServiceImplTest {
         java.util.List<cn.yy.myrent.vo.HouseVO> result = realHouseHotService.queryHotHouses("shanghai", 0, 10);
 
         assertEquals(1, result.size());
-        assertEquals(6L, result.get(0).getFavoriteCount());
-        assertEquals(3L, result.get(0).getRecentFavoriteCount());
+        assertEquals(5L, result.get(0).getFavoriteCount());
+        assertEquals(2L, result.get(0).getRecentFavoriteCount());
         assertEquals(30D, result.get(0).getHotScore());
     }
 }

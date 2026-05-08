@@ -18,6 +18,10 @@ public interface HouseMapper extends BaseMapper<House> {
 
     House selectForUpdateById(Long id);
 
+    List<House> selectAvailableHousesByCity(@Param("city") String city);
+
+    List<String> selectAvailableCities();
+
     List<House> selectListFilterPage(@Param("city") String city,
                                      @Param("region") String region,
                                      @Param("rentType") Integer rentType,

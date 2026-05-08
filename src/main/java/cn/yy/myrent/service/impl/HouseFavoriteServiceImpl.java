@@ -122,16 +122,16 @@ public class HouseFavoriteServiceImpl extends ServiceImpl<HouseFavoriteMapper, H
         if (!StringUtils.hasText(city) || houseId == null) {
             return;
         }
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    houseHotService.incrementFavoriteScore(city, houseId);
-                }
-            });
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            houseHotService.incrementFavoriteScore(city, houseId);
             return;
         }
-        houseHotService.incrementFavoriteScore(city, houseId);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                houseHotService.incrementFavoriteScore(city, houseId);
+            }
+        });
     }
 
     private House requireHouse(Long houseId) {

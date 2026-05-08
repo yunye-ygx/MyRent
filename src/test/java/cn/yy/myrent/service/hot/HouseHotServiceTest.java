@@ -24,11 +24,11 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -69,89 +69,89 @@ class HouseHotServiceTest {
         when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
         when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);
         when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
-        when(setOperations.members("house:hot:cities")).thenReturn(Collections.emptySet());
         when(objectMapper.writeValueAsString(any())).thenReturn("{}");
         when(zSetOperations.add(anyString(), anyString(), anyDouble())).thenReturn(true);
-        when(houseMapper.selectList(any())).thenReturn(List.of(
+        when(houseMapper.selectAvailableHousesByCity("nanjing")).thenReturn(List.of(
                 new House().setId(11L).setCity("nanjing").setStatus(1).setCreateTime(LocalDateTime.now().minusDays(1)),
-                new House().setId(12L).setCity("nanjing").setStatus(1).setCreateTime(LocalDateTime.now().minusDays(10)),
-                new House().setId(21L).setCity("shanghai").setStatus(1).setCreateTime(LocalDateTime.now().minusDays(5))
+                new House().setId(12L).setCity("nanjing").setStatus(1).setCreateTime(LocalDateTime.now().minusDays(10))
         ));
-        when(houseFavoriteMapper.selectFavoriteAggRows(any())).thenReturn(List.of(
-                favoriteAggRow(11L, 4L, 2L),
-                favoriteAggRow(21L, 1L, 1L)
+        when(houseFavoriteMapper.selectFavoriteAggRowsByHouseIds(any(), any())).thenReturn(List.of(
+                favoriteAggRow(11L, 4L, 2L)
         ));
-        when(houseHistoryMapper.selectBrowseCountsSince(any())).thenReturn(List.of(
-                new HouseSignalCountRow(11L, 5L),
-                new HouseSignalCountRow(21L, 1L)
+        when(houseHistoryMapper.selectBrowseCountsSinceByHouseIds(any(), any())).thenReturn(List.of(
+                new HouseSignalCountRow(11L, 5L)
         ));
-        when(chatSessionMapper.selectConsultCountsSince(any())).thenReturn(List.of(
+        when(chatSessionMapper.selectConsultCountsSinceByHouseIds(any(), any())).thenReturn(List.of(
                 new HouseSignalCountRow(11L, 2L)
         ));
 
-        service.rebuildHotRanking();
+        service.rebuildHotRanking("nanjing");
 
-        verify(houseHistoryMapper).selectBrowseCountsSince(any());
-        verify(chatSessionMapper).selectConsultCountsSince(any());
+        verify(houseMapper).selectAvailableHousesByCity("nanjing");
+        verify(houseHistoryMapper).selectBrowseCountsSinceByHouseIds(any(), any());
+        verify(chatSessionMapper).selectConsultCountsSinceByHouseIds(any(), any());
         verify(stringRedisTemplate).delete("house:hot:rank:city:nanjing");
         verify(stringRedisTemplate).delete("house:hot:snapshot:city:nanjing");
-        verify(stringRedisTemplate).delete("house:hot:delta:favorite:total:city:nanjing");
-        verify(stringRedisTemplate).delete("house:hot:delta:favorite:recent:city:nanjing");
-        verify(stringRedisTemplate).delete("house:hot:rank:city:shanghai");
-        verify(stringRedisTemplate).delete("house:hot:snapshot:city:shanghai");
-        verify(stringRedisTemplate).delete("house:hot:delta:favorite:total:city:shanghai");
-        verify(stringRedisTemplate).delete("house:hot:delta:favorite:recent:city:shanghai");
         verify(zSetOperations).add("house:hot:rank:city:nanjing", "11", 29D);
         verify(zSetOperations).add("house:hot:rank:city:nanjing", "12", 0D);
-        verify(zSetOperations).add("house:hot:rank:city:shanghai", "21", 8D);
         verify(hashOperations).put("house:hot:snapshot:city:nanjing", "11", "{}");
-        verify(hashOperations).put("house:hot:snapshot:city:shanghai", "21", "{}");
-        verify(stringRedisTemplate).delete("house:hot:cities");
-        verify(setOperations).add("house:hot:cities", "nanjing", "shanghai");
+        verify(setOperations).add("house:hot:cities", "nanjing");
     }
 
     @Test
-    void rebuildHotRankingShouldRemoveStaleCityCachesFromPreviousRanking() throws Exception {
+    void rebuildAllHotRankingsShouldRemoveStaleCityCachesFromPreviousRanking() throws Exception {
         when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
         when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);
         when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
         when(setOperations.members("house:hot:cities")).thenReturn(Set.of("nanjing", "shanghai"));
+        when(houseMapper.selectAvailableCities()).thenReturn(List.of("nanjing"));
         when(objectMapper.writeValueAsString(any())).thenReturn("{}");
         when(zSetOperations.add(anyString(), anyString(), anyDouble())).thenReturn(true);
-        when(houseMapper.selectList(any())).thenReturn(List.of(
+        when(houseMapper.selectAvailableHousesByCity("nanjing")).thenReturn(List.of(
                 new House().setId(11L).setCity("nanjing").setStatus(1).setCreateTime(LocalDateTime.now().minusDays(1))
         ));
-        when(houseFavoriteMapper.selectFavoriteAggRows(any())).thenReturn(List.of());
-        when(houseHistoryMapper.selectBrowseCountsSince(any())).thenReturn(List.of());
-        when(chatSessionMapper.selectConsultCountsSince(any())).thenReturn(List.of());
+        when(houseFavoriteMapper.selectFavoriteAggRowsByHouseIds(any(), any())).thenReturn(List.of());
+        when(houseHistoryMapper.selectBrowseCountsSinceByHouseIds(any(), any())).thenReturn(List.of());
+        when(chatSessionMapper.selectConsultCountsSinceByHouseIds(any(), any())).thenReturn(List.of());
 
-        service.rebuildHotRanking();
+        service.rebuildAllHotRankings();
 
         verify(stringRedisTemplate).delete("house:hot:rank:city:shanghai");
         verify(stringRedisTemplate).delete("house:hot:snapshot:city:shanghai");
-        verify(stringRedisTemplate).delete("house:hot:delta:favorite:total:city:shanghai");
-        verify(stringRedisTemplate).delete("house:hot:delta:favorite:recent:city:shanghai");
         verify(stringRedisTemplate).delete("house:hot:cities");
         verify(setOperations).add("house:hot:cities", "nanjing");
     }
 
     @Test
-    void rebuildHotRankingShouldClearTrackedCityCachesWhenNoAvailableHousesRemain() {
+    void rebuildAllHotRankingsShouldClearTrackedCityCachesWhenNoAvailableHousesRemain() {
         when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
         when(setOperations.members("house:hot:cities")).thenReturn(Set.of("nanjing", "shanghai"));
-        when(houseMapper.selectList(any())).thenReturn(Collections.emptyList());
+        when(houseMapper.selectAvailableCities()).thenReturn(Collections.emptyList());
 
-        service.rebuildHotRanking();
+        service.rebuildAllHotRankings();
 
         verify(stringRedisTemplate).delete("house:hot:rank:city:nanjing");
         verify(stringRedisTemplate).delete("house:hot:snapshot:city:nanjing");
-        verify(stringRedisTemplate).delete("house:hot:delta:favorite:total:city:nanjing");
-        verify(stringRedisTemplate).delete("house:hot:delta:favorite:recent:city:nanjing");
         verify(stringRedisTemplate).delete("house:hot:rank:city:shanghai");
         verify(stringRedisTemplate).delete("house:hot:snapshot:city:shanghai");
-        verify(stringRedisTemplate).delete("house:hot:delta:favorite:total:city:shanghai");
-        verify(stringRedisTemplate).delete("house:hot:delta:favorite:recent:city:shanghai");
         verify(stringRedisTemplate).delete("house:hot:cities");
+    }
+
+    @Test
+    void rebuildHotRankingByCityShouldClearCityWhenNoAvailableHouses() {
+        when(houseMapper.selectAvailableHousesByCity("shanghai")).thenReturn(Collections.emptyList());
+
+        service.rebuildHotRanking("shanghai");
+
+        verify(stringRedisTemplate).delete("house:hot:rank:city:shanghai");
+        verify(stringRedisTemplate).delete("house:hot:snapshot:city:shanghai");
+    }
+
+    @Test
+    void rebuildHotRankingByCityShouldSkipBlankCity() {
+        service.rebuildHotRanking(" ");
+
+        verify(houseMapper, never()).selectAvailableHousesByCity(anyString());
     }
 
     @Test
@@ -206,9 +206,36 @@ class HouseHotServiceTest {
     }
 
     @Test
-    void legacyNoArgReadMethodsShouldFailLoudly() {
-        assertThrows(UnsupportedOperationException.class, () -> service.queryHotHouses(0, 10));
-        assertThrows(UnsupportedOperationException.class, service::hasHotRankingCache);
+    void removeHouseFromAllHotRankingsShouldRemoveRankAndSnapshotFromTrackedCities() {
+        when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
+        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
+        when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+        when(setOperations.members("house:hot:cities")).thenReturn(Set.of("nanjing", "shanghai"));
+
+        service.removeHouseFromAllHotRankings(7L);
+
+        verify(zSetOperations).remove("house:hot:rank:city:nanjing", "7");
+        verify(hashOperations).delete("house:hot:snapshot:city:nanjing", "7");
+        verify(zSetOperations).remove("house:hot:rank:city:shanghai", "7");
+        verify(hashOperations).delete("house:hot:snapshot:city:shanghai", "7");
+    }
+
+    @Test
+    void incrementFavoriteScoreShouldIncrementCityRankOnly() {
+        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
+
+        service.incrementFavoriteScore("shanghai", 7L);
+
+        verify(zSetOperations).incrementScore("house:hot:rank:city:shanghai", "7", 3D);
+    }
+
+    @Test
+    void incrementConsultScoreShouldIncrementCityRankOnly() {
+        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
+
+        service.incrementConsultScore("shanghai", 7L);
+
+        verify(zSetOperations).incrementScore("house:hot:rank:city:shanghai", "7", 5D);
     }
 
     private HouseFavoriteAggRow favoriteAggRow(Long houseId, Long totalFavoriteCount, Long recentFavoriteCount) {

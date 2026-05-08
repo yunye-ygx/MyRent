@@ -269,6 +269,7 @@ class HouseKeywordSearchServiceTest {
         hotHouse.setId(88L);
         hotHouse.setCity("苏州");
         hotHouse.setTitle("园区可租热房");
+        when(houseHotService.hasHotRankingCache("苏州")).thenReturn(false);
         when(houseHotService.queryHotHouses("苏州", 0, 2)).thenReturn(List.of(hotHouse));
 
         HouseKeywordSearchReqDTO reqDTO = new HouseKeywordSearchReqDTO();
@@ -284,6 +285,7 @@ class HouseKeywordSearchServiceTest {
         assertEquals(88L, result.getHouses().get(0).getId());
         assertEquals("REDIS_HOT", result.getFallbackSource());
         assertEquals("当前未找到匹配房源，已为你展示当前城市热门在租房源", result.getTipMessage());
+        verify(houseHotService).rebuildHotRanking("苏州");
         verify(houseHotService).queryHotHouses("苏州", 0, 2);
     }
 

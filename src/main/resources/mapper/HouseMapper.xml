@@ -6,6 +6,23 @@
         select * from house where id = #{id} for update
     </select>
 
+    <select id="selectAvailableHousesByCity" resultType="cn.yy.myrent.entity.House">
+        select *
+        from house
+        where status = 1
+          and city = #{city}
+        order by id asc
+    </select>
+
+    <select id="selectAvailableCities" resultType="java.lang.String">
+        select distinct city
+        from house
+        where status = 1
+          and city is not null
+          and city != ''
+        order by city asc
+    </select>
+
     <select id="selectListFilterPage" resultType="cn.yy.myrent.entity.House">
         select *
         from house

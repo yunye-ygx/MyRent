@@ -404,7 +404,7 @@ public class HouseServiceImpl extends ServiceImpl<HouseMapper, House> implements
         if (!houseHotService.hasHotRankingCache(city)) {
             log.info("hot ranking cache is empty, trigger rebuild, city={}, pageIndex={}, pageSize={}",
                     city, pageIndex, pageSize);
-            houseHotService.rebuildHotRanking();
+            houseHotService.rebuildHotRanking(city);
         }
 
         List<HouseVO> hotHouses = houseHotService.queryHotHouses(city, pageIndex, pageSize);

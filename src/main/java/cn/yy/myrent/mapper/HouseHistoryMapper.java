@@ -22,6 +22,9 @@ public interface HouseHistoryMapper extends BaseMapper<HouseHistory> {
 
     List<HouseSignalCountRow> selectBrowseCountsSince(@Param("startDate") LocalDate startDate);
 
+    List<HouseSignalCountRow> selectBrowseCountsSinceByHouseIds(@Param("startDate") LocalDate startDate,
+                                                                @Param("houseIds") List<Long> houseIds);
+
     Page<HouseHistoryItemVO> selectMyHistoryPage(Page<HouseHistoryItemVO> page,
                                                  @Param("userId") Long userId,
                                                  @Param("browseDate") LocalDate browseDate);

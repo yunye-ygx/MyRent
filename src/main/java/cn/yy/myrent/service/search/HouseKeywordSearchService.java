@@ -110,7 +110,7 @@ public class HouseKeywordSearchService {
         List<HouseVO> hotHouses = List.of();
         try {
             if (!houseHotService.hasHotRankingCache(city)) {
-                houseHotService.rebuildHotRanking();
+                houseHotService.rebuildHotRanking(city);
             }
             hotHouses = houseHotService.queryHotHouses(city, page - 1, size);
         } catch (Exception ex) {

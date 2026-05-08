@@ -17,6 +17,9 @@ public interface ChatSessionMapper extends BaseMapper<ChatSession> {
 
     List<HouseSignalCountRow> selectConsultCountsSince(@Param("recentSince") LocalDateTime recentSince);
 
+    List<HouseSignalCountRow> selectConsultCountsSinceByHouseIds(@Param("recentSince") LocalDateTime recentSince,
+                                                                 @Param("houseIds") List<Long> houseIds);
+
     List<ChatSessionSummaryVO> selectSessionSummaries(@Param("userId") Long userId,
                                                       @Param("offset") long offset,
                                                       @Param("size") long size);
