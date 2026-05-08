@@ -16,17 +16,22 @@ import org.springframework.data.redis.core.DefaultTypedTuple;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.ZSetOperations;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
@@ -61,6 +66,9 @@ class HouseHotServiceTest {
     @Mock
     private SetOperations<String, String> setOperations;
 
+    @Mock
+    private ValueOperations<String, String> valueOperations;
+
     @InjectMocks
     private HouseHotService service;
 
@@ -69,6 +77,8 @@ class HouseHotServiceTest {
         when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
         when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);
         when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(anyString(), anyString(), anyLong(), eq(TimeUnit.SECONDS))).thenReturn(true);
         when(objectMapper.writeValueAsString(any())).thenReturn("{}");
         when(zSetOperations.add(anyString(), anyString(), anyDouble())).thenReturn(true);
         when(houseMapper.selectAvailableHousesByCity("nanjing")).thenReturn(List.of(
@@ -90,11 +100,15 @@ class HouseHotServiceTest {
         verify(houseMapper).selectAvailableHousesByCity("nanjing");
         verify(houseHistoryMapper).selectBrowseCountsSinceByHouseIds(any(), any());
         verify(chatSessionMapper).selectConsultCountsSinceByHouseIds(any(), any());
-        verify(stringRedisTemplate).delete("house:hot:rank:city:nanjing");
-        verify(stringRedisTemplate).delete("house:hot:snapshot:city:nanjing");
-        verify(zSetOperations).add("house:hot:rank:city:nanjing", "11", 29D);
-        verify(zSetOperations).add("house:hot:rank:city:nanjing", "12", 0D);
-        verify(hashOperations).put("house:hot:snapshot:city:nanjing", "11", "{}");
+        verify(stringRedisTemplate).delete("house:hot:rank:city:nanjing:tmp");
+        verify(stringRedisTemplate).delete("house:hot:snapshot:city:nanjing:tmp");
+        verify(zSetOperations).add("house:hot:rank:city:nanjing:tmp", "11", 29D);
+        verify(zSetOperations).add("house:hot:rank:city:nanjing:tmp", "12", 0D);
+        verify(hashOperations).put("house:hot:snapshot:city:nanjing:tmp", "11", "{}");
+        verify(stringRedisTemplate).rename("house:hot:rank:city:nanjing:tmp", "house:hot:rank:city:nanjing");
+        verify(stringRedisTemplate).rename("house:hot:snapshot:city:nanjing:tmp", "house:hot:snapshot:city:nanjing");
+        verify(stringRedisTemplate, never()).delete("house:hot:rank:city:nanjing");
+        verify(stringRedisTemplate, never()).delete("house:hot:snapshot:city:nanjing");
         verify(setOperations).add("house:hot:cities", "nanjing");
     }
 
@@ -103,6 +117,8 @@ class HouseHotServiceTest {
         when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
         when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);
         when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(anyString(), anyString(), anyLong(), eq(TimeUnit.SECONDS))).thenReturn(true);
         when(setOperations.members("house:hot:cities")).thenReturn(Set.of("nanjing", "shanghai"));
         when(houseMapper.selectAvailableCities()).thenReturn(List.of("nanjing"));
         when(objectMapper.writeValueAsString(any())).thenReturn("{}");
@@ -139,6 +155,8 @@ class HouseHotServiceTest {
 
     @Test
     void rebuildHotRankingByCityShouldClearCityWhenNoAvailableHouses() {
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(anyString(), anyString(), anyLong(), eq(TimeUnit.SECONDS))).thenReturn(true);
         when(houseMapper.selectAvailableHousesByCity("shanghai")).thenReturn(Collections.emptyList());
 
         service.rebuildHotRanking("shanghai");
@@ -236,6 +254,54 @@ class HouseHotServiceTest {
         service.incrementConsultScore("shanghai", 7L);
 
         verify(zSetOperations).incrementScore("house:hot:rank:city:shanghai", "7", 5D);
+    }
+
+    @Test
+    void rebuildHotRankingShouldSerializeConcurrentRebuildsForSameCity() throws Exception {
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(anyString(), anyString(), anyLong(), eq(TimeUnit.SECONDS)))
+                .thenReturn(true)
+                .thenReturn(false);
+        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
+        when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+        when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
+        when(objectMapper.writeValueAsString(any())).thenReturn("{}");
+        when(zSetOperations.add(anyString(), anyString(), anyDouble())).thenReturn(true);
+        when(houseFavoriteMapper.selectFavoriteAggRowsByHouseIds(any(), any())).thenReturn(List.of());
+        when(houseHistoryMapper.selectBrowseCountsSinceByHouseIds(any(), any())).thenReturn(List.of());
+        when(chatSessionMapper.selectConsultCountsSinceByHouseIds(any(), any())).thenReturn(List.of());
+        when(houseMapper.selectAvailableHousesByCity("nanjing")).thenReturn(List.of(
+                new House().setId(11L).setCity("nanjing").setStatus(1).setCreateTime(LocalDateTime.now().minusDays(1))
+        ));
+
+        service.rebuildHotRanking("nanjing");
+        service.rebuildHotRanking("nanjing");
+
+        verify(houseMapper).selectAvailableHousesByCity("nanjing");
+        verify(valueOperations, org.mockito.Mockito.times(2))
+                .setIfAbsent(eq("house:hot:rebuild:lock:city:nanjing"), anyString(), eq(30L), eq(TimeUnit.SECONDS));
+    }
+
+    @Test
+    void rebuildHotRankingShouldReleaseRedisLockAfterRebuild() throws Exception {
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(anyString(), anyString(), anyLong(), eq(TimeUnit.SECONDS))).thenReturn(true);
+        when(stringRedisTemplate.execute(any(), anyList(), anyString())).thenReturn(1L);
+        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
+        when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+        when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
+        when(objectMapper.writeValueAsString(any())).thenReturn("{}");
+        when(zSetOperations.add(anyString(), anyString(), anyDouble())).thenReturn(true);
+        when(houseMapper.selectAvailableHousesByCity("nanjing")).thenReturn(List.of(
+                new House().setId(11L).setCity("nanjing").setStatus(1).setCreateTime(LocalDateTime.now().minusDays(1))
+        ));
+        when(houseFavoriteMapper.selectFavoriteAggRowsByHouseIds(any(), any())).thenReturn(List.of());
+        when(houseHistoryMapper.selectBrowseCountsSinceByHouseIds(any(), any())).thenReturn(List.of());
+        when(chatSessionMapper.selectConsultCountsSinceByHouseIds(any(), any())).thenReturn(List.of());
+
+        service.rebuildHotRanking("nanjing");
+
+        verify(stringRedisTemplate).execute(any(), eq(List.of("house:hot:rebuild:lock:city:nanjing")), anyString());
     }
 
     private HouseFavoriteAggRow favoriteAggRow(Long houseId, Long totalFavoriteCount, Long recentFavoriteCount) {

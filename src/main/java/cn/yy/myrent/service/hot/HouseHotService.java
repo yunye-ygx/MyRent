@@ -10,6 +10,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
@@ -30,6 +31,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Collections;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Service
@@ -45,6 +49,10 @@ public class HouseHotService {
     private static final double CONSULT_WEIGHT = 5D;
     private static final double FAVORITE_WEIGHT = 3D;
     private static final double BROWSE_WEIGHT = 1D;
+    private static final String TEMP_KEY_SUFFIX = ":tmp";
+    private static final String REBUILD_LOCK_KEY_PREFIX = "house:hot:rebuild:lock:city:";
+    private static final long REBUILD_LOCK_TTL_SECONDS = 30L;
+    private static final DefaultRedisScript<Long> RELEASE_LOCK_SCRIPT = buildReleaseLockScript();
 
     private final StringRedisTemplate stringRedisTemplate;
     private final HouseMapper houseMapper;
@@ -104,7 +112,22 @@ public class HouseHotService {
         if (!StringUtils.hasText(city)) {
             return;
         }
+        String lockKey = rebuildLockKey(city);
+        String lockValue = UUID.randomUUID().toString();
+        Boolean locked = stringRedisTemplate.opsForValue()
+                .setIfAbsent(lockKey, lockValue, REBUILD_LOCK_TTL_SECONDS, TimeUnit.SECONDS);
+        if (!Boolean.TRUE.equals(locked)) {
+            log.info("skip rebuild city hot ranking because rebuild lock is held, city={}", city);
+            return;
+        }
+        try {
+            doRebuildHotRanking(city, updateCityIndex);
+        } finally {
+            releaseRebuildLock(lockKey, lockValue);
+        }
+    }
 
+    private void doRebuildHotRanking(String city, boolean updateCityIndex) {
         LocalDate startDate = LocalDate.now().minusDays(6);
         LocalDateTime recentSince = LocalDateTime.now().minusDays(7);
         List<House> availableHouses = houseMapper.selectAvailableHousesByCity(city);
@@ -131,7 +154,7 @@ public class HouseHotService {
         Map<Long, Long> recentBrowseMap = toCountMap(houseHistoryMapper.selectBrowseCountsSinceByHouseIds(startDate, houseIds));
         Map<Long, Long> recentConsultMap = toCountMap(chatSessionMapper.selectConsultCountsSinceByHouseIds(recentSince, houseIds));
 
-        clearCityCaches(List.of(city));
+        clearTempCityCaches(List.of(city));
         if (updateCityIndex) {
             stringRedisTemplate.opsForSet().add(HOT_CITY_INDEX_KEY, city);
         }
@@ -144,6 +167,7 @@ public class HouseHotService {
             writeHouseHotRanking(city, house, favoriteAggMap, recentBrowseMap, recentConsultMap);
             candidateCount++;
         }
+        swapCityCaches(city);
 
         log.info("rebuild city hot ranking finished, city={}, candidateCount={}", city, candidateCount);
     }
@@ -217,6 +241,16 @@ public class HouseHotService {
         for (String city : cities) {
             stringRedisTemplate.delete(hotRankKey(city));
             stringRedisTemplate.delete(snapshotKey(city));
+        }
+    }
+
+    private void clearTempCityCaches(Collection<String> cities) {
+        if (CollectionUtils.isEmpty(cities)) {
+            return;
+        }
+        for (String city : cities) {
+            stringRedisTemplate.delete(tempHotRankKey(city));
+            stringRedisTemplate.delete(tempSnapshotKey(city));
         }
     }
 
@@ -294,13 +328,18 @@ public class HouseHotService {
         snapshot.setFreshnessBonus(freshnessBonus);
         snapshot.setHotScore(hotScore);
 
-        stringRedisTemplate.opsForZSet().add(hotRankKey(city), String.valueOf(house.getId()), hotScore);
-        writeSnapshot(city, snapshot);
+        stringRedisTemplate.opsForZSet().add(tempHotRankKey(city), String.valueOf(house.getId()), hotScore);
+        writeSnapshot(tempSnapshotKey(city), snapshot);
     }
 
-    private void writeSnapshot(String city, HouseHotScoreSnapshot snapshot) {
+    private void swapCityCaches(String city) {
+        stringRedisTemplate.rename(tempHotRankKey(city), hotRankKey(city));
+        stringRedisTemplate.rename(tempSnapshotKey(city), snapshotKey(city));
+    }
+
+    private void writeSnapshot(String snapshotKey, HouseHotScoreSnapshot snapshot) {
         try {
-            stringRedisTemplate.opsForHash().put(snapshotKey(city),
+            stringRedisTemplate.opsForHash().put(snapshotKey,
                     String.valueOf(snapshot.getHouseId()),
                     objectMapper.writeValueAsString(snapshot));
         } catch (JsonProcessingException e) {
@@ -393,6 +432,38 @@ public class HouseHotService {
 
     private String snapshotKey(String city) {
         return SNAPSHOT_KEY_PREFIX + city;
+    }
+
+    private String tempHotRankKey(String city) {
+        return hotRankKey(city) + TEMP_KEY_SUFFIX;
+    }
+
+    private String tempSnapshotKey(String city) {
+        return snapshotKey(city) + TEMP_KEY_SUFFIX;
+    }
+
+    private String rebuildLockKey(String city) {
+        return REBUILD_LOCK_KEY_PREFIX + city;
+    }
+
+    private void releaseRebuildLock(String lockKey, String lockValue) {
+        try {
+            stringRedisTemplate.execute(RELEASE_LOCK_SCRIPT, Collections.singletonList(lockKey), lockValue);
+        } catch (Exception e) {
+            log.warn("release city hot rebuild lock failed, lockKey={}", lockKey, e);
+        }
+    }
+
+    private static DefaultRedisScript<Long> buildReleaseLockScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptText("""
+                if redis.call('get', KEYS[1]) == ARGV[1] then
+                    return redis.call('del', KEYS[1])
+                end
+                return 0
+                """);
+        script.setResultType(Long.class);
+        return script;
     }
 
 }
