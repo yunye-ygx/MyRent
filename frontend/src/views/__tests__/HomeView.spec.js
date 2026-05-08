@@ -4,25 +4,39 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import HomeView from '@/views/HomeView.vue'
 
 const loadNext = vi.fn()
+const useHouseFeedMock = vi.fn()
+const useAuthStoreMock = vi.fn()
 
 vi.mock('@/composables/useHouseFeed', () => ({
-  useHouseFeed: () => ({
-    houses: ref([{ id: 1, title: '大学城朝南单间', price: 1280, area: 18, status: 1 }]),
-    loading: ref(false),
-    error: ref(''),
-    mode: ref('hot'),
-    resultTip: ref('步行可达大学的优质房源'),
-    loadNext
-  })
+  useHouseFeed: (...args) => useHouseFeedMock(...args)
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: (...args) => useAuthStoreMock(...args)
 }))
 
 describe('HomeView', () => {
   beforeEach(() => {
     loadNext.mockReset()
+    useHouseFeedMock.mockReset()
+    useAuthStoreMock.mockReset()
+
+    useAuthStoreMock.mockReturnValue({
+      currentCity: '南京'
+    })
+
+    useHouseFeedMock.mockReturnValue({
+      houses: ref([{ id: 1, title: '大学城朝南单间', price: 1280, area: 18, status: 1 }]),
+      loading: ref(false),
+      error: ref(''),
+      mode: ref('hot'),
+      resultTip: ref('步行可达大学的优质房源'),
+      loadNext
+    })
   })
 
-  it('renders the homepage as a guidance-first landing page', () => {
-    const router = createRouter({
+  function createTestRouter() {
+    return createRouter({
       history: createMemoryHistory(),
       routes: [
         { path: '/', component: { template: '<div />' } },
@@ -31,6 +45,10 @@ describe('HomeView', () => {
         { path: '/house/:id', component: { template: '<div />' } }
       ]
     })
+  }
+
+  it('renders the homepage as a guidance-first landing page', () => {
+    const router = createTestRouter()
 
     const wrapper = mount(HomeView, {
       global: {
@@ -50,15 +68,7 @@ describe('HomeView', () => {
   })
 
   it('navigates to the house detail page when a featured listing is clicked', async () => {
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/', component: { template: '<div />' } },
-        { path: '/houses', component: { template: '<div />' } },
-        { path: '/house/:id', component: { template: '<div />' } }
-      ]
-    })
-
+    const router = createTestRouter()
     const pushSpy = vi.spyOn(router, 'push')
 
     const wrapper = mount(HomeView, {
@@ -73,15 +83,7 @@ describe('HomeView', () => {
   })
 
   it('routes hero search to the house list page with keyword query', async () => {
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/', component: { template: '<div />' } },
-        { path: '/houses', component: { template: '<div />' } },
-        { path: '/house/:id', component: { template: '<div />' } }
-      ]
-    })
-
+    const router = createTestRouter()
     const pushSpy = vi.spyOn(router, 'push')
 
     const wrapper = mount(HomeView, {
@@ -99,5 +101,21 @@ describe('HomeView', () => {
         keyword: '天河公园'
       }
     })
+  })
+
+  it('loads homepage featured houses with authStore current city', () => {
+    const router = createTestRouter()
+
+    mount(HomeView, {
+      global: {
+        plugins: [router]
+      }
+    })
+
+    expect(useHouseFeedMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultCity: '南京'
+      })
+    )
   })
 })

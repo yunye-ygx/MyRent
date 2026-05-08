@@ -19,6 +19,7 @@ import cn.yy.myrent.mapper.PaymentMapper;
 import cn.yy.myrent.mapper.PaymentRefundMapper;
 import cn.yy.myrent.mapper.PublisherFollowMapper;
 import cn.yy.myrent.mapper.ReviewMapper;
+import cn.yy.myrent.mapper.StudentVerificationMapper;
 import cn.yy.myrent.mapper.UserMapper;
 import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IHouseHistoryService;
@@ -124,6 +125,9 @@ class HouseControllerWebMvcTest {
     private ReviewMapper reviewMapper;
 
     @MockBean
+    private StudentVerificationMapper studentVerificationMapper;
+
+    @MockBean
     private UserMapper userMapper;
 
     @Test
@@ -196,6 +200,25 @@ class HouseControllerWebMvcTest {
         mockMvc.perform(post("/house/hot/rebuild"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
+    }
+
+    @Test
+    void hotHousesShouldForwardCityToService() throws Exception {
+        given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
+
+        HouseSearchResultVO result = new HouseSearchResultVO();
+        result.setHouses(List.of());
+        given(houseService.hotHouses("上海", 2, 5)).willReturn(result);
+
+        mockMvc.perform(get("/house/hot")
+                        .header("token", "test-token")
+                        .param("city", "上海")
+                        .param("page", "2")
+                        .param("size", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        verify(houseService).hotHouses("上海", 2, 5);
     }
 
     @Test

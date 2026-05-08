@@ -543,6 +543,7 @@ async function submitFilterSearch({ force = false, append = false } = {}) {
   if (keyword) {
     const nextPage = append ? currentPage.value + 1 : 1
     const keywordPayload = {
+      city: currentCity.value,
       keyword,
       page: nextPage,
       size: PAGE_SIZE

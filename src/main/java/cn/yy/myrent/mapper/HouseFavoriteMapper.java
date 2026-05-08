@@ -11,4 +11,7 @@ import java.util.List;
 public interface HouseFavoriteMapper extends BaseMapper<HouseFavorite> {
 
     List<HouseFavoriteAggRow> selectFavoriteAggRows(@Param("recentSince") LocalDateTime recentSince);
+
+    List<HouseFavoriteAggRow> selectFavoriteAggRowsByHouseIds(@Param("recentSince") LocalDateTime recentSince,
+                                                              @Param("houseIds") List<Long> houseIds);
 }

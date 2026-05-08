@@ -4,18 +4,19 @@ import cn.yy.myrent.dto.HouseKeywordSearchReqDTO;
 import cn.yy.myrent.entity.House;
 import cn.yy.myrent.entity.User;
 import cn.yy.myrent.service.IUserService;
+import cn.yy.myrent.service.discovery.HouseRankQuery;
+import cn.yy.myrent.service.discovery.HouseRankResult;
+import cn.yy.myrent.service.discovery.HouseRankedItem;
+import cn.yy.myrent.service.discovery.HouseRankingProfile;
+import cn.yy.myrent.service.discovery.HouseRankingService;
+import cn.yy.myrent.service.discovery.HouseReasonCode;
+import cn.yy.myrent.service.discovery.HouseRecallCandidate;
+import cn.yy.myrent.service.discovery.HouseRecallEvidence;
 import cn.yy.myrent.service.discovery.HouseRecallProfile;
 import cn.yy.myrent.service.discovery.HouseRecallQuery;
 import cn.yy.myrent.service.discovery.HouseRecallResult;
 import cn.yy.myrent.service.discovery.HouseRecallService;
-import cn.yy.myrent.service.discovery.HouseRankQuery;
-import cn.yy.myrent.service.discovery.HouseRankedItem;
-import cn.yy.myrent.service.discovery.HouseRankResult;
-import cn.yy.myrent.service.discovery.HouseReasonCode;
-import cn.yy.myrent.service.discovery.HouseRankingProfile;
-import cn.yy.myrent.service.discovery.HouseRankingService;
-import cn.yy.myrent.service.discovery.HouseRecallCandidate;
-import cn.yy.myrent.service.discovery.HouseRecallEvidence;
+import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.vo.HouseSearchResultVO;
 import cn.yy.myrent.vo.HouseVO;
 import lombok.RequiredArgsConstructor;
@@ -39,20 +40,23 @@ public class HouseKeywordSearchService {
     private static final int DEFAULT_PAGE = 1;
     private static final int DEFAULT_SIZE = 10;
     private static final int MAX_SIZE = 50;
-    private static final String EMPTY_RESULT_TIP = "\u5f53\u524d\u672a\u627e\u5230\u5339\u914d\u623f\u6e90";
-    private static final String UNKNOWN_PUBLISHER_NAME = "\u672a\u77e5\u53d1\u5e03\u8005";
+    private static final String EMPTY_RESULT_TIP = "当前未找到匹配房源";
+    private static final String EMPTY_SEARCH_HOT_TIP = "当前未找到匹配房源，已为你展示当前城市热门在租房源";
+    private static final String UNKNOWN_PUBLISHER_NAME = "未知发布者";
     private static final int MAX_OUTWARD_REASON_COUNT = 2;
-    private static final String REASON_BOTH_TEXT_AND_LOCATION = "\u540c\u65f6\u547d\u4e2d\u5173\u952e\u8bcd\u4e0e\u4f4d\u7f6e";
-    private static final String REASON_TEXT_MATCH = "\u5173\u952e\u8bcd\u547d\u4e2d";
-    private static final String REASON_LOCATION_MATCH = "\u4f4d\u7f6e\u5339\u914d";
-    private static final String REASON_DISTANCE_PREFIX = "\u8ddd\u76ee\u6807\u5730\u70b9\u7ea6 ";
+    private static final String REASON_BOTH_TEXT_AND_LOCATION = "同时命中关键词与位置";
+    private static final String REASON_TEXT_MATCH = "关键词命中";
+    private static final String REASON_LOCATION_MATCH = "位置匹配";
+    private static final String REASON_DISTANCE_PREFIX = "距目标地点约 ";
 
     private final HouseRecallService houseRecallService;
     private final HouseRankingService houseRankingService;
     private final IUserService userService;
+    private final HouseHotService houseHotService;
 
     public HouseSearchResultVO search(HouseKeywordSearchReqDTO reqDTO) {
         String keyword = reqDTO == null || reqDTO.getKeyword() == null ? "" : reqDTO.getKeyword().trim();
+        String city = reqDTO == null ? null : reqDTO.getCity();
         int page = reqDTO == null || reqDTO.getPage() == null ? DEFAULT_PAGE : Math.max(reqDTO.getPage(), 1);
         int size = reqDTO == null || reqDTO.getSize() == null
                 ? DEFAULT_SIZE
@@ -60,6 +64,7 @@ public class HouseKeywordSearchService {
 
         HouseRecallResult recallResult = houseRecallService.recall(HouseRecallQuery.builder()
                 .keyword(keyword)
+                .city(city)
                 .page(page)
                 .size(size)
                 .recallProfile(HouseRecallProfile.KEYWORD_SEARCH)
@@ -74,6 +79,10 @@ public class HouseKeywordSearchService {
         );
         Map<Long, HouseRecallEvidence> recallEvidenceMap = buildRecallEvidenceMap(recallResult.candidates());
         List<HouseRankedItem> currentPageItems = rankResult.currentPageItems();
+        if (currentPageItems.isEmpty() && StringUtils.hasText(city)) {
+            return buildCityHotFallbackResult(city, page, size, recallResult.degraded());
+        }
+
         List<HouseVO> houseVos = enrichPublisherNamesSafely(currentPageItems.stream()
                 .map(item -> convertRankedItemToVo(item, recallEvidenceMap.get(item.house().getId())))
                 .collect(Collectors.toList()));
@@ -84,6 +93,27 @@ public class HouseKeywordSearchService {
         result.setEsDown(recallResult.degraded());
         result.setFallbackSource(recallResult.degraded() ? "KEYWORD_SEARCH_DEGRADED" : "KEYWORD_SEARCH");
         result.setTipMessage(currentPageItems.isEmpty() ? EMPTY_RESULT_TIP : null);
+        return result;
+    }
+
+    private HouseSearchResultVO buildCityHotFallbackResult(String city, int page, int size, boolean degraded) {
+        List<HouseVO> hotHouses = List.of();
+        try {
+            if (!houseHotService.hasHotRankingCache(city)) {
+                houseHotService.rebuildHotRanking(city);
+            }
+            hotHouses = houseHotService.queryHotHouses(city, page - 1, size);
+        } catch (Exception ex) {
+            log.warn("keyword search empty fallback to city hot houses failed, city={}, page={}, size={}",
+                    city, page, size, ex);
+        }
+
+        HouseSearchResultVO result = new HouseSearchResultVO();
+        result.setTotal((long) hotHouses.size());
+        result.setHouses(enrichPublisherNamesSafely(hotHouses));
+        result.setEsDown(degraded);
+        result.setFallbackSource("REDIS_HOT");
+        result.setTipMessage(EMPTY_SEARCH_HOT_TIP);
         return result;
     }
 

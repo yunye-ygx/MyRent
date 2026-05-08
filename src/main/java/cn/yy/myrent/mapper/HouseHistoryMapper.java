@@ -1,6 +1,7 @@
 package cn.yy.myrent.mapper;
 
 import cn.yy.myrent.entity.HouseHistory;
+import cn.yy.myrent.service.hot.HouseSignalCountRow;
 import cn.yy.myrent.vo.HouseHistoryItemVO;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -18,6 +19,11 @@ public interface HouseHistoryMapper extends BaseMapper<HouseHistory> {
     List<Integer> selectActiveDays(@Param("userId") Long userId,
                                    @Param("startDate") LocalDate startDate,
                                    @Param("endDate") LocalDate endDate);
+
+    List<HouseSignalCountRow> selectBrowseCountsSince(@Param("startDate") LocalDate startDate);
+
+    List<HouseSignalCountRow> selectBrowseCountsSinceByHouseIds(@Param("startDate") LocalDate startDate,
+                                                                @Param("houseIds") List<Long> houseIds);
 
     Page<HouseHistoryItemVO> selectMyHistoryPage(Page<HouseHistoryItemVO> page,
                                                  @Param("userId") Long userId,

@@ -13,9 +13,9 @@ public class HouseHotRefreshTask {
 
     private final HouseHotService houseHotService;
 
-    @Scheduled(cron = "0 5 0 * * ?", zone = "Asia/Shanghai")
+    @Scheduled(cron = "0 */10 * * * ?", zone = "Asia/Shanghai")
     public void refreshHotRanking() {
-        houseHotService.rebuildHotRanking();
-        log.info("daily hot-house refresh completed");
+        houseHotService.rebuildAllHotRankings();
+        log.info("city hot-house refresh completed");
     }
 }

@@ -10,4 +10,17 @@
         where status = 1
         group by house_id
     </select>
+
+    <select id="selectFavoriteAggRowsByHouseIds" resultType="cn.yy.myrent.service.hot.HouseFavoriteAggRow">
+        select house_id as houseId,
+               count(*) as totalFavoriteCount,
+               sum(case when favorite_time &gt;= #{recentSince} then 1 else 0 end) as recentFavoriteCount
+        from house_favorite
+        where status = 1
+          and house_id in
+          <foreach collection="houseIds" item="houseId" open="(" separator="," close=")">
+              #{houseId}
+          </foreach>
+        group by house_id
+    </select>
 </mapper>

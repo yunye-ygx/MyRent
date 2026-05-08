@@ -16,7 +16,7 @@ public interface IHouseService extends IService<House> {
 
     HouseSearchResultVO searchNearbyHouse(SearchHouseReqDTO reqDTO);
 
-    HouseSearchResultVO hotHouses(Integer page, Integer size);
+    HouseSearchResultVO hotHouses(String city, Integer page, Integer size);
 
     SmartGuideResultVO smartGuide(SmartGuideReqDTO reqDTO);
 

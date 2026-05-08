@@ -66,9 +66,10 @@ public class HouseController {
     @GetMapping("/hot")
     @Operation(summary = "热门房源", description = "返回按热度分排序的可租房源")
     public Result<HouseSearchResultVO> hotHouses(
+            @RequestParam("city") String city,
             @RequestParam(value = "page", defaultValue = "1") Integer page,
             @RequestParam(value = "size", defaultValue = "10") Integer size) {
-        return Result.success(houseService.hotHouses(page, size));
+        return Result.success(houseService.hotHouses(city, page, size));
     }
 
     @PostMapping("/hot/rebuild")

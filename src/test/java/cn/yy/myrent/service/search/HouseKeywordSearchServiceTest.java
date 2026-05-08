@@ -17,7 +17,9 @@ import cn.yy.myrent.service.discovery.HouseRecallResult;
 import cn.yy.myrent.service.discovery.HouseRecallService;
 import cn.yy.myrent.service.discovery.HouseReasonCode;
 import cn.yy.myrent.service.discovery.HouseScoreBreakdown;
+import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.vo.HouseSearchResultVO;
+import cn.yy.myrent.vo.HouseVO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -43,6 +45,9 @@ class HouseKeywordSearchServiceTest {
 
     @Mock
     private IUserService userService;
+
+    @Mock
+    private HouseHotService houseHotService;
 
     private final HouseRankingService houseRankingService = new HouseRankingServiceImpl();
 
@@ -88,21 +93,21 @@ class HouseKeywordSearchServiceTest {
         ));
         when(userService.listByIds(List.of(1002L, 1001L))).thenReturn(List.of(user(1002L, "B"), user(1001L, "A")));
 
-        HouseKeywordSearchService houseKeywordSearchService =
-                new HouseKeywordSearchService(houseRecallService, houseRankingService, userService);
+        HouseKeywordSearchService service =
+                new HouseKeywordSearchService(houseRecallService, houseRankingService, userService, houseHotService);
         HouseKeywordSearchReqDTO reqDTO = new HouseKeywordSearchReqDTO();
         reqDTO.setKeyword("天河公园单间");
         reqDTO.setPage(1);
         reqDTO.setSize(2);
 
-        HouseSearchResultVO result = houseKeywordSearchService.search(reqDTO);
+        HouseSearchResultVO result = service.search(reqDTO);
 
         assertEquals(2, result.getHouses().size());
         assertEquals(4L, result.getTotal());
         assertEquals(12L, result.getHouses().get(0).getId());
         assertEquals(11L, result.getHouses().get(1).getId());
         assertEquals(
-                List.of("\u540c\u65f6\u547d\u4e2d\u5173\u952e\u8bcd\u4e0e\u4f4d\u7f6e", "\u8ddd\u76ee\u6807\u5730\u70b9\u7ea6 0.3km"),
+                List.of("同时命中关键词与位置", "距目标地点约 0.3km"),
                 result.getHouses().get(0).getSearchReasons()
         );
         assertEquals(
@@ -134,14 +139,14 @@ class HouseKeywordSearchServiceTest {
         ));
         when(userService.listByIds(List.of(2001L))).thenReturn(List.of(user(2001L, "C")));
 
-        HouseKeywordSearchService houseKeywordSearchService =
-                new HouseKeywordSearchService(houseRecallService, houseRankingService, userService);
+        HouseKeywordSearchService service =
+                new HouseKeywordSearchService(houseRecallService, houseRankingService, userService, houseHotService);
         HouseKeywordSearchReqDTO reqDTO = new HouseKeywordSearchReqDTO();
         reqDTO.setKeyword("体育西路");
         reqDTO.setPage(1);
         reqDTO.setSize(1);
 
-        HouseSearchResultVO result = houseKeywordSearchService.search(reqDTO);
+        HouseSearchResultVO result = service.search(reqDTO);
 
         assertEquals(1, result.getHouses().size());
         assertEquals(1L, result.getTotal());
@@ -194,14 +199,14 @@ class HouseKeywordSearchServiceTest {
         when(houseRecallService.recall(any(HouseRecallQuery.class))).thenReturn(recallResult);
         when(userService.listByIds(List.of(3001L))).thenReturn(List.of(user(3001L, "D")));
 
-        HouseKeywordSearchService houseKeywordSearchService =
-                new HouseKeywordSearchService(houseRecallService, rankingService, userService);
+        HouseKeywordSearchService service =
+                new HouseKeywordSearchService(houseRecallService, rankingService, userService, houseHotService);
         HouseKeywordSearchReqDTO reqDTO = new HouseKeywordSearchReqDTO();
         reqDTO.setKeyword("体育西路");
         reqDTO.setPage(1);
         reqDTO.setSize(1);
 
-        HouseSearchResultVO result = houseKeywordSearchService.search(reqDTO);
+        HouseSearchResultVO result = service.search(reqDTO);
 
         assertEquals(
                 List.of("同时命中关键词与位置", "距目标地点约 1.3km"),
@@ -230,14 +235,14 @@ class HouseKeywordSearchServiceTest {
         ));
         doThrow(new RuntimeException("lookup failed")).when(userService).listByIds(List.of(4001L));
 
-        HouseKeywordSearchService houseKeywordSearchService =
-                new HouseKeywordSearchService(houseRecallService, houseRankingService, userService);
+        HouseKeywordSearchService service =
+                new HouseKeywordSearchService(houseRecallService, houseRankingService, userService, houseHotService);
         HouseKeywordSearchReqDTO reqDTO = new HouseKeywordSearchReqDTO();
         reqDTO.setKeyword("天河公园");
         reqDTO.setPage(1);
         reqDTO.setSize(1);
 
-        HouseSearchResultVO result = houseKeywordSearchService.search(reqDTO);
+        HouseSearchResultVO result = service.search(reqDTO);
 
         assertEquals(1, result.getHouses().size());
         assertEquals(51L, result.getHouses().get(0).getId());
@@ -250,21 +255,26 @@ class HouseKeywordSearchServiceTest {
     void searchShouldReturnReadableTipWhenRecallReturnsNoCandidates() {
         when(houseRecallService.recall(any(HouseRecallQuery.class)))
                 .thenReturn(new HouseRecallResult(List.of(), false, true));
+        when(houseHotService.hasHotRankingCache("广州")).thenReturn(false);
+        when(houseHotService.queryHotHouses("广州", 0, 10)).thenReturn(List.of());
 
-        HouseKeywordSearchService houseKeywordSearchService =
-                new HouseKeywordSearchService(houseRecallService, houseRankingService, userService);
+        HouseKeywordSearchService service =
+                new HouseKeywordSearchService(houseRecallService, houseRankingService, userService, houseHotService);
         HouseKeywordSearchReqDTO reqDTO = new HouseKeywordSearchReqDTO();
         reqDTO.setKeyword("天河公园");
+        reqDTO.setCity("广州");
         reqDTO.setPage(1);
         reqDTO.setSize(10);
 
-        HouseSearchResultVO result = houseKeywordSearchService.search(reqDTO);
+        HouseSearchResultVO result = service.search(reqDTO);
 
         assertTrue(result.getHouses().isEmpty());
         assertEquals(0L, result.getTotal());
         assertEquals(Boolean.TRUE, result.getEsDown());
-        assertEquals("KEYWORD_SEARCH_DEGRADED", result.getFallbackSource());
-        assertEquals("当前未找到匹配房源", result.getTipMessage());
+        assertEquals("REDIS_HOT", result.getFallbackSource());
+        assertEquals("当前未找到匹配房源，已为你展示当前城市热门在租房源", result.getTipMessage());
+        verify(houseHotService).rebuildHotRanking("广州");
+        verify(houseHotService).queryHotHouses("广州", 0, 10);
     }
 
     private House buildHouse(Long id, Long publisherUserId, String title, LocalDateTime createTime) {

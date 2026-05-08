@@ -2,6 +2,20 @@ import { nextTick } from 'vue'
 import { useHouseFeed } from '@/composables/useHouseFeed'
 
 describe('useHouseFeed', () => {
+  it('passes current city to the hot loader in hot mode', async () => {
+    const hotLoader = vi.fn().mockResolvedValue({ houses: [{ id: 1 }] })
+    const searchLoader = vi.fn()
+    const feed = useHouseFeed({ hotLoader, searchLoader, defaultCity: '广州' })
+
+    await feed.loadNext()
+
+    expect(hotLoader).toHaveBeenCalledWith({
+      city: '广州',
+      page: 1,
+      size: 10
+    })
+  })
+
   it('resets pagination when switching from hot to search mode', async () => {
     const hotLoader = vi.fn().mockResolvedValue({ houses: [{ id: 1 }] })
     const searchLoader = vi.fn().mockResolvedValue({ houses: [{ id: 2 }] })
@@ -25,6 +39,7 @@ describe('useHouseFeed', () => {
     await feed.loadNext()
 
     expect(searchLoader).toHaveBeenCalledWith({
+      city: '广州',
       keyword: '天河公园',
       page: 1,
       size: 10
