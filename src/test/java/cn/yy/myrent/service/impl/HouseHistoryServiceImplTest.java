@@ -4,6 +4,7 @@ import cn.yy.myrent.entity.House;
 import cn.yy.myrent.entity.HouseHistory;
 import cn.yy.myrent.mapper.HouseHistoryMapper;
 import cn.yy.myrent.mapper.HouseMapper;
+import cn.yy.myrent.service.hot.HouseHotDailyStatsService;
 import cn.yy.myrent.vo.HouseHistoryCalendarVO;
 import cn.yy.myrent.vo.HouseHistoryItemVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -46,6 +47,9 @@ class HouseHistoryServiceImplTest {
     private StringRedisTemplate stringRedisTemplate;
 
     @Mock
+    private HouseHotDailyStatsService houseHotDailyStatsService;
+
+    @Mock
     private ValueOperations<String, String> valueOperations;
 
     @InjectMocks
@@ -59,7 +63,7 @@ class HouseHistoryServiceImplTest {
 
     @Test
     void recordBrowseShouldInsertOneRowAndSetTodayBitWhenNoSameDayRecordExists() {
-        when(houseMapper.selectById(7L)).thenReturn(new House().setId(7L).setStatus(1));
+        when(houseMapper.selectById(7L)).thenReturn(new House().setId(7L).setCity("nanjing").setStatus(1));
         when(houseHistoryMapper.selectByUserHouseAndDate(eq(1001L), eq(7L), any(LocalDate.class))).thenReturn(null);
 
         houseHistoryService.recordBrowse(7L, 1001L);
@@ -70,6 +74,7 @@ class HouseHistoryServiceImplTest {
         assertEquals(1001L, saved.getUserId());
         assertEquals(7L, saved.getHouseId());
         assertEquals(saved.getBrowseDate(), saved.getLastBrowseTime().toLocalDate());
+        verify(houseHotDailyStatsService).incrementBrowse(7L, "nanjing", saved.getBrowseDate());
         verify(valueOperations).setBit(anyString(), eq((long) saved.getBrowseDate().getDayOfMonth() - 1), eq(true));
     }
 
@@ -83,13 +88,14 @@ class HouseHistoryServiceImplTest {
                 .setBrowseDate(today)
                 .setLastBrowseTime(LocalDateTime.of(today, java.time.LocalTime.of(8, 0)));
 
-        when(houseMapper.selectById(7L)).thenReturn(new House().setId(7L).setStatus(1));
+        when(houseMapper.selectById(7L)).thenReturn(new House().setId(7L).setCity("nanjing").setStatus(1));
         when(houseHistoryMapper.selectByUserHouseAndDate(1001L, 7L, today)).thenReturn(existing);
 
         houseHistoryService.recordBrowse(7L, 1001L);
 
         verify(houseHistoryMapper, never()).insert(any(HouseHistory.class));
         verify(houseHistoryMapper).updateById(existing);
+        verify(houseHotDailyStatsService, never()).incrementBrowse(anyLong(), anyString(), any(LocalDate.class));
         verify(valueOperations).setBit(anyString(), eq((long) today.getDayOfMonth() - 1), eq(true));
     }
 

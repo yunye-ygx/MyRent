@@ -6,6 +6,7 @@ import cn.yy.myrent.mapper.HouseFavoriteMapper;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.service.hot.HouseHotScoreSnapshot;
 import cn.yy.myrent.service.hot.HouseHotService;
+import cn.yy.myrent.service.hot.HouseHotDailyStatsService;
 import cn.yy.myrent.vo.HouseFavoriteStatusVO;
 import com.baomidou.mybatisplus.extension.conditions.query.LambdaQueryChainWrapper;
 import com.baomidou.mybatisplus.extension.conditions.update.LambdaUpdateChainWrapper;
@@ -26,6 +27,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -44,13 +46,13 @@ class HouseFavoriteServiceImplTest {
     private HouseHotService houseHotService;
 
     @Mock
+    private HouseHotDailyStatsService houseHotDailyStatsService;
+
+    @Mock
     private StringRedisTemplate stringRedisTemplate;
 
     @Mock
-    private cn.yy.myrent.mapper.HouseHistoryMapper houseHistoryMapper;
-
-    @Mock
-    private cn.yy.myrent.mapper.ChatSessionMapper chatSessionMapper;
+    private cn.yy.myrent.mapper.HouseHotDailyStatsMapper houseHotDailyStatsMapper;
 
     @Mock
     private ZSetOperations<String, String> zSetOperations;
@@ -111,6 +113,7 @@ class HouseFavoriteServiceImplTest {
                     .forEach(synchronization -> synchronization.afterCommit());
 
             verify(houseHotService).incrementFavoriteScore("shanghai", 7L);
+            verify(houseHotDailyStatsService).incrementFavorite(eq(7L), eq("shanghai"), any());
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
@@ -176,6 +179,32 @@ class HouseFavoriteServiceImplTest {
     }
 
     @Test
+    void unfavoriteShouldDecrementFavoriteDailyStatsWhenActiveRelationExists() {
+        when(houseMapper.selectById(7L)).thenReturn(new House().setId(7L).setCity("shanghai").setStatus(1));
+
+        java.time.LocalDateTime favoriteTime = java.time.LocalDateTime.of(2026, 5, 7, 9, 30);
+        @SuppressWarnings("unchecked")
+        LambdaQueryChainWrapper<HouseFavorite> queryChain =
+                Mockito.mock(LambdaQueryChainWrapper.class, Answers.RETURNS_SELF);
+        when(queryChain.eq(any(), any())).thenReturn(queryChain);
+        when(queryChain.one()).thenReturn(new HouseFavorite()
+                .setId(9L)
+                .setHouseId(7L)
+                .setUserId(1001L)
+                .setStatus(1)
+                .setFavoriteTime(favoriteTime));
+
+        HouseFavoriteServiceImpl serviceSpy = Mockito.spy(houseFavoriteService);
+        doReturn(queryChain).when(serviceSpy).lambdaQuery();
+        doReturn(true).when(serviceSpy).updateById(any(HouseFavorite.class));
+        doReturn(statusVo(7L, false, 0L)).when(serviceSpy).getFavoriteStatus(7L, 1001L);
+
+        serviceSpy.unfavorite(7L, 1001L);
+
+        verify(houseHotDailyStatsService).decrementFavorite(7L, "shanghai", favoriteTime.toLocalDate());
+    }
+
+    @Test
     void favoriteShouldReturnStatusWhenReactivationUpdateLosesRace() {
         when(houseMapper.selectById(7L)).thenReturn(new House().setId(7L).setCity("shanghai").setStatus(1));
 
@@ -222,8 +251,7 @@ class HouseFavoriteServiceImplTest {
                 stringRedisTemplate,
                 houseMapper,
                 houseFavoriteMapper,
-                houseHistoryMapper,
-                chatSessionMapper,
+                houseHotDailyStatsMapper,
                 objectMapper);
         HouseHotScoreSnapshot snapshot = new HouseHotScoreSnapshot();
         snapshot.setHouseId(7L);

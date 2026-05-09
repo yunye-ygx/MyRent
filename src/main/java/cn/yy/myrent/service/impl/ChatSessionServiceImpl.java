@@ -11,6 +11,7 @@ import cn.yy.myrent.mapper.ChatSessionMapper;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.mapper.UserMapper;
 import cn.yy.myrent.service.IChatSessionService;
+import cn.yy.myrent.service.hot.HouseHotDailyStatsService;
 import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.vo.ChatSessionSummaryVO;
 import cn.yy.myrent.vo.UnreadTotalVO;
@@ -47,6 +48,9 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
 
     @Autowired
     private HouseHotService houseHotService;
+
+    @Autowired
+    private HouseHotDailyStatsService houseHotDailyStatsService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -149,6 +153,7 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
                 if (finalCreatedNewSession && finalHouse != null) {
                     try {
                         houseHotService.incrementConsultScore(finalHouse.getCity(), houseId);
+                        houseHotDailyStatsService.incrementConsult(houseId, finalHouse.getCity(), now.toLocalDate());
                     } catch (Exception e) {
                         log.error("increment consult hot rank failed, messageId={}, houseId={}",
                                 chatMessage.getId(), houseId, e);

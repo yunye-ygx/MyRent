@@ -5,6 +5,7 @@ import cn.yy.myrent.entity.HouseFavorite;
 import cn.yy.myrent.mapper.HouseFavoriteMapper;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.service.IHouseFavoriteService;
+import cn.yy.myrent.service.hot.HouseHotDailyStatsService;
 import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.vo.HouseFavoriteStatusVO;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -25,6 +26,7 @@ public class HouseFavoriteServiceImpl extends ServiceImpl<HouseFavoriteMapper, H
 
     private final HouseMapper houseMapper;
     private final HouseHotService houseHotService;
+    private final HouseHotDailyStatsService houseHotDailyStatsService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -63,7 +65,7 @@ public class HouseFavoriteServiceImpl extends ServiceImpl<HouseFavoriteMapper, H
         }
 
         if (favoriteChanged) {
-            incrementFavoriteHotScoreAfterCommit(house.getCity(), houseId);
+            incrementFavoriteSignalsAfterCommit(house.getCity(), houseId, now);
         }
 
         return buildStatus(houseId, userId, true);
@@ -72,15 +74,19 @@ public class HouseFavoriteServiceImpl extends ServiceImpl<HouseFavoriteMapper, H
     @Override
     @Transactional(rollbackFor = Exception.class)
     public HouseFavoriteStatusVO unfavorite(Long houseId, Long userId) {
-        requireHouse(houseId);
+        House house = requireHouse(houseId);
         HouseFavorite existing = this.lambdaQuery()
                 .eq(HouseFavorite::getUserId, userId)
                 .eq(HouseFavorite::getHouseId, houseId)
                 .one();
         if (existing != null && existing.getStatus() != null && existing.getStatus() == FAVORITE_STATUS_ACTIVE) {
+            LocalDateTime favoriteTime = existing.getFavoriteTime();
             existing.setStatus(0);
             existing.setCancelTime(LocalDateTime.now());
-            this.updateById(existing);
+            boolean updated = this.updateById(existing);
+            if (updated && favoriteTime != null) {
+                houseHotDailyStatsService.decrementFavorite(houseId, house.getCity(), favoriteTime.toLocalDate());
+            }
         }
         return buildStatus(houseId, userId, false);
     }
@@ -118,18 +124,20 @@ public class HouseFavoriteServiceImpl extends ServiceImpl<HouseFavoriteMapper, H
         return statusVO;
     }
 
-    private void incrementFavoriteHotScoreAfterCommit(String city, Long houseId) {
+    private void incrementFavoriteSignalsAfterCommit(String city, Long houseId, LocalDateTime favoriteTime) {
         if (!StringUtils.hasText(city) || houseId == null) {
             return;
         }
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             houseHotService.incrementFavoriteScore(city, houseId);
+            houseHotDailyStatsService.incrementFavorite(houseId, city, favoriteTime.toLocalDate());
             return;
         }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 houseHotService.incrementFavoriteScore(city, houseId);
+                houseHotDailyStatsService.incrementFavorite(houseId, city, favoriteTime.toLocalDate());
             }
         });
     }

@@ -1,9 +1,8 @@
 package cn.yy.myrent.service.hot;
 
 import cn.yy.myrent.entity.House;
-import cn.yy.myrent.mapper.ChatSessionMapper;
 import cn.yy.myrent.mapper.HouseFavoriteMapper;
-import cn.yy.myrent.mapper.HouseHistoryMapper;
+import cn.yy.myrent.mapper.HouseHotDailyStatsMapper;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.vo.HouseVO;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -31,7 +30,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.Collections;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -49,6 +47,9 @@ public class HouseHotService {
     private static final double CONSULT_WEIGHT = 5D;
     private static final double FAVORITE_WEIGHT = 3D;
     private static final double BROWSE_WEIGHT = 1D;
+    private static final double TOTAL_FAVORITE_QUALITY_WEIGHT = 2D;
+    private static final int HOT_CANDIDATE_LIMIT = 200;
+    private static final int HOT_DISPLAY_LIMIT = 50;
     private static final String TEMP_KEY_SUFFIX = ":tmp";
     private static final String REBUILD_LOCK_KEY_PREFIX = "house:hot:rebuild:lock:city:";
     private static final long REBUILD_LOCK_TTL_SECONDS = 30L;
@@ -57,8 +58,7 @@ public class HouseHotService {
     private final StringRedisTemplate stringRedisTemplate;
     private final HouseMapper houseMapper;
     private final HouseFavoriteMapper houseFavoriteMapper;
-    private final HouseHistoryMapper houseHistoryMapper;
-    private final ChatSessionMapper chatSessionMapper;
+    private final HouseHotDailyStatsMapper houseHotDailyStatsMapper;
     private final ObjectMapper objectMapper;
 
     public void incrementFavoriteScore(String city, Long houseId) {
@@ -129,7 +129,6 @@ public class HouseHotService {
 
     private void doRebuildHotRanking(String city, boolean updateCityIndex) {
         LocalDate startDate = LocalDate.now().minusDays(6);
-        LocalDateTime recentSince = LocalDateTime.now().minusDays(7);
         List<House> availableHouses = houseMapper.selectAvailableHousesByCity(city);
         if (CollectionUtils.isEmpty(availableHouses)) {
             clearCityCaches(List.of(city));
@@ -148,28 +147,39 @@ public class HouseHotService {
         }
 
         Map<Long, HouseFavoriteAggRow> favoriteAggMap = houseFavoriteMapper
-                .selectFavoriteAggRowsByHouseIds(recentSince, houseIds)
+                .selectFavoriteTotalAggRowsByHouseIds(houseIds)
                 .stream()
                 .collect(Collectors.toMap(HouseFavoriteAggRow::getHouseId, row -> row, (left, right) -> left));
-        Map<Long, Long> recentBrowseMap = toCountMap(houseHistoryMapper.selectBrowseCountsSinceByHouseIds(startDate, houseIds));
-        Map<Long, Long> recentConsultMap = toCountMap(chatSessionMapper.selectConsultCountsSinceByHouseIds(recentSince, houseIds));
+        Map<Long, HouseHotDailyStatsAggRow> statsAggMap = houseHotDailyStatsMapper
+                .selectRecentAggRowsByCity(city, startDate)
+                .stream()
+                .filter(row -> row != null && row.houseId() != null)
+                .collect(Collectors.toMap(HouseHotDailyStatsAggRow::houseId, row -> row, (left, right) -> left));
 
         clearTempCityCaches(List.of(city));
         if (updateCityIndex) {
             stringRedisTemplate.opsForSet().add(HOT_CITY_INDEX_KEY, city);
         }
 
-        int candidateCount = 0;
-        for (House house : availableHouses) {
-            if (house.getId() == null) {
-                continue;
-            }
-            writeHouseHotRanking(city, house, favoriteAggMap, recentBrowseMap, recentConsultMap);
-            candidateCount++;
+        List<HouseHotCandidate> candidates = availableHouses.stream()
+                .filter(house -> house.getId() != null)
+                .map(house -> buildHouseHotCandidate(house, favoriteAggMap, statsAggMap))
+                .sorted((left, right) -> {
+                    int scoreCompare = Double.compare(right.snapshot().getHotScore(), left.snapshot().getHotScore());
+                    if (scoreCompare != 0) {
+                        return scoreCompare;
+                    }
+                    return Long.compare(right.house().getId(), left.house().getId());
+                })
+                .limit(HOT_CANDIDATE_LIMIT)
+                .collect(Collectors.toList());
+
+        for (HouseHotCandidate candidate : candidates) {
+            writeHouseHotRanking(city, candidate);
         }
         swapCityCaches(city);
 
-        log.info("rebuild city hot ranking finished, city={}, candidateCount={}", city, candidateCount);
+        log.info("rebuild city hot ranking finished, city={}, candidateCount={}", city, candidates.size());
     }
 
     public List<HouseVO> queryHotHouses(String city, int pageIndex, int pageSize) {
@@ -178,7 +188,10 @@ public class HouseHotService {
         }
 
         long start = (long) pageIndex * pageSize;
-        long end = start + pageSize - 1;
+        if (start >= HOT_DISPLAY_LIMIT) {
+            return Collections.emptyList();
+        }
+        long end = Math.min(start + pageSize - 1, HOT_DISPLAY_LIMIT - 1);
         Set<ZSetOperations.TypedTuple<String>> tuples = stringRedisTemplate.opsForZSet()
                 .reverseRangeWithScores(hotRankKey(city), start, end);
         if (CollectionUtils.isEmpty(tuples)) {
@@ -221,17 +234,6 @@ public class HouseHotService {
             stringRedisTemplate.opsForZSet().remove(hotRankKey(city), houseIdValue);
             stringRedisTemplate.opsForHash().delete(snapshotKey(city), houseIdValue);
         }
-    }
-
-    private Map<Long, Long> toCountMap(List<HouseSignalCountRow> rows) {
-        if (CollectionUtils.isEmpty(rows)) {
-            return Collections.emptyMap();
-        }
-        return rows.stream()
-                .filter(row -> row != null && row.houseId() != null)
-                .collect(Collectors.toMap(HouseSignalCountRow::houseId,
-                        row -> row.count() == null ? 0L : row.count(),
-                        Long::sum));
     }
 
     private void clearCityCaches(Collection<String> cities) {
@@ -304,20 +306,22 @@ public class HouseHotService {
         return result;
     }
 
-    private void writeHouseHotRanking(String city,
-                                      House house,
-                                      Map<Long, HouseFavoriteAggRow> favoriteAggMap,
-                                      Map<Long, Long> recentBrowseMap,
-                                      Map<Long, Long> recentConsultMap) {
+    private HouseHotCandidate buildHouseHotCandidate(House house,
+                                                     Map<Long, HouseFavoriteAggRow> favoriteAggMap,
+                                                     Map<Long, HouseHotDailyStatsAggRow> statsAggMap) {
         HouseFavoriteAggRow favoriteAgg = favoriteAggMap.get(house.getId());
         long totalFavoriteCount = favoriteAgg == null || favoriteAgg.getTotalFavoriteCount() == null
                 ? 0L : favoriteAgg.getTotalFavoriteCount();
-        long recentFavoriteCount = favoriteAgg == null || favoriteAgg.getRecentFavoriteCount() == null
-                ? 0L : favoriteAgg.getRecentFavoriteCount();
-        long recentBrowseCount = recentBrowseMap.getOrDefault(house.getId(), 0L);
-        long recentConsultCount = recentConsultMap.getOrDefault(house.getId(), 0L);
+        HouseHotDailyStatsAggRow statsAgg = statsAggMap.get(house.getId());
+        long recentFavoriteCount = statsAgg == null || statsAgg.recentFavoriteCount() == null
+                ? 0L : statsAgg.recentFavoriteCount();
+        long recentBrowseCount = statsAgg == null || statsAgg.recentBrowseCount() == null
+                ? 0L : statsAgg.recentBrowseCount();
+        long recentConsultCount = statsAgg == null || statsAgg.recentConsultCount() == null
+                ? 0L : statsAgg.recentConsultCount();
         double freshnessBonus = freshnessBonus(house.getCreateTime());
-        double hotScore = calculateHotScore(recentFavoriteCount, recentConsultCount, recentBrowseCount, freshnessBonus);
+        double hotScore = calculateHotScore(totalFavoriteCount, recentFavoriteCount,
+                recentConsultCount, recentBrowseCount, freshnessBonus);
 
         HouseHotScoreSnapshot snapshot = new HouseHotScoreSnapshot();
         snapshot.setHouseId(house.getId());
@@ -328,8 +332,17 @@ public class HouseHotService {
         snapshot.setFreshnessBonus(freshnessBonus);
         snapshot.setHotScore(hotScore);
 
-        stringRedisTemplate.opsForZSet().add(tempHotRankKey(city), String.valueOf(house.getId()), hotScore);
+        return new HouseHotCandidate(house, snapshot);
+    }
+
+    private void writeHouseHotRanking(String city, HouseHotCandidate candidate) {
+        House house = candidate.house();
+        HouseHotScoreSnapshot snapshot = candidate.snapshot();
+        stringRedisTemplate.opsForZSet().add(tempHotRankKey(city), String.valueOf(house.getId()), snapshot.getHotScore());
         writeSnapshot(tempSnapshotKey(city), snapshot);
+    }
+
+    private record HouseHotCandidate(House house, HouseHotScoreSnapshot snapshot) {
     }
 
     private void swapCityCaches(String city) {
@@ -371,14 +384,23 @@ public class HouseHotService {
         return result;
     }
 
-    private double calculateHotScore(long recentFavoriteCount,
+    private double calculateHotScore(long totalFavoriteCount,
+                                     long recentFavoriteCount,
                                      long recentConsultCount,
                                      long recentBrowseCount,
                                      double freshnessBonus) {
         return recentConsultCount * CONSULT_WEIGHT
                 + recentFavoriteCount * FAVORITE_WEIGHT
                 + recentBrowseCount * BROWSE_WEIGHT
+                + longTermFavoriteQualityScore(totalFavoriteCount)
                 + freshnessBonus;
+    }
+
+    private double longTermFavoriteQualityScore(long totalFavoriteCount) {
+        if (totalFavoriteCount <= 0L) {
+            return 0D;
+        }
+        return Math.log1p(totalFavoriteCount) * TOTAL_FAVORITE_QUALITY_WEIGHT;
     }
 
     private double freshnessBonus(LocalDateTime createTime) {

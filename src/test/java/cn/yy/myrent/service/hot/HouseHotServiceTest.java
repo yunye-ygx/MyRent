@@ -1,9 +1,8 @@
 package cn.yy.myrent.service.hot;
 
 import cn.yy.myrent.entity.House;
-import cn.yy.myrent.mapper.ChatSessionMapper;
 import cn.yy.myrent.mapper.HouseFavoriteMapper;
-import cn.yy.myrent.mapper.HouseHistoryMapper;
+import cn.yy.myrent.mapper.HouseHotDailyStatsMapper;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.vo.HouseVO;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -31,9 +30,11 @@ import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.doubleThat;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -49,10 +50,7 @@ class HouseHotServiceTest {
     private HouseFavoriteMapper houseFavoriteMapper;
 
     @Mock
-    private HouseHistoryMapper houseHistoryMapper;
-
-    @Mock
-    private ChatSessionMapper chatSessionMapper;
+    private HouseHotDailyStatsMapper houseHotDailyStatsMapper;
 
     @Mock
     private ObjectMapper objectMapper;
@@ -85,24 +83,20 @@ class HouseHotServiceTest {
                 new House().setId(11L).setCity("nanjing").setStatus(1).setCreateTime(LocalDateTime.now().minusDays(1)),
                 new House().setId(12L).setCity("nanjing").setStatus(1).setCreateTime(LocalDateTime.now().minusDays(10))
         ));
-        when(houseFavoriteMapper.selectFavoriteAggRowsByHouseIds(any(), any())).thenReturn(List.of(
+        when(houseFavoriteMapper.selectFavoriteTotalAggRowsByHouseIds(any())).thenReturn(List.of(
                 favoriteAggRow(11L, 4L, 2L)
         ));
-        when(houseHistoryMapper.selectBrowseCountsSinceByHouseIds(any(), any())).thenReturn(List.of(
-                new HouseSignalCountRow(11L, 5L)
-        ));
-        when(chatSessionMapper.selectConsultCountsSinceByHouseIds(any(), any())).thenReturn(List.of(
-                new HouseSignalCountRow(11L, 2L)
+        when(houseHotDailyStatsMapper.selectRecentAggRowsByCity(eq("nanjing"), any())).thenReturn(List.of(
+                new HouseHotDailyStatsAggRow(11L, 5L, 2L, 2L)
         ));
 
         service.rebuildHotRanking("nanjing");
 
         verify(houseMapper).selectAvailableHousesByCity("nanjing");
-        verify(houseHistoryMapper).selectBrowseCountsSinceByHouseIds(any(), any());
-        verify(chatSessionMapper).selectConsultCountsSinceByHouseIds(any(), any());
+        verify(houseHotDailyStatsMapper).selectRecentAggRowsByCity(eq("nanjing"), any());
         verify(stringRedisTemplate).delete("house:hot:rank:city:nanjing:tmp");
         verify(stringRedisTemplate).delete("house:hot:snapshot:city:nanjing:tmp");
-        verify(zSetOperations).add("house:hot:rank:city:nanjing:tmp", "11", 29D);
+        verify(zSetOperations).add("house:hot:rank:city:nanjing:tmp", "11", 32.2188758248682D);
         verify(zSetOperations).add("house:hot:rank:city:nanjing:tmp", "12", 0D);
         verify(hashOperations).put("house:hot:snapshot:city:nanjing:tmp", "11", "{}");
         verify(stringRedisTemplate).rename("house:hot:rank:city:nanjing:tmp", "house:hot:rank:city:nanjing");
@@ -110,6 +104,59 @@ class HouseHotServiceTest {
         verify(stringRedisTemplate, never()).delete("house:hot:rank:city:nanjing");
         verify(stringRedisTemplate, never()).delete("house:hot:snapshot:city:nanjing");
         verify(setOperations).add("house:hot:cities", "nanjing");
+    }
+
+    @Test
+    void rebuildHotRankingShouldIncludeLongTermFavoriteQualityScore() throws Exception {
+        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
+        when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+        when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(anyString(), anyString(), anyLong(), eq(TimeUnit.SECONDS))).thenReturn(true);
+        when(objectMapper.writeValueAsString(any())).thenReturn("{}");
+        when(zSetOperations.add(anyString(), anyString(), anyDouble())).thenReturn(true);
+        when(houseMapper.selectAvailableHousesByCity("nanjing")).thenReturn(List.of(
+                new House().setId(21L).setCity("nanjing").setStatus(1).setCreateTime(LocalDateTime.now().minusDays(30))
+        ));
+        when(houseFavoriteMapper.selectFavoriteTotalAggRowsByHouseIds(any())).thenReturn(List.of(
+                favoriteAggRow(21L, 9L, 0L)
+        ));
+        when(houseHotDailyStatsMapper.selectRecentAggRowsByCity(eq("nanjing"), any())).thenReturn(List.of());
+
+        service.rebuildHotRanking("nanjing");
+
+        verify(zSetOperations).add(
+                eq("house:hot:rank:city:nanjing:tmp"),
+                eq("21"),
+                doubleThat(score -> Math.abs(score - 4.605170185988092D) < 0.000001D)
+        );
+    }
+
+    @Test
+    void rebuildHotRankingShouldOnlyWriteTopCandidateLimit() throws Exception {
+        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
+        when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+        when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(anyString(), anyString(), anyLong(), eq(TimeUnit.SECONDS))).thenReturn(true);
+        when(objectMapper.writeValueAsString(any())).thenReturn("{}");
+        when(zSetOperations.add(anyString(), anyString(), anyDouble())).thenReturn(true);
+
+        List<House> houses = new java.util.ArrayList<>();
+        List<HouseFavoriteAggRow> favoriteRows = new java.util.ArrayList<>();
+        for (long id = 1L; id <= 201L; id++) {
+            houses.add(new House().setId(id).setCity("nanjing").setStatus(1)
+                    .setCreateTime(LocalDateTime.now().minusDays(30)));
+            favoriteRows.add(favoriteAggRow(id, id, 0L));
+        }
+        when(houseMapper.selectAvailableHousesByCity("nanjing")).thenReturn(houses);
+        when(houseFavoriteMapper.selectFavoriteTotalAggRowsByHouseIds(any())).thenReturn(favoriteRows);
+        when(houseHotDailyStatsMapper.selectRecentAggRowsByCity(eq("nanjing"), any())).thenReturn(List.of());
+
+        service.rebuildHotRanking("nanjing");
+
+        verify(zSetOperations, times(200)).add(eq("house:hot:rank:city:nanjing:tmp"), anyString(), anyDouble());
+        verify(zSetOperations, never()).add(eq("house:hot:rank:city:nanjing:tmp"), eq("1"), anyDouble());
     }
 
     @Test
@@ -126,9 +173,8 @@ class HouseHotServiceTest {
         when(houseMapper.selectAvailableHousesByCity("nanjing")).thenReturn(List.of(
                 new House().setId(11L).setCity("nanjing").setStatus(1).setCreateTime(LocalDateTime.now().minusDays(1))
         ));
-        when(houseFavoriteMapper.selectFavoriteAggRowsByHouseIds(any(), any())).thenReturn(List.of());
-        when(houseHistoryMapper.selectBrowseCountsSinceByHouseIds(any(), any())).thenReturn(List.of());
-        when(chatSessionMapper.selectConsultCountsSinceByHouseIds(any(), any())).thenReturn(List.of());
+        when(houseFavoriteMapper.selectFavoriteTotalAggRowsByHouseIds(any())).thenReturn(List.of());
+        when(houseHotDailyStatsMapper.selectRecentAggRowsByCity(eq("nanjing"), any())).thenReturn(List.of());
 
         service.rebuildAllHotRankings();
 
@@ -189,6 +235,14 @@ class HouseHotServiceTest {
         assertEquals(1, result.size());
         assertEquals(11L, result.get(0).getId());
         assertEquals(29D, result.get(0).getHotScore());
+    }
+
+    @Test
+    void queryHotHousesShouldNotReadBeyondTopDisplayLimit() {
+        List<HouseVO> result = service.queryHotHouses("nanjing", 3, 20);
+
+        assertEquals(0, result.size());
+        verify(stringRedisTemplate, never()).opsForZSet();
     }
 
     @Test
@@ -267,9 +321,8 @@ class HouseHotServiceTest {
         when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
         when(objectMapper.writeValueAsString(any())).thenReturn("{}");
         when(zSetOperations.add(anyString(), anyString(), anyDouble())).thenReturn(true);
-        when(houseFavoriteMapper.selectFavoriteAggRowsByHouseIds(any(), any())).thenReturn(List.of());
-        when(houseHistoryMapper.selectBrowseCountsSinceByHouseIds(any(), any())).thenReturn(List.of());
-        when(chatSessionMapper.selectConsultCountsSinceByHouseIds(any(), any())).thenReturn(List.of());
+        when(houseFavoriteMapper.selectFavoriteTotalAggRowsByHouseIds(any())).thenReturn(List.of());
+        when(houseHotDailyStatsMapper.selectRecentAggRowsByCity(eq("nanjing"), any())).thenReturn(List.of());
         when(houseMapper.selectAvailableHousesByCity("nanjing")).thenReturn(List.of(
                 new House().setId(11L).setCity("nanjing").setStatus(1).setCreateTime(LocalDateTime.now().minusDays(1))
         ));
@@ -295,9 +348,8 @@ class HouseHotServiceTest {
         when(houseMapper.selectAvailableHousesByCity("nanjing")).thenReturn(List.of(
                 new House().setId(11L).setCity("nanjing").setStatus(1).setCreateTime(LocalDateTime.now().minusDays(1))
         ));
-        when(houseFavoriteMapper.selectFavoriteAggRowsByHouseIds(any(), any())).thenReturn(List.of());
-        when(houseHistoryMapper.selectBrowseCountsSinceByHouseIds(any(), any())).thenReturn(List.of());
-        when(chatSessionMapper.selectConsultCountsSinceByHouseIds(any(), any())).thenReturn(List.of());
+        when(houseFavoriteMapper.selectFavoriteTotalAggRowsByHouseIds(any())).thenReturn(List.of());
+        when(houseHotDailyStatsMapper.selectRecentAggRowsByCity(eq("nanjing"), any())).thenReturn(List.of());
 
         service.rebuildHotRanking("nanjing");
 

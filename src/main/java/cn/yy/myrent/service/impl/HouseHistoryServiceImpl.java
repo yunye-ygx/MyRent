@@ -5,6 +5,7 @@ import cn.yy.myrent.entity.HouseHistory;
 import cn.yy.myrent.mapper.HouseHistoryMapper;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.service.IHouseHistoryService;
+import cn.yy.myrent.service.hot.HouseHotDailyStatsService;
 import cn.yy.myrent.vo.HouseHistoryCalendarVO;
 import cn.yy.myrent.vo.HouseHistoryItemVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -32,6 +33,7 @@ public class HouseHistoryServiceImpl extends ServiceImpl<HouseHistoryMapper, Hou
 
     private final HouseMapper houseMapper;
     private final StringRedisTemplate stringRedisTemplate;
+    private final HouseHotDailyStatsService houseHotDailyStatsService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -57,6 +59,7 @@ public class HouseHistoryServiceImpl extends ServiceImpl<HouseHistoryMapper, Hou
                     .setCreateTime(now)
                     .setUpdateTime(now);
             baseMapper.insert(history);
+            houseHotDailyStatsService.incrementBrowse(houseId, house.getCity(), browseDate);
         } else {
             existing.setLastBrowseTime(now);
             existing.setUpdateTime(now);

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.yy.myrent.mapper.HouseHotDailyStatsMapper">
+
+    <insert id="upsertDelta">
+        insert into house_hot_daily_stats (
+            house_id,
+            city,
+            stat_date,
+            browse_count,
+            favorite_count,
+            consult_count,
+            create_time,
+            update_time
+        )
+        values (
+            #{houseId},
+            #{city},
+            #{statDate},
+            #{browseDelta},
+            #{favoriteDelta},
+            #{consultDelta},
+            now(),
+            now()
+        )
+        on duplicate key update
+            city = values(city),
+            browse_count = greatest(0, browse_count + values(browse_count)),
+            favorite_count = greatest(0, favorite_count + values(favorite_count)),
+            consult_count = greatest(0, consult_count + values(consult_count)),
+            update_time = now()
+    </insert>
+
+    <select id="selectRecentAggRowsByCity" resultType="cn.yy.myrent.service.hot.HouseHotDailyStatsAggRow">
+        select house_id as houseId,
+               sum(browse_count) as recentBrowseCount,
+               sum(favorite_count) as recentFavoriteCount,
+               sum(consult_count) as recentConsultCount
+        from house_hot_daily_stats
+        where city = #{city}
+          and stat_date &gt;= #{startDate}
+        group by house_id
+    </select>
+</mapper>

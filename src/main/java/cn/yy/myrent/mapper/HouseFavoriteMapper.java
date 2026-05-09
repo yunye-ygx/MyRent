@@ -14,4 +14,6 @@ public interface HouseFavoriteMapper extends BaseMapper<HouseFavorite> {
 
     List<HouseFavoriteAggRow> selectFavoriteAggRowsByHouseIds(@Param("recentSince") LocalDateTime recentSince,
                                                               @Param("houseIds") List<Long> houseIds);
+
+    List<HouseFavoriteAggRow> selectFavoriteTotalAggRowsByHouseIds(@Param("houseIds") List<Long> houseIds);
 }

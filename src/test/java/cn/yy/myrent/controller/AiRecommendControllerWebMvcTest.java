@@ -5,6 +5,7 @@ import cn.yy.myrent.mapper.ChatMessageMapper;
 import cn.yy.myrent.mapper.ChatSessionMapper;
 import cn.yy.myrent.mapper.HouseFavoriteMapper;
 import cn.yy.myrent.mapper.HouseHistoryMapper;
+import cn.yy.myrent.mapper.HouseHotDailyStatsMapper;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.mapper.LocalTaskMapper;
 import cn.yy.myrent.mapper.LocationDictMapper;
@@ -95,6 +96,9 @@ class AiRecommendControllerWebMvcTest {
 
     @MockBean
     private HouseHistoryMapper houseHistoryMapper;
+
+    @MockBean
+    private HouseHotDailyStatsMapper houseHotDailyStatsMapper;
 
     @MockBean
     private HouseMapper houseMapper;

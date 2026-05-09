@@ -8,6 +8,7 @@ import cn.yy.myrent.entity.User;
 import cn.yy.myrent.mapper.ChatMessageMapper;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.mapper.UserMapper;
+import cn.yy.myrent.service.hot.HouseHotDailyStatsService;
 import cn.yy.myrent.service.hot.HouseHotService;
 import cn.yy.myrent.websocket.ChatWebSocketSessionManager;
 import com.baomidou.mybatisplus.extension.conditions.query.LambdaQueryChainWrapper;
@@ -52,6 +53,9 @@ class ChatSessionServiceImplTest {
     @Mock
     private HouseHotService houseHotService;
 
+    @Mock
+    private HouseHotDailyStatsService houseHotDailyStatsService;
+
     @InjectMocks
     private ChatSessionServiceImpl chatSessionService;
 
@@ -90,6 +94,7 @@ class ChatSessionServiceImplTest {
                     .forEach(synchronization -> synchronization.afterCommit());
 
             verify(houseHotService).incrementConsultScore(house.getCity(), 7L);
+            verify(houseHotDailyStatsService).incrementConsult(anyLong(), anyString(), any());
             verify(sessionManager).sendToUser(2002L, result);
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
@@ -143,6 +148,7 @@ class ChatSessionServiceImplTest {
                     .forEach(synchronization -> synchronization.afterCommit());
 
             verify(houseHotService, never()).incrementConsultScore(anyString(), anyLong());
+            verify(houseHotDailyStatsService, never()).incrementConsult(anyLong(), anyString(), any());
             verify(sessionManager).sendToUser(2002L, result);
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
