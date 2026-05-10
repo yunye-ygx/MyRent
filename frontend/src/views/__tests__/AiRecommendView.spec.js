@@ -92,7 +92,7 @@ describe('AiRecommendView', () => {
     expect(wrapper.text()).toContain('智能推荐')
     expect(wrapper.text()).toContain('先告诉我你的预算')
     expect(wrapper.text()).toContain('上海')
-    expect(wrapper.text()).toContain('当前已知条件')
+    expect(wrapper.text()).toContain('Roam 知道的')
   })
 
   it('sends a message and renders recommendation results', async () => {
@@ -277,5 +277,17 @@ describe('AiRecommendView', () => {
     expect(wrapper.text()).toContain('租金和你的预算更接近')
     expect(wrapper.text()).toContain('整租/合租方式匹配')
     expect(wrapper.text()).toContain('为了保留更强匹配，这套房接受了轻度预算放宽')
+  })
+
+  it('focuses the chat input when the hero primary cta is clicked', async () => {
+    const { wrapper } = await mountView()
+
+    const textarea = wrapper.get('.chat-input').element
+    const focusSpy = vi.spyOn(textarea, 'focus')
+
+    await wrapper.get('.ai-hero__primary').trigger('click')
+    await flushPromises()
+
+    expect(focusSpy).toHaveBeenCalled()
   })
 })

@@ -31,18 +31,19 @@ defineEmits(['select'])
 }
 
 .prompt-chip {
-  border: 1px solid rgba(107, 86, 68, 0.16);
-  background: #fff8ef;
-  color: #5d493b;
+  border: 1px solid rgba(140, 180, 240, 0.3);
+  background: #f0f5ff;
+  color: #3b4a6b;
   border-radius: 999px;
   padding: 10px 14px;
   cursor: pointer;
-  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+  font-weight: 600;
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
 }
 
 .prompt-chip:hover {
   transform: translateY(-1px);
-  border-color: rgba(107, 86, 68, 0.3);
-  background: #fff2e1;
+  background: #e4edfc;
+  border-color: rgba(140, 180, 240, 0.5);
 }
 </style>

@@ -21,8 +21,8 @@
         }"
       >
         <span v-if="item.featured" class="featured-shell">
-          <span class="featured-icon">
-            <DogAssistantIcon />
+          <span class="featured-core">
+            <RoamMascotIcon size="tiny" />
           </span>
           <span class="featured-label">{{ item.label }}</span>
         </span>
@@ -59,7 +59,7 @@
 <script setup>
 import { computed, toRefs } from 'vue'
 import { HOT_CITY_OPTIONS } from '@/config/cityFilters'
-import DogAssistantIcon from '@/components/icons/DogAssistantIcon.vue'
+import RoamMascotIcon from '@/components/icons/RoamMascotIcon.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useMessageCenterStore } from '@/stores/messageCenter'
 
@@ -196,6 +196,7 @@ function handleCityChange(event) {
 
 .nav-link.is-featured:hover {
   background: transparent;
+  transform: translateY(-12px);
 }
 
 .nav-link.is-featured::after {
@@ -203,31 +204,70 @@ function handleCityChange(event) {
 }
 
 .featured-shell {
-  min-width: 136px;
   display: inline-grid;
   justify-items: center;
   gap: 6px;
-  padding: 12px 18px 14px;
-  border-radius: 999px 999px 22px 22px;
-  background: linear-gradient(180deg, #ffdca8 0%, #f1bb74 100%);
-  color: #5c3716;
-  border: 1px solid rgba(164, 103, 36, 0.22);
-  box-shadow: 0 16px 28px rgba(171, 110, 35, 0.18);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
 }
 
-.nav-link.is-featured.is-active .featured-shell {
-  background: linear-gradient(180deg, #ffe8bf 0%, #f3c780 100%);
-  box-shadow: 0 18px 34px rgba(171, 110, 35, 0.22);
+.featured-core {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+  box-shadow:
+    0 10px 24px rgba(80, 120, 200, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  isolation: isolate;
 }
 
-.featured-icon {
-  width: 30px;
-  height: 30px;
+.featured-core::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(184, 216, 255, 0.5), transparent 70%);
+  z-index: -1;
+}
+
+.featured-core::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 2px dashed rgba(140, 180, 240, 0.55);
+  animation: roam-badge-spin 18s linear infinite;
+}
+
+.featured-core .roam-mascot-icon {
+  width: 44px;
+  height: 44px;
 }
 
 .featured-label {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
+  color: #3b4a6b;
+}
+
+.nav-link.is-featured.is-active .featured-core {
+  box-shadow:
+    0 12px 28px rgba(80, 120, 200, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+@keyframes roam-badge-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .featured-core::after { animation: none; }
 }
 
 .nav-badge {
@@ -297,10 +337,6 @@ function handleCityChange(event) {
 @media (max-width: 1280px) {
   .app-top-nav {
     gap: 18px;
-  }
-
-  .featured-shell {
-    min-width: 122px;
   }
 }
 </style>

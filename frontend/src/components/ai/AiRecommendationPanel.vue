@@ -84,22 +84,24 @@ function formatPrice(value) {
 .recommend-head h3 {
   margin: 0;
   font-size: 16px;
+  color: #2d3748;
 }
 
 .recommend-tip {
   margin: 6px 0 0;
-  color: var(--color-text-muted);
+  color: #5b6a8a;
   font-size: 13px;
 }
 
 .relaxed-tag {
   flex-shrink: 0;
   border-radius: 999px;
-  background: rgba(154, 107, 51, 0.12);
-  color: var(--color-warning);
+  background: #fff8e6;
+  color: #a37920;
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 700;
+  border: 1px solid rgba(232, 196, 136, 0.5);
 }
 
 .recommend-list {
@@ -108,17 +110,18 @@ function formatPrice(value) {
 }
 
 .recommend-card {
-  border: 1px solid rgba(53, 36, 25, 0.08);
+  border: 1px solid rgba(184, 200, 224, 0.35);
   border-radius: 22px;
-  background: linear-gradient(180deg, #fffdf8 0%, #f9f1e7 100%);
+  background: #ffffff;
   padding: 16px;
   cursor: pointer;
   transition: transform 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: 0 4px 12px rgba(100, 130, 200, 0.06);
 }
 
 .recommend-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 14px 32px rgba(49, 33, 23, 0.08);
+  box-shadow: 0 14px 28px rgba(100, 130, 200, 0.14);
 }
 
 .recommend-row {
@@ -130,11 +133,12 @@ function formatPrice(value) {
 .recommend-row h4 {
   margin: 0;
   font-size: 16px;
+  color: #2d3748;
 }
 
 .recommend-price {
   margin: 6px 0 0;
-  color: #6a503f;
+  color: #3b4a6b;
   font-weight: 700;
 }
 
@@ -143,13 +147,13 @@ function formatPrice(value) {
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 10px;
-  color: var(--color-text-muted);
+  color: #5b6a8a;
   font-size: 13px;
 }
 
 .recommend-summary {
   margin: 12px 0 0;
-  color: #2f4d3a;
+  color: #2d3748;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.5;
@@ -170,28 +174,26 @@ function formatPrice(value) {
 }
 
 .recommend-tag--primary {
-  background: rgba(77, 107, 66, 0.16);
-  color: #2f6443;
+  background: #dbe8fb;
+  color: #2a4a7a;
 }
 
 .recommend-tag--secondary {
-  background: rgba(92, 108, 98, 0.1);
-  color: #54655b;
+  background: #eef3fa;
+  color: #5b6a8a;
 }
 
 .recommend-tag--relaxation {
-  background: rgba(154, 107, 51, 0.14);
-  color: #8f5a22;
+  background: #fff8e6;
+  color: #a37920;
 }
 
 .recommend-empty {
   margin: 0;
-  color: var(--color-text-muted);
+  color: #5b6a8a;
 }
 
 @media (max-width: 768px) {
-  .recommend-row {
-    flex-direction: column;
-  }
+  .recommend-row { flex-direction: column; }
 }
 </style>

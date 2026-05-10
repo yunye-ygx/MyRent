@@ -7,8 +7,8 @@
       :class="{ active: isActive(item.path), featured: item.featured }"
       @click="go(item.path)"
     >
-      <span v-if="item.icon === 'dog'" class="icon icon-dog">
-        <DogAssistantIcon />
+      <span v-if="item.icon === 'dog'" class="icon icon-roam">
+        <RoamMascotIcon size="tiny" />
       </span>
       <span v-else class="icon">{{ item.icon }}</span>
       <span class="label-row">
@@ -23,7 +23,7 @@
 
 <script setup>
 import { useRoute, useRouter } from 'vue-router'
-import DogAssistantIcon from '@/components/icons/DogAssistantIcon.vue'
+import RoamMascotIcon from '@/components/icons/RoamMascotIcon.vue'
 import { mobileTabItems } from '@/design/site'
 import { useMessageCenterStore } from '@/stores/messageCenter'
 
@@ -71,21 +71,10 @@ function go(path) {
   color: var(--color-accent);
 }
 
-.tab-btn.featured.active {
-  background: #fff1dc;
-  color: #7d4d1f;
-}
-
 .icon {
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-}
-
-.icon-dog {
-  width: 22px;
-  height: 22px;
-  letter-spacing: normal;
 }
 
 .label-row {
@@ -106,5 +95,50 @@ function go(path) {
   color: #fff;
   font-size: 11px;
   font-weight: 700;
+}
+
+.tab-btn.featured {
+  position: relative;
+  overflow: visible;
+}
+
+.tab-btn.featured .icon-roam {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #ffffff;
+  display: grid;
+  place-items: center;
+  box-shadow:
+    0 6px 14px rgba(80, 120, 200, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  margin-top: -14px;
+  isolation: isolate;
+}
+
+.tab-btn.featured .icon-roam::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(184, 216, 255, 0.5), transparent 70%);
+  z-index: -1;
+}
+
+.tab-btn.featured .icon-roam .roam-mascot-icon {
+  width: 30px;
+  height: 30px;
+}
+
+.tab-btn.featured.active {
+  background: transparent;
+  color: #3b4a6b;
+}
+
+.tab-btn.featured.active .icon-roam {
+  box-shadow:
+    0 8px 18px rgba(80, 120, 200, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 </style>

@@ -1,161 +1,203 @@
 <template>
-  <section class="summary-card">
-    <div class="summary-head">
-      <h3>当前已知条件</h3>
-      <span v-if="missingSlots.length" class="summary-tip">还差 {{ missingLabels }}</span>
+  <section class="summary-bar">
+    <div class="summary-bar__avatar">
+      <RoamMascotIcon size="mini" />
     </div>
-    <dl class="summary-grid">
-      <div class="summary-item">
-        <dt>城市</dt>
-        <dd>{{ displayValue(slots.city) }}</dd>
-      </div>
-      <div class="summary-item">
-        <dt>区域</dt>
-        <dd>{{ displayValue(slots.locationName) }}</dd>
-      </div>
-      <div class="summary-item">
-        <dt>预算</dt>
-        <dd>{{ budgetText }}</dd>
-      </div>
-      <div class="summary-item">
-        <dt>租住方式</dt>
-        <dd>{{ rentModeText }}</dd>
-      </div>
-      <div class="summary-item">
-        <dt>优先项</dt>
-        <dd>{{ priorityText }}</dd>
-      </div>
-      <div class="summary-item">
-        <dt>偏好</dt>
-        <dd>{{ preferencesText }}</dd>
-      </div>
-    </dl>
+    <div class="summary-bar__label">Roam 知道的</div>
+    <div class="summary-bar__tags">
+      <span v-for="tag in doneTags" :key="`d-${tag.slotKey}`" class="tag done">
+        <span class="k">{{ tag.key }}</span>
+        <span class="v">{{ tag.value }}</span>
+      </span>
+      <span v-for="tag in todoTags" :key="`t-${tag.key}`" class="tag todo">
+        ? {{ tag.label }}待补充
+      </span>
+    </div>
+    <div class="progress-ring" :style="ringStyle">
+      <div class="progress-ring__inner">{{ knownCount }}/{{ totalCount }}</div>
+    </div>
+    <p v-if="missingSlots.length" class="missing-hint">
+      还差 {{ missingSlots.length }} 项信息，Roam 就可以去筛房源啦 ～
+    </p>
   </section>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import RoamMascotIcon from '@/components/icons/RoamMascotIcon.vue'
 
 const props = defineProps({
-  slots: {
-    type: Object,
-    default: () => ({})
-  },
-  missingSlots: {
-    type: Array,
-    default: () => []
-  }
+  slots: { type: Object, default: () => ({}) },
+  missingSlots: { type: Array, default: () => [] }
 })
 
-const missingLabels = computed(() =>
-  props.missingSlots.map((slot) => {
-    switch (slot) {
-      case 'budgetYuan':
-        return '预算'
-      case 'rentMode':
-        return '整租/合租'
-      case 'locationName':
-        return '区域'
-      default:
-        return slot
-    }
-  }).join('、')
+const SLOT_ORDER = ['city', 'locationName', 'budgetYuan', 'rentMode', 'priority', 'preferences']
+const SLOT_LABEL = {
+  city: '城市',
+  locationName: '区域',
+  budgetYuan: '预算',
+  rentMode: '方式',
+  priority: '优先',
+  preferences: '偏好'
+}
+
+function rentModeText(v) {
+  if (v === 'WHOLE') return '整租'
+  if (v === 'SHARED') return '合租'
+  return v || ''
+}
+function priorityText(v) {
+  if (v === 'PRICE') return '价格'
+  if (v === 'COMMUTE') return '通勤'
+  if (v === 'QUALITY') return '品质'
+  return v || ''
+}
+function preferencesText(list) {
+  if (!list?.length) return ''
+  const map = { nearSubway: '近地铁', balcony: '阳台', quiet: '安静' }
+  return list.map((p) => map[p] || p).join('·')
+}
+function budgetText(v) {
+  if (v == null || v === '') return ''
+  return `${v}/月`
+}
+
+function readValue(key, raw) {
+  switch (key) {
+    case 'budgetYuan': return budgetText(raw)
+    case 'rentMode': return rentModeText(raw)
+    case 'priority': return priorityText(raw)
+    case 'preferences': return preferencesText(raw)
+    default: return raw || ''
+  }
+}
+
+const doneTags = computed(() =>
+  SLOT_ORDER
+    .filter((k) => !props.missingSlots.includes(k))
+    .map((k) => {
+      const value = readValue(k, props.slots?.[k])
+      return { slotKey: k, key: SLOT_LABEL[k], value: value || '—' }
+    })
 )
 
-const budgetText = computed(() => {
-  if (!props.slots?.budgetYuan) {
-    return '待补充'
-  }
-  return `${props.slots.budgetYuan} 元/月`
-})
+const todoTags = computed(() =>
+  props.missingSlots.map((k) => ({ key: k, label: SLOT_LABEL[k] || k }))
+)
 
-const rentModeText = computed(() => {
-  if (props.slots?.rentMode === 'WHOLE') {
-    return '整租'
-  }
-  if (props.slots?.rentMode === 'SHARED') {
-    return '合租'
-  }
-  return '待补充'
-})
+const knownCount = computed(() => doneTags.value.length)
+const totalCount = SLOT_ORDER.length
 
-const priorityText = computed(() => {
-  switch (props.slots?.priority) {
-    case 'PRICE':
-      return '价格'
-    case 'COMMUTE':
-      return '通勤'
-    case 'QUALITY':
-      return '居住品质'
-    default:
-      return '待补充'
+const ringStyle = computed(() => {
+  const ratio = totalCount === 0 ? 0 : knownCount.value / totalCount
+  const deg = Math.round(ratio * 360)
+  return {
+    background: `conic-gradient(#7aa3e0 0deg ${deg}deg, #f0f5ff ${deg}deg 360deg)`
   }
 })
-
-const preferencesText = computed(() => {
-  if (!props.slots?.preferences?.length) {
-    return '待补充'
-  }
-  return props.slots.preferences.join('、')
-})
-
-function displayValue(value) {
-  return value || '待补充'
-}
 </script>
 
 <style scoped>
-.summary-card {
-  display: grid;
-  gap: 14px;
-}
-
-.summary-head {
+.summary-bar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 12px;
-}
-
-.summary-head h3 {
-  margin: 0;
-  font-size: 16px;
-}
-
-.summary-tip {
-  color: var(--color-warning);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin: 0;
-}
-
-.summary-item {
-  padding: 12px 14px;
+  gap: 14px;
+  padding: 12px 16px;
+  background: #ffffff;
   border-radius: 18px;
-  background: rgba(255, 248, 239, 0.84);
+  border: 1px solid rgba(184, 200, 224, 0.3);
+  box-shadow: 0 4px 10px rgba(100, 130, 200, 0.05);
+  flex-wrap: wrap;
 }
 
-.summary-item dt {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  margin-bottom: 6px;
+.summary-bar__avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #f0f5ff;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(184, 200, 224, 0.4);
+  flex-shrink: 0;
+}
+.summary-bar__avatar .roam-mascot-icon {
+  width: 22px;
+  height: 22px;
 }
 
-.summary-item dd {
+.summary-bar__label {
+  font-size: 12.5px;
+  color: #5b6a8a;
+  font-weight: 700;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.summary-bar__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.tag {
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tag.done {
+  background: #f0f5ff;
+  color: #3b4a6b;
+  border: 1px solid rgba(140, 180, 240, 0.35);
+}
+.tag.todo {
+  background: #fff8e6;
+  color: #a37920;
+  border: 1.2px dashed #e8c488;
+}
+.tag .k { opacity: 0.65; font-weight: 600; font-size: 10px; }
+
+.progress-ring {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.progress-ring__inner {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #ffffff;
+  display: grid;
+  place-items: center;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #3b4a6b;
+}
+
+.missing-hint {
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
+  flex-basis: 100%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: #fff8e6;
+  color: #a37920;
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
-@media (max-width: 768px) {
-  .summary-grid {
-    grid-template-columns: 1fr;
+@media (max-width: 640px) {
+  .summary-bar {
+    gap: 10px;
+    padding: 10px 12px;
   }
+  .summary-bar__tags { min-width: 0; }
 }
 </style>

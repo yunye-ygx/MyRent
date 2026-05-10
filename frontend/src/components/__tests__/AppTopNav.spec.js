@@ -60,6 +60,9 @@ describe('AppTopNav', () => {
     expect(wrapper.findAll('.city-select option').map((option) => option.text())).toEqual(
       HOT_CITY_OPTIONS.map((city) => city.name)
     )
+    expect(
+      wrapper.find('[data-nav="/ai-recommend"] .featured-core svg.roam-mascot-icon').exists()
+    ).toBe(true)
   })
 
   it('marks the featured ai nav item active when visiting the ai route', () => {

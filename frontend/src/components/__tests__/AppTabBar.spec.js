@@ -29,7 +29,7 @@ describe('AppTabBar', () => {
     expect(wrapper.classes()).toContain('grid')
     expect(wrapper.text()).toContain('智能推荐')
     expect(wrapper.findAll('.tab-btn')).toHaveLength(5)
-    expect(wrapper.find('.icon-dog').exists()).toBe(true)
+    expect(wrapper.find('.icon-roam').exists()).toBe(true)
     expect(wrapper.findAll('.tab-btn')[2].classes()).toContain('active')
   })
 })
