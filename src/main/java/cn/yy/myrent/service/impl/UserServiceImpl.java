@@ -129,7 +129,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
                 .setId(source.getId())
                 .setPhone(source.getPhone())
                 .setName(source.getName())
-                .setCreateTime(source.getCreateTime());
+                .setCreateTime(source.getCreateTime())
+                .setRole(source.getRole())
+                .setBanned(source.getBanned());
     }
 
     private String encodePassword(String rawPassword) {
