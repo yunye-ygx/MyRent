@@ -24,10 +24,21 @@ ALTER TABLE user ADD COLUMN role TINYINT NOT NULL DEFAULT 0 COMMENT '0=普通用
 ### 2.2 House 表新增 auditStatus 字段
 
 ```sql
-ALTER TABLE house ADD COLUMN audit_status TINYINT NOT NULL DEFAULT 1 COMMENT '0=待审核 1=已通过 2=已拒绝';
+-- 新增字段，默认 0（待审核）
+ALTER TABLE house ADD COLUMN audit_status TINYINT NOT NULL DEFAULT 0 COMMENT '0=待审核 1=已通过 2=已拒绝';
+-- 存量数据视为已通过
+UPDATE house SET audit_status = 1;
 ```
 
 现有 `status` 字段保持不变（1=可租，2=已锁定）。新发布的房源默认 `audit_status=0`（待审核），审核通过后变为 1。
+
+### 2.3 User 表新增 banned 字段
+
+```sql
+ALTER TABLE user ADD COLUMN banned TINYINT NOT NULL DEFAULT 0 COMMENT '0=正常 1=已封禁';
+```
+
+登录接口校验 `banned=0`，被封禁用户返回 403 并提示账号已封禁。
 
 ---
 
@@ -56,7 +67,7 @@ ALTER TABLE house ADD COLUMN audit_status TINYINT NOT NULL DEFAULT 1 COMMENT '0=
 | PUT | `/api/admin/users/{id}/ban` | 封禁用户（role 不变，新增 `banned` 字段） |
 | PUT | `/api/admin/users/{id}/unban` | 解封用户 |
 
-> User 表同时新增 `banned TINYINT DEFAULT 0` 字段，登录时校验 banned=0。
+> `banned` 字段已在第 2.3 节定义，登录时校验 banned=0。
 
 #### 房源管理
 
