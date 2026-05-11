@@ -38,6 +38,7 @@ public class UserContextInterceptor implements HandlerInterceptor {
         try {
             Long userId = jwtTokenUtil.parseUserId(token);
             UserContext.setCurrentUserId(userId);
+            UserContext.setCurrentRole(jwtTokenUtil.parseRole(token));
             log.debug("鉴权通过，userId={}, path={}", userId, requestPath);
             return true;
         } catch (RuntimeException e) {

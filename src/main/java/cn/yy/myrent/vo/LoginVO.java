@@ -12,4 +12,6 @@ public class LoginVO {
     private String phone;
 
     private String name;
+
+    private Integer role;
 }

@@ -39,5 +39,8 @@ public class User implements Serializable {
 
     private LocalDateTime createTime;
 
+    private Integer role;
+    private Integer banned;
+
 
 }

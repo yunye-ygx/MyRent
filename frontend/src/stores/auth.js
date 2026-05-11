@@ -37,6 +37,9 @@ export const useAuthStore = defineStore('auth', {
     isLoggedIn(state) {
       return Boolean(state.token)
     },
+    isAdmin(state) {
+      return state.profile?.role === 1
+    },
     userId(state) {
       return state.profile?.userId || null
     }
@@ -52,7 +55,8 @@ export const useAuthStore = defineStore('auth', {
         userId: loginVO.userId,
         phone: loginVO.phone,
         name: loginVO.name,
-        city: loginVO.city || this.currentCity
+        city: loginVO.city || this.currentCity,
+        role: loginVO.role || 0
       }
       this.currentCity = resolveCurrentCity(this.profile)
       setToken(this.token)

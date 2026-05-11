@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { getToken } from '@/utils/storage'
+import { getProfile, getToken } from '@/utils/storage'
 
 const routes = [
   {
@@ -103,6 +103,21 @@ const routes = [
     name: 'placeholder',
     component: () => import('@/views/placeholder/PlaceholderView.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin',
+    component: () => import('@/views/admin/AdminLayout.vue'),
+    meta: { requiresAdmin: true },
+    children: [
+      { path: '', redirect: '/admin/dashboard' },
+      { path: 'dashboard', name: 'admin-dashboard', component: () => import('@/views/admin/DashboardView.vue') },
+      { path: 'users', name: 'admin-users', component: () => import('@/views/admin/UsersView.vue') },
+      { path: 'houses', name: 'admin-houses', component: () => import('@/views/admin/HousesView.vue') },
+      { path: 'houses/new', name: 'admin-house-new', component: () => import('@/views/admin/HouseFormView.vue') },
+      { path: 'houses/:id/edit', name: 'admin-house-edit', component: () => import('@/views/admin/HouseFormView.vue') },
+      { path: 'orders', name: 'admin-orders', component: () => import('@/views/admin/OrdersView.vue') },
+      { path: 'payments', name: 'admin-payments', component: () => import('@/views/admin/PaymentsView.vue') }
+    ]
   }
 ]
 
@@ -113,11 +128,14 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const token = getToken()
+  if (to.meta.requiresAdmin) {
+    if (!token) return { path: '/login', query: { redirect: to.fullPath } }
+    const profile = getProfile()
+    if (!profile || profile.role !== 1) return '/home'
+    return true
+  }
   if (to.meta.requiresAuth && !token) {
-    return {
-      path: '/login',
-      query: { redirect: to.fullPath }
-    }
+    return { path: '/login', query: { redirect: to.fullPath } }
   }
   if ((to.path === '/login' || to.path === '/register') && token) {
     return '/home'

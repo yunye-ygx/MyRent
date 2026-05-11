@@ -29,17 +29,18 @@ public class JwtTokenUtil {
     private JwtProperties jwtProperties;
 
     public String generateToken(Long userId, String phone) {
-        if (userId == null) {
-            throw new IllegalArgumentException("userId不能为空");
-        }
+        return generateToken(userId, phone, 0);
+    }
 
+    public String generateToken(Long userId, String phone, Integer role) {
+        if (userId == null) throw new IllegalArgumentException("userId不能为空");
         long now = Instant.now().getEpochSecond();
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", userId);
         payload.put("phone", phone);
+        payload.put("role", role != null ? role : 0);
         payload.put("iat", now);
         payload.put("exp", now + jwtProperties.getExpireSeconds());
-
         try {
             String headerPart = URL_ENCODER.encodeToString("{\"alg\":\"HS256\",\"typ\":\"JWT\"}".getBytes(StandardCharsets.UTF_8));
             String payloadPart = URL_ENCODER.encodeToString(objectMapper.writeValueAsBytes(payload));
@@ -49,6 +50,13 @@ public class JwtTokenUtil {
         } catch (Exception e) {
             throw new RuntimeException("生成token失败", e);
         }
+    }
+
+    public Integer parseRole(String token) {
+        Map<String, Object> claims = parseAndVerify(token);
+        Object roleObj = claims.get("role");
+        if (roleObj == null) return 0;
+        return ((Number) roleObj).intValue();
     }
 
     public Long parseUserId(String token) {

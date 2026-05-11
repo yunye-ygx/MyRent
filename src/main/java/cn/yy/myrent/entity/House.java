@@ -93,6 +93,9 @@ public class House implements Serializable {
      */
     private Integer version;
 
+    @TableField("audit_status")
+    private Integer auditStatus;
+
     private LocalDateTime createTime;
 
 

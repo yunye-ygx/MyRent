@@ -49,17 +49,20 @@ public class UserController {
     @PostMapping("/login")
     @Operation(summary = "用户登录", description = "手机号+密码登录")
     public Result<LoginVO> login(@RequestBody UserPhoneReqDTO reqDTO) {
-        if (reqDTO == null) {
-            return Result.error("参数不能为空");
-        }
+        if (reqDTO == null) return Result.error("参数不能为空");
         try {
             User user = userService.loginByPhone(reqDTO.getPhone(), reqDTO.getPassword());
-            String token = jwtTokenUtil.generateToken(user.getId(), user.getPhone());
+            if (Integer.valueOf(1).equals(user.getBanned())) {
+                return Result.error("账号已被封禁，请联系管理员");
+            }
+            Integer role = user.getRole() != null ? user.getRole() : 0;
+            String token = jwtTokenUtil.generateToken(user.getId(), user.getPhone(), role);
             LoginVO loginVO = new LoginVO();
             loginVO.setToken(token);
             loginVO.setUserId(user.getId());
             loginVO.setPhone(user.getPhone());
             loginVO.setName(user.getName());
+            loginVO.setRole(role);
             return Result.success("登录成功", loginVO);
         } catch (RuntimeException e) {
             return Result.error(e.getMessage());
