@@ -121,8 +121,7 @@ async function handleSubmit() {
     const payload = {
       ...form.value,
       price: Math.round(form.value.priceYuan * 100),
-      depositAmount: Math.round(form.value.depositYuan * 100),
-      totalCost: Math.round((form.value.priceYuan + form.value.depositYuan) * 100)
+      depositAmount: Math.round(form.value.depositYuan * 100)
     }
     if (isEdit.value) {
       await updateAdminHouse(route.params.id, payload)

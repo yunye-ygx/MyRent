@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, unref } from 'vue'
 import { formatRequestError } from '@/utils/format'
 
 export function useHouseFeed({ hotLoader, searchLoader, defaultCity = '' }) {
@@ -19,6 +19,10 @@ export function useHouseFeed({ hotLoader, searchLoader, defaultCity = '' }) {
     error.value = ''
   }
 
+  function resolveCity() {
+    return unref(defaultCity) || ''
+  }
+
   async function loadNext() {
     if (loading.value || !hasMore.value) {
       return
@@ -30,13 +34,13 @@ export function useHouseFeed({ hotLoader, searchLoader, defaultCity = '' }) {
     try {
       const result = mode.value === 'search'
         ? await searchLoader({
-            city: defaultCity,
+            city: resolveCity(),
             keyword: activeKeyword.value,
             page: current.value,
             size: size.value
           })
         : await hotLoader({
-            city: defaultCity,
+            city: resolveCity(),
             page: current.value,
             size: size.value
           })

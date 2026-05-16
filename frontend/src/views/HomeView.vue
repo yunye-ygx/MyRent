@@ -136,7 +136,7 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onMounted, ref } from 'vue'
+import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchHotHousePage } from '@/api/house'
 import heroRoomImage from '@/assets/home/hero-room.jpg'
@@ -288,7 +288,7 @@ const mockListings = [
 
 const feed = useHouseFeed({
   hotLoader: fetchHotHousePage,
-  defaultCity: authStore.currentCity
+  defaultCity: computed(() => authStore.currentCity)
 })
 
 const displayListings = computed(() => {
@@ -390,6 +390,17 @@ function toDetail(id) {
 onMounted(() => {
   feed.loadNext()
 })
+
+watch(
+  () => authStore.currentCity,
+  (city, previousCity) => {
+    if (!city || city === previousCity) {
+      return
+    }
+    feed.activateHot()
+    feed.loadNext()
+  }
+)
 </script>
 
 <style scoped>

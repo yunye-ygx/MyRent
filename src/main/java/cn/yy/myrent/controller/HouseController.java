@@ -161,6 +161,7 @@ public class HouseController {
 
         house.setId(null);
         house.setPublisherUserId(currentUserId);
+        house.setTotalCost(null);
         boolean saved = houseCommandService.createHouseWithSync(house);
         if (!saved) {
             log.error("create house failed, userId={}", currentUserId);
@@ -187,6 +188,7 @@ public class HouseController {
 
         house.setId(id);
         house.setPublisherUserId(dbHouse.getPublisherUserId());
+        house.setTotalCost(null);
 
         boolean updated = houseCommandService.updateHouseWithSync(id, house);
         if (!updated) {

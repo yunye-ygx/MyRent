@@ -9,6 +9,7 @@ import cn.yy.myrent.mapper.ChatMessageMapper;
 import cn.yy.myrent.mapper.ChatSessionMapper;
 import cn.yy.myrent.mapper.HouseFavoriteMapper;
 import cn.yy.myrent.mapper.HouseHistoryMapper;
+import cn.yy.myrent.mapper.HouseHotDailyStatsMapper;
 import cn.yy.myrent.mapper.HouseMapper;
 import cn.yy.myrent.mapper.LocalTaskMapper;
 import cn.yy.myrent.mapper.LocationDictMapper;
@@ -45,10 +46,12 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -93,6 +96,9 @@ class HouseControllerWebMvcTest {
 
     @MockBean
     private HouseHistoryMapper houseHistoryMapper;
+
+    @MockBean
+    private HouseHotDailyStatsMapper houseHotDailyStatsMapper;
 
     @MockBean
     private HouseMapper houseMapper;
@@ -345,5 +351,75 @@ class HouseControllerWebMvcTest {
 
         verifyNoInteractions(houseService);
         verifyNoInteractions(houseHistoryService);
+    }
+
+    @Test
+    void createShouldIgnoreClientProvidedTotalCost() throws Exception {
+        given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
+        doAnswer(invocation -> {
+            House house = invocation.getArgument(0);
+            house.setId(88L);
+            return true;
+        }).when(houseCommandService).createHouseWithSync(any(House.class));
+
+        mockMvc.perform(post("/house")
+                        .header("token", "test-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "测试房源",
+                                  "city": "上海",
+                                  "region": "浦东新区",
+                                  "price": 320000,
+                                  "depositAmount": 320000,
+                                  "totalCost": 640000,
+                                  "longitude": 121.4737,
+                                  "latitude": 31.2304,
+                                  "rentType": 1
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data").value(88));
+
+        ArgumentCaptor<House> captor = ArgumentCaptor.forClass(House.class);
+        verify(houseCommandService).createHouseWithSync(captor.capture());
+        assertEquals(1001L, captor.getValue().getPublisherUserId());
+        assertEquals(null, captor.getValue().getTotalCost());
+    }
+
+    @Test
+    void updateShouldIgnoreClientProvidedTotalCost() throws Exception {
+        given(jwtTokenUtil.parseUserId("test-token")).willReturn(1001L);
+        House dbHouse = new House();
+        dbHouse.setId(7L);
+        dbHouse.setPublisherUserId(1001L);
+        dbHouse.setTitle("原房源");
+        given(houseService.getById(7L)).willReturn(dbHouse);
+        given(houseCommandService.updateHouseWithSync(any(Long.class), any(House.class))).willReturn(true);
+
+        mockMvc.perform(put("/house/7")
+                        .header("token", "test-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "更新房源",
+                                  "city": "上海",
+                                  "region": "浦东新区",
+                                  "price": 330000,
+                                  "depositAmount": 330000,
+                                  "totalCost": 660000,
+                                  "longitude": 121.4737,
+                                  "latitude": 31.2304,
+                                  "rentType": 1
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        ArgumentCaptor<House> captor = ArgumentCaptor.forClass(House.class);
+        verify(houseCommandService).updateHouseWithSync(any(Long.class), captor.capture());
+        assertEquals(1001L, captor.getValue().getPublisherUserId());
+        assertEquals(null, captor.getValue().getTotalCost());
     }
 }

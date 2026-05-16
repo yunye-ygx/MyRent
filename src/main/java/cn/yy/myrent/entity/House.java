@@ -1,6 +1,7 @@
 package cn.yy.myrent.entity;
 
 import java.math.BigDecimal;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -70,7 +71,7 @@ public class House implements Serializable {
      */
     private Integer depositAmount;
 
-    @TableField("total_cost")
+    @TableField(value = "total_cost", insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
     private Integer totalCost;
 
     /**

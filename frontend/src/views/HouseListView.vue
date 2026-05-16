@@ -10,6 +10,7 @@
             class="search-input"
             type="text"
             placeholder="小区 / 地铁站 / 商圈 / 学校"
+            @keydown.enter.prevent="submitFilterSearch({ force: true })"
           />
         </label>
         <button
@@ -323,6 +324,7 @@ const resultMessage = ref('切换城市、区域、租金、租住方式或标�
 const currentMode = ref('filter')
 const lastFilterPayload = ref(null)
 const lastRequestKey = ref('')
+const lastFallbackSource = ref('')
 const applyingRouteFilters = ref(false)
 const skipNextAutoSearch = ref(false)
 let autoSearchTimer = null
@@ -388,6 +390,9 @@ const resultSummaryText = computed(() => {
   const payload = lastFilterPayload.value
   if (!payload) {
     return `${currentCity.value} 房源列表`
+  }
+  if (lastFallbackSource.value && lastFallbackSource.value !== 'KEYWORD_SEARCH' && resultMessage.value) {
+    return resultMessage.value
   }
   if (currentMode.value === 'keyword' && payload.keyword) {
     return `关键词：${payload.keyword} · 已按关键词匹配度和位置相关性排序`
@@ -573,6 +578,7 @@ async function submitFilterSearch({ force = false, append = false } = {}) {
       total.value = extractTotal(result, houses.value.length)
       currentPage.value = keywordPayload.page
       lastFilterPayload.value = keywordPayload
+      lastFallbackSource.value = result?.fallbackSource || ''
       resultMessage.value = result?.tipMessage || `关键词搜索结果已刷新：${keyword}`
     } catch (error) {
       if (!append) {
@@ -584,6 +590,7 @@ async function submitFilterSearch({ force = false, append = false } = {}) {
       } else {
         lastRequestKey.value = previousRequestKey
       }
+      lastFallbackSource.value = ''
       loadError.value = error?.message || '关键词搜索接口暂时不可用，请稍后重试。'
       resultMessage.value = loadError.value
     } finally {
@@ -627,6 +634,7 @@ async function submitFilterSearch({ force = false, append = false } = {}) {
     total.value = extractTotal(result, houses.value.length)
     currentPage.value = payload.page
     lastFilterPayload.value = payload
+    lastFallbackSource.value = result?.fallbackSource || ''
     resultMessage.value = result?.tipMessage || `已按 ${payload.city}${payload.region ? ` ${payload.region}` : ''} 刷新房源`
   } catch (error) {
     if (!append) {
@@ -638,6 +646,7 @@ async function submitFilterSearch({ force = false, append = false } = {}) {
     } else {
       lastRequestKey.value = previousRequestKey
     }
+    lastFallbackSource.value = ''
     loadError.value = error?.message || '房源筛选接口暂时不可用，请稍后重试。'
     resultMessage.value = loadError.value
   } finally {

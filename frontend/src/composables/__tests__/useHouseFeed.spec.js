@@ -1,4 +1,4 @@
-import { nextTick } from 'vue'
+import { nextTick, ref } from 'vue'
 import { useHouseFeed } from '@/composables/useHouseFeed'
 
 describe('useHouseFeed', () => {
@@ -55,5 +55,29 @@ describe('useHouseFeed', () => {
 
     expect(feed.error.value).toContain('房源')
     expect(feed.hasMore.value).toBe(false)
+  })
+
+  it('uses the updated city when defaultCity is reactive', async () => {
+    const hotLoader = vi.fn().mockResolvedValue({ houses: [{ id: 1 }] })
+    const searchLoader = vi.fn()
+    const defaultCity = ref('广州')
+    const feed = useHouseFeed({ hotLoader, searchLoader, defaultCity })
+
+    await feed.loadNext()
+    feed.activateHot()
+    defaultCity.value = '上海'
+    await nextTick()
+    await feed.loadNext()
+
+    expect(hotLoader).toHaveBeenNthCalledWith(1, {
+      city: '广州',
+      page: 1,
+      size: 10
+    })
+    expect(hotLoader).toHaveBeenNthCalledWith(2, {
+      city: '上海',
+      page: 1,
+      size: 10
+    })
   })
 })

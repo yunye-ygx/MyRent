@@ -1,9 +1,10 @@
-import { ref } from 'vue'
+import { nextTick, reactive, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import HomeView from '@/views/HomeView.vue'
 
 const loadNext = vi.fn()
+const activateHot = vi.fn()
 const useHouseFeedMock = vi.fn()
 const useAuthStoreMock = vi.fn()
 
@@ -15,15 +16,23 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: (...args) => useAuthStoreMock(...args)
 }))
 
+vi.mock('@/api/house', () => ({
+  fetchHotHousePage: vi.fn()
+}))
+
 describe('HomeView', () => {
+  let authStore
+
   beforeEach(() => {
     loadNext.mockReset()
+    activateHot.mockReset()
     useHouseFeedMock.mockReset()
     useAuthStoreMock.mockReset()
 
-    useAuthStoreMock.mockReturnValue({
+    authStore = reactive({
       currentCity: '南京'
     })
+    useAuthStoreMock.mockReturnValue(authStore)
 
     useHouseFeedMock.mockReturnValue({
       houses: ref([{ id: 1, title: '大学城朝南单间', price: 1280, area: 18, status: 1 }]),
@@ -31,7 +40,8 @@ describe('HomeView', () => {
       error: ref(''),
       mode: ref('hot'),
       resultTip: ref('步行可达大学的优质房源'),
-      loadNext
+      loadNext,
+      activateHot
     })
   })
 
@@ -112,10 +122,26 @@ describe('HomeView', () => {
       }
     })
 
-    expect(useHouseFeedMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        defaultCity: '南京'
-      })
-    )
+    const firstCall = useHouseFeedMock.mock.calls[0][0]
+    expect(firstCall.defaultCity.value).toBe('南京')
+  })
+
+  it('reloads hot houses when current city changes', async () => {
+    const router = createTestRouter()
+
+    mount(HomeView, {
+      global: {
+        plugins: [router]
+      }
+    })
+
+    expect(loadNext).toHaveBeenCalledTimes(1)
+    expect(activateHot).not.toHaveBeenCalled()
+
+    authStore.currentCity = '杭州'
+    await nextTick()
+
+    expect(activateHot).toHaveBeenCalledTimes(1)
+    expect(loadNext).toHaveBeenCalledTimes(2)
   })
 })

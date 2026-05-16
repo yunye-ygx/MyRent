@@ -167,6 +167,25 @@ describe('HouseListView', () => {
     expect(fetchHouseListFilter).not.toHaveBeenCalled()
   })
 
+  it('submits keyword search when pressing Enter in the search input', async () => {
+    const wrapper = await mountView()
+
+    fetchHouseKeywordSearch.mockClear()
+    fetchHouseListFilter.mockClear()
+
+    await wrapper.get('[data-test="house-keyword"]').setValue('静安寺')
+    await wrapper.get('[data-test="house-keyword"]').trigger('keydown.enter')
+    await flushPromises()
+
+    expect(fetchHouseKeywordSearch).toHaveBeenCalledWith({
+      city: '广州',
+      keyword: '静安寺',
+      page: 1,
+      size: 10
+    })
+    expect(fetchHouseListFilter).not.toHaveBeenCalled()
+  })
+
   it('renders search ordering copy and lightweight search reasons separately from feature tags', async () => {
     const wrapper = await mountView()
 
@@ -179,6 +198,24 @@ describe('HouseListView', () => {
     expect(wrapper.text()).toContain('距目标地点约 1.2km')
     expect(wrapper.text()).toContain('近地铁')
     expect(wrapper.text()).toContain('独立卫浴')
+  })
+
+  it('prefers backend fallback tip over keyword ordering copy when keyword search falls back to hot houses', async () => {
+    fetchHouseKeywordSearch.mockResolvedValueOnce({
+      total: 10,
+      tipMessage: '当前未找到匹配房源，已为你展示当前城市热门在租房源',
+      houses: [buildHouse(301, { title: '热门房源-1' })],
+      fallbackSource: 'REDIS_HOT'
+    })
+
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-test="house-keyword"]').setValue('你好哈哈哈')
+    await wrapper.get('[data-test="house-search-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('当前未找到匹配房源，已为你展示当前城市热门在租房源')
+    expect(wrapper.text()).not.toContain('已按关键词匹配度和位置相关性排序')
   })
 
   it('hydrates filters from homepage query params before requesting data', async () => {
