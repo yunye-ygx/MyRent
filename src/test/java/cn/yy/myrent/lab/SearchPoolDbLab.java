@@ -85,6 +85,20 @@ public class SearchPoolDbLab {
         ));
     }
 
+    public static LabResult runScenarioForTest(int searchThreads,
+                                                int jdbcPoolSize,
+                                                int taskCount,
+                                                String sql) throws Exception {
+        return runScenarioInternal(new Scenario(
+                "test-scenario",
+                searchThreads,
+                jdbcPoolSize,
+                taskCount,
+                sql,
+                100
+        ));
+    }
+
     private static String calibrateBenchmarkSql() throws Exception {
         System.out.println("Calibrating a DB-heavy benchmark query...");
         int[] candidates = {100_000, 300_000, 700_000, 1_500_000, 3_000_000, 5_000_000};
@@ -116,6 +130,11 @@ public class SearchPoolDbLab {
     }
 
     private static void runScenario(Scenario scenario) throws Exception {
+        runScenarioInternal(scenario);
+        System.out.println();
+    }
+
+    private static LabResult runScenarioInternal(Scenario scenario) throws Exception {
         System.out.println("============================================================");
         System.out.println(scenario.name());
         System.out.printf(Locale.ROOT,
@@ -163,9 +182,32 @@ public class SearchPoolDbLab {
                 results.add(future.get());
             }
             printSummary(results, totalElapsedMs);
+            return buildLabResult(results, totalElapsedMs, poolMXBean);
         }
+    }
 
-        System.out.println();
+    private static LabResult buildLabResult(List<TaskResult> results,
+                                            long totalElapsedMs,
+                                            HikariPoolMXBean poolMXBean) {
+        long maxWait = results.stream()
+                .mapToLong(TaskResult::waitForConnectionMs)
+                .max()
+                .orElse(0L);
+        long avgWait = Math.round(results.stream()
+                .mapToLong(TaskResult::waitForConnectionMs)
+                .average()
+                .orElse(0L));
+        long maxQuery = results.stream()
+                .mapToLong(TaskResult::queryExecutionMs)
+                .max()
+                .orElse(0L);
+        return new LabResult(
+                totalElapsedMs,
+                avgWait,
+                maxWait,
+                maxQuery,
+                poolMXBean.getThreadsAwaitingConnection()
+        );
     }
 
     private static Callable<TaskResult> buildTask(int taskId,
@@ -305,5 +347,12 @@ public class SearchPoolDbLab {
     }
 
     private record DbStatus(int threadsConnected, int threadsRunning) {
+    }
+
+    public record LabResult(long totalElapsedMs,
+                            long avgConnectionWaitMs,
+                            long maxConnectionWaitMs,
+                            long maxQueryExecutionMs,
+                            int waitingConnections) {
     }
 }
