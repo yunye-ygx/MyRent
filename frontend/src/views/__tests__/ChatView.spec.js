@@ -2,7 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import ChatView from '@/views/ChatView.vue'
 import { markMessagesRead, pullHistoryMessages, pullNewMessages } from '@/api/chat'
 
-const { historyMessages, intersectionObservers } = vi.hoisted(() => ({
+const { historyMessages, intersectionObservers, sockets } = vi.hoisted(() => ({
   historyMessages: [
     {
       id: 8,
@@ -33,7 +33,8 @@ const { historyMessages, intersectionObservers } = vi.hoisted(() => ({
       content: 'hidden inbound'
     }
   ],
-  intersectionObservers: []
+  intersectionObservers: [],
+  sockets: []
 }))
 
 const messageCenterStore = {
@@ -118,7 +119,10 @@ describe('ChatView', () => {
     window.IntersectionObserver = global.IntersectionObserver
 
     global.WebSocket = class {
-      close() {}
+      constructor() {
+        this.close = vi.fn()
+        sockets.push(this)
+      }
     }
     window.WebSocket = global.WebSocket
 
@@ -133,6 +137,7 @@ describe('ChatView', () => {
   afterEach(() => {
     vi.useRealTimers()
     intersectionObservers.length = 0
+    sockets.length = 0
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
       value: originalVisibilityState
@@ -222,4 +227,5 @@ describe('ChatView', () => {
 
     wrapper.unmount()
   })
+
 })

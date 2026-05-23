@@ -124,6 +124,7 @@ vi.mock('@/stores/messageCenter', () => ({
 describe('MessagesView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    chatSessionState.sessions[0].unreadCount = 2
     pullHistoryMessages.mockReset()
     pullHistoryMessages.mockResolvedValue({
       messages: [
@@ -197,6 +198,19 @@ describe('MessagesView', () => {
       sessionId: '1_9_7'
     })
     expect(wrapper.get('[data-thread-title]').text()).toContain('Landlord Li')
+  })
+
+  it('marks the entire chat session as read with a snowflake-safe upper bound', async () => {
+    const { wrapper } = await mountView()
+
+    await wrapper.get('[data-entry-id="chat:1_9_7"]').trigger('click')
+    await flushPromises()
+
+    expect(markMessagesRead).toHaveBeenCalledWith({
+      sessionId: '1_9_7',
+      upToMessageId: '9223372036854775807'
+    })
+    expect(decrementChatUnread).toHaveBeenCalledWith(2)
   })
 
   it('restores the last selected conversation during the same login session', async () => {

@@ -503,6 +503,7 @@ function connectWs() {
     }
     wsConnected.value = false
     startPullTimer()
+    reconnectLater()
   }
 }
 

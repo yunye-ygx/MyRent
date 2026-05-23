@@ -229,6 +229,7 @@ const loadingSessions = computed(() => chatSessionStore.loading || notificationL
 const listErrorMessage = computed(() =>
   [chatSessionStore.error, notificationError.value].filter(Boolean).join(' ')
 )
+const MAX_READ_UP_TO_MESSAGE_ID = '9223372036854775807'
 
 function getInitial(text, fallback = 'U') {
   const value = String(text || '').trim()
@@ -616,7 +617,7 @@ function clearChatUnread(entry) {
   messageCenterStore.decrementChatUnread(unreadCount)
   markMessagesRead({
     sessionId: entry.sessionId,
-    upToMessageId: Number.MAX_SAFE_INTEGER
+    upToMessageId: MAX_READ_UP_TO_MESSAGE_ID
   }).catch(() => {})
 }
 

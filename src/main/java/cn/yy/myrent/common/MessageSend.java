@@ -130,7 +130,7 @@ public class MessageSend {
             return;
         }
 
-        log.info("这次要处理的本地任务，没有被定时任务处理，messageId={}", messageId);
+        log.info("刚刚事务创建的本地任务没有被定时任务抢先执行，任务仍然处于投递的状态，messageId={}", messageId);
         dispatchTask(task);
     }
 

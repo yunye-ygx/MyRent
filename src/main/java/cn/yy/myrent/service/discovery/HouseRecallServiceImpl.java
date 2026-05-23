@@ -70,6 +70,7 @@ public class HouseRecallServiceImpl implements HouseRecallService {
 
         KeywordRecallEnvelope locationEnvelope = locationFuture.join();
         KeywordRecallEnvelope textEnvelope = textFuture.join();
+
         Map<Long, KeywordRecallEvidence> mergedEvidence = mergeKeywordEvidence(
                 locationEnvelope.evidence(),
                 textEnvelope.evidence()

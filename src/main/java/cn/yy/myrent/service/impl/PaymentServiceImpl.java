@@ -168,10 +168,12 @@ public class PaymentServiceImpl extends ServiceImpl<PaymentMapper, Payment> impl
         if (payment.getStatus() != null && payment.getStatus() == PaymentStatus.DUPLICATE_PAID) {
             return PaymentRepairResult.DUPLICATE_PAID;
         }
-        log.info("订单超时取消任务在支付成功回调任务之前，{}", payment.getPaymentNo());
+
         if (payment.getStatus() != null && payment.getStatus() == PaymentStatus.CLOSED_TIMEOUT) {
+            log.info("订单超时取消任务在支付成功回调任务之前，{}", payment.getPaymentNo());
             return repairLateSuccessAfterTimeout(payment, order, thirdPartyTradeNo, callbackNo, callbackTime);
         }
+
         return closeOrderAsPaidNormally(payment, order, thirdPartyTradeNo, callbackNo, callbackTime);
     }
 
@@ -216,7 +218,7 @@ public class PaymentServiceImpl extends ServiceImpl<PaymentMapper, Payment> impl
         boolean repaired = false;
 
         for (Map.Entry<Payment, MockPayTrade> entry : successful) {
-            log.info("处理第三方支付平台状态为支付成功的paymentno，{}", entry.getKey().getPaymentNo());
+            log.info("处理第三方支付平台状态为支付成功的paymentno，尝试修改订单状态{}", entry.getKey().getPaymentNo());
             PaymentRepairResult result = reconcilePaymentSuccess(
                     entry.getKey().getPaymentNo(),
                     entry.getValue().getThirdPartyTradeNo(),

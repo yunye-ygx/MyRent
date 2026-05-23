@@ -1,0 +1,96 @@
+name: build-and-deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY: ${{ secrets.ACR_REGISTRY }}
+  IMAGE_NAME: ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/${{ secrets.ACR_REPOSITORY }}
+  DEPLOY_PATH: ${{ secrets.SERVER_DEPLOY_PATH }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pack deploy files
+        run: |
+          mkdir -p deploy-package
+          cp docker-compose.yml deploy-package/docker-compose.yml
+          mkdir -p deploy-package/sql/rent-schema
+          cp sql/rent-schema/rent-schema-all.sql deploy-package/sql/rent-schema/
+          cp sql/rent-schema/smart-guide-location-dict.sql deploy-package/sql/rent-schema/
+          tar -czf deploy-package.tar.gz -C deploy-package .
+
+      - name: Upload deploy package
+        uses: appleboy/scp-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: deploy-package.tar.gz
+          target: ${{ env.DEPLOY_PATH }}
+
+      - name: Deploy on server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            set -e
+            mkdir -p "${{ secrets.SERVER_DEPLOY_PATH }}"
+            cd "${{ secrets.SERVER_DEPLOY_PATH }}"
+            tar -xzf deploy-package.tar.gz
+            rm -f deploy-package.tar.gz
+
+            cat > .env <<EOF
+            BACKEND_IMAGE=${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/${{ secrets.ACR_REPOSITORY }}:${{ github.sha }}
+            MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+            MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
+            REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+            RABBITMQ_USERNAME=${{ secrets.RABBITMQ_USERNAME }}
+            RABBITMQ_PASSWORD=${{ secrets.RABBITMQ_PASSWORD }}
+            MYRENT_JWT_SECRET=${{ secrets.MYRENT_JWT_SECRET }}
+            EOF
+
+            docker login "${{ secrets.ACR_REGISTRY }}" -u "${{ secrets.ACR_USERNAME }}" -p "${{ secrets.ACR_PASSWORD }}"
+            docker compose pull backend
+            docker compose up -d
+            docker compose ps
