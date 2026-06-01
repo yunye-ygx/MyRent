@@ -1,8 +1,37 @@
 # MyRent
 
-MyRent 是一个前后端分离的租房平台练习项目。后端基于 Spring Boot 3，前端基于 Vue 3 + Vite。
+> 城市租住消息平台 · 前后端分离练习项目
 
-当前项目重点不再是继续堆新页面，而是围绕租房业务的核心链路做后端深度：锁房交易一致性、搜索推荐、房源 DB/ES 同步、聊天与通知。
+MyRent 是一个面向年轻租客的租房平台练习项目。后端基于 Spring Boot 3，前端基于 Vue 3 + Vite，围绕租房业务核心链路做后端深度：锁房交易一致性、搜索推荐、房源 DB/ES 同步、聊天与通知。
+
+## 页面预览
+
+<table>
+  <tr>
+    <td><b>首页</b></td>
+    <td><b>找房（列表 + 地图）</b></td>
+  </tr>
+  <tr>
+    <td><img src="images/5.png" alt="首页" /></td>
+    <td><img src="images/4.png" alt="找房页面" /></td>
+  </tr>
+  <tr>
+    <td><b>AI 智能推荐</b></td>
+    <td><b>消息 / 聊天</b></td>
+  </tr>
+  <tr>
+    <td><img src="images/2.png" alt="AI智能推荐" /></td>
+    <td><img src="images/1.png" alt="聊天页面" /></td>
+  </tr>
+  <tr>
+    <td><b>个人中心</b></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><img src="images/3.png" alt="个人中心" /></td>
+    <td></td>
+  </tr>
+</table>
 
 ## 技术栈
 
