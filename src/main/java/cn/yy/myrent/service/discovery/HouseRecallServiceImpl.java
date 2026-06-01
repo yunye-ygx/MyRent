@@ -14,6 +14,7 @@ import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
@@ -30,6 +31,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
 @Service
@@ -48,6 +50,9 @@ public class HouseRecallServiceImpl implements HouseRecallService {
     private final LocationResolveService locationResolveService;
     private final SmartGuideCandidateCollector smartGuideCandidateCollector;
 
+    @Qualifier("recallExecutor")
+    private final Executor recallExecutor;
+
     @Override
     public HouseRecallResult recall(HouseRecallQuery query) {
         HouseRecallProfile profile = query == null || query.recallProfile() == null
@@ -64,9 +69,9 @@ public class HouseRecallServiceImpl implements HouseRecallService {
         String keyword = query == null || query.keyword() == null ? "" : query.keyword().trim();
 
         CompletableFuture<KeywordRecallEnvelope> locationFuture =
-                CompletableFuture.supplyAsync(() -> searchKeywordByLocation(keyword));
+                CompletableFuture.supplyAsync(() -> searchKeywordByLocation(keyword), recallExecutor);
         CompletableFuture<KeywordRecallEnvelope> textFuture =
-                CompletableFuture.supplyAsync(() -> searchKeywordByText(keyword));
+                CompletableFuture.supplyAsync(() -> searchKeywordByText(keyword), recallExecutor);
 
         KeywordRecallEnvelope locationEnvelope = locationFuture.join();
         KeywordRecallEnvelope textEnvelope = textFuture.join();

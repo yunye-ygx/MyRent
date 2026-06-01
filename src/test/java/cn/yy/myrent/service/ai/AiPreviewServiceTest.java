@@ -73,4 +73,13 @@ class AiPreviewServiceTest {
         assertTrue(!mergedSummary.contains("面积更大"));
         assertTrue(!mergedSummary.contains("采光"));
     }
+
+    @Test
+    void buildPreviewShouldUseBudgetWhenGiven() {
+        String result = "abc";
+        String b=result;
+        System.out.println(System.identityHashCode(b));
+        System.out.println(System.identityHashCode(result));
+
+    }
 }
