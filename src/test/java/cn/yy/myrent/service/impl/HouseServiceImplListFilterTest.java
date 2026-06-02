@@ -215,6 +215,7 @@ class HouseServiceImplListFilterTest {
                         elasticsearchOperations,
                         houseMapper,
                         locationResolveService,
+                        null,
                         null
                 ),
                 "convertDocToHouse",
