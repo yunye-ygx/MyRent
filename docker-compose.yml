@@ -78,6 +78,7 @@ services:
       - "9200:9200"
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
+      - ./es-dict:/usr/share/elasticsearch/plugins/ik/config:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:9200 >/dev/null"]
       interval: 15s
