@@ -22,7 +22,7 @@ public class HouseDoc {
     @Field(type = FieldType.Long)
     private Long publisherUserId;
 
-    @Field(type = FieldType.Text, analyzer = "ik_max_word")
+    @Field(type = FieldType.Text, analyzer = "ik_max_word", searchAnalyzer = "ik_smart")
     private String title;
 
     @Field(type = FieldType.Keyword)

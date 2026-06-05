@@ -303,7 +303,14 @@ public class HouseRecallServiceImpl implements HouseRecallService {
         try {
             Query query = Query.of(q -> q.bool(b -> b
                     .must(m -> m.term(t -> t.field("status").value(HOUSE_STATUS_AVAILABLE)))
-                    .must(m -> m.match(mm -> mm.field("title").query(keyword)))
+                    .must(m -> m.match(mm -> mm
+                            .field("title")
+                            .query(keyword)
+                            .operator(co.elastic.clients.elasticsearch._types.query_dsl.Operator.And)))
+                    .should(s -> s.matchPhrase(mp -> mp
+                            .field("title")
+                            .query(keyword)
+                            .boost(5.0f)))
             ));
 
             Map<Long, KeywordRecallEvidence> evidenceMap = new LinkedHashMap<>();
