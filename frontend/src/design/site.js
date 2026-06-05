@@ -1,7 +1,7 @@
 export const topNavItems = [
   { label: '首页', to: '/home' },
   { label: '找房', to: '/houses' },
-  { label: '智能推荐', to: '/ai-recommend', featured: true, icon: 'dog' },
+  { label: 'AI 助手', to: '/ai-chat', featured: true, icon: 'dog' },
   { label: '消息', to: '/messages' },
   { label: '我的', to: '/mine' }
 ]
@@ -9,7 +9,7 @@ export const topNavItems = [
 export const mobileTabItems = [
   { path: '/home', label: '首页', icon: 'H' },
   { path: '/houses', label: '找房', icon: 'L' },
-  { path: '/ai-recommend', label: '智能推荐', icon: 'dog', featured: true },
+  { path: '/ai-chat', label: 'AI 助手', icon: 'dog', featured: true },
   { path: '/messages', label: '消息', icon: 'M' },
   { path: '/mine', label: '我的', icon: 'I' }
 ]

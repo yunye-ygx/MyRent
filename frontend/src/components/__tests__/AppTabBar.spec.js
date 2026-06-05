@@ -5,7 +5,7 @@ const push = vi.fn()
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({
-    path: '/ai-recommend'
+    path: '/ai-chat'
   }),
   useRouter: () => ({
     push
@@ -27,7 +27,7 @@ describe('AppTabBar', () => {
     const wrapper = mount(AppTabBar)
 
     expect(wrapper.classes()).toContain('grid')
-    expect(wrapper.text()).toContain('智能推荐')
+    expect(wrapper.text()).toContain('AI 助手')
     expect(wrapper.findAll('.tab-btn')).toHaveLength(5)
     expect(wrapper.find('.icon-roam').exists()).toBe(true)
     expect(wrapper.findAll('.tab-btn')[2].classes()).toContain('active')
