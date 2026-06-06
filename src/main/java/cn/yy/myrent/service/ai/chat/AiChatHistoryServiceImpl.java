@@ -16,6 +16,9 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AiChatHistoryServiceImpl implements AiChatHistoryService {
 
+    private static final String ROLE_SUMMARY = "summary";
+    private static final String ROLE_ASSISTANT = "assistant";
+
     private final AiChatSessionMapper sessionMapper;
     private final AiChatMessageMapper messageMapper;
 
@@ -62,6 +65,33 @@ public class AiChatHistoryServiceImpl implements AiChatHistoryService {
     }
 
     @Override
+    public List<AiChatMessage> loadMessagesSinceLatestSummary(Long sessionId) {
+        AiChatMessage latestSummary = findLatestSummaryMessage(sessionId);
+        LambdaQueryWrapper<AiChatMessage> queryWrapper = new LambdaQueryWrapper<AiChatMessage>()
+                .eq(AiChatMessage::getSessionId, sessionId);
+        if (latestSummary != null && latestSummary.getId() != null) {
+            queryWrapper.ge(AiChatMessage::getId, latestSummary.getId());
+        }
+        queryWrapper.orderByAsc(AiChatMessage::getId);
+        return messageMapper.selectList(queryWrapper);
+    }
+
+    @Override
+    public int countCompletedRoundsSinceLatestSummary(Long sessionId) {
+        AiChatMessage latestSummary = findLatestSummaryMessage(sessionId);
+        LambdaQueryWrapper<AiChatMessage> queryWrapper = new LambdaQueryWrapper<AiChatMessage>()
+                .eq(AiChatMessage::getSessionId, sessionId)
+                .eq(AiChatMessage::getRole, ROLE_ASSISTANT)
+                .isNull(AiChatMessage::getToolName)
+                .isNotNull(AiChatMessage::getContent);
+        if (latestSummary != null && latestSummary.getId() != null) {
+            queryWrapper.gt(AiChatMessage::getId, latestSummary.getId());
+        }
+        Long count = messageMapper.selectCount(queryWrapper);
+        return count == null ? 0 : count.intValue();
+    }
+
+    @Override
     public void saveMessage(AiChatMessage message) {
         messageMapper.insert(message);
     }
@@ -71,5 +101,15 @@ public class AiChatHistoryServiceImpl implements AiChatHistoryService {
         for (AiChatMessage message : messages) {
             messageMapper.insert(message);
         }
+    }
+
+    private AiChatMessage findLatestSummaryMessage(Long sessionId) {
+        return messageMapper.selectOne(
+                new LambdaQueryWrapper<AiChatMessage>()
+                        .eq(AiChatMessage::getSessionId, sessionId)
+                        .eq(AiChatMessage::getRole, ROLE_SUMMARY)
+                        .orderByDesc(AiChatMessage::getId)
+                        .last("LIMIT 1")
+        );
     }
 }

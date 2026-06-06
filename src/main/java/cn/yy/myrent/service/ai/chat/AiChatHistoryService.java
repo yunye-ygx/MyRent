@@ -12,6 +12,10 @@ public interface AiChatHistoryService {
 
     List<AiChatMessage> loadMessages(Long sessionId, int limit);
 
+    List<AiChatMessage> loadMessagesSinceLatestSummary(Long sessionId);
+
+    int countCompletedRoundsSinceLatestSummary(Long sessionId);
+
     void saveMessage(AiChatMessage message);
 
     void saveMessages(List<AiChatMessage> messages);
