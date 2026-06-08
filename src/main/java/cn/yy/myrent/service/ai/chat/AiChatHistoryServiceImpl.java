@@ -5,12 +5,16 @@ import cn.yy.myrent.entity.AiChatSession;
 import cn.yy.myrent.mapper.AiChatMessageMapper;
 import cn.yy.myrent.mapper.AiChatSessionMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -18,27 +22,31 @@ public class AiChatHistoryServiceImpl implements AiChatHistoryService {
 
     private static final String ROLE_SUMMARY = "summary";
     private static final String ROLE_ASSISTANT = "assistant";
+    private static final String ROLE_TOOL = "tool";
+    private static final String TOOL_SEARCH_HOUSES = "searchHouses";
+    private static final String DEFAULT_SESSION_TITLE = "新会话";
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final AiChatSessionMapper sessionMapper;
     private final AiChatMessageMapper messageMapper;
 
     @Override
-    public AiChatSession getOrCreateSession(Long userId) {
-        AiChatSession session = sessionMapper.selectOne(
-                new LambdaQueryWrapper<AiChatSession>()
-                        .eq(AiChatSession::getUserId, userId)
-                        .orderByDesc(AiChatSession::getUpdateTime)
-                        .last("LIMIT 1")
-        );
-        if (session != null) {
-            return session;
-        }
-        session = new AiChatSession();
+    public AiChatSession createSession(Long userId) {
+        AiChatSession session = new AiChatSession();
         session.setUserId(userId);
-        session.setTitle("AI 找房助手");
+        session.setTitle(DEFAULT_SESSION_TITLE);
         session.setCreateTime(LocalDateTime.now());
         session.setUpdateTime(LocalDateTime.now());
         sessionMapper.insert(session);
+        return session;
+    }
+
+    @Override
+    public AiChatSession getOwnedSession(Long userId, Long sessionId) {
+        AiChatSession session = sessionMapper.selectById(sessionId);
+        if (session == null || userId == null || !userId.equals(session.getUserId())) {
+            throw new IllegalStateException("会话不存在或无权访问");
+        }
         return session;
     }
 
@@ -62,6 +70,19 @@ public class AiChatHistoryServiceImpl implements AiChatHistoryService {
             return messages;
         }
         return new ArrayList<>(messages.subList(messages.size() - limit, messages.size()));
+    }
+
+    @Override
+    public List<AiChatMessage> loadVisibleMessages(Long userId, Long sessionId, int limit) {
+        getOwnedSession(userId, sessionId);
+
+        return loadMessages(sessionId, limit).stream()
+                .filter(message -> "user".equals(message.getRole())
+                        || ("assistant".equals(message.getRole())
+                        && !StringUtils.hasText(message.getToolName())
+                        && StringUtils.hasText(message.getContent()))
+                        || isVisibleHouseSearchResult(message))
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -92,6 +113,25 @@ public class AiChatHistoryServiceImpl implements AiChatHistoryService {
     }
 
     @Override
+    public void touchSession(Long sessionId, String latestUserMessage) {
+        if (sessionId == null) {
+            return;
+        }
+
+        AiChatSession session = sessionMapper.selectById(sessionId);
+        if (session == null) {
+            return;
+        }
+
+        session.setUpdateTime(LocalDateTime.now());
+        if (!StringUtils.hasText(session.getTitle()) || DEFAULT_SESSION_TITLE.equals(session.getTitle())) {
+            String titleSource = StringUtils.hasText(latestUserMessage) ? latestUserMessage.trim() : DEFAULT_SESSION_TITLE;
+            session.setTitle(titleSource.length() > 24 ? titleSource.substring(0, 24) : titleSource);
+        }
+        sessionMapper.updateById(session);
+    }
+
+    @Override
     public void saveMessage(AiChatMessage message) {
         messageMapper.insert(message);
     }
@@ -111,5 +151,20 @@ public class AiChatHistoryServiceImpl implements AiChatHistoryService {
                         .orderByDesc(AiChatMessage::getId)
                         .last("LIMIT 1")
         );
+    }
+
+    private boolean isVisibleHouseSearchResult(AiChatMessage message) {
+        if (!ROLE_TOOL.equals(message.getRole())
+                || !TOOL_SEARCH_HOUSES.equals(message.getToolName())
+                || !StringUtils.hasText(message.getToolResult())) {
+            return false;
+        }
+
+        try {
+            JsonNode houses = OBJECT_MAPPER.readTree(message.getToolResult()).get("houses");
+            return houses != null && houses.isArray() && !houses.isEmpty();
+        } catch (Exception ex) {
+            return false;
+        }
     }
 }

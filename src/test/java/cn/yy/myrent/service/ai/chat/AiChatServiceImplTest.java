@@ -26,6 +26,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -65,7 +66,7 @@ class AiChatServiceImplTest {
         ChatClient.StreamResponseSpec streamResponseSpec = mock(ChatClient.StreamResponseSpec.class);
 
         AiChatSession session = session(11L, 7L);
-        when(historyService.getOrCreateSession(7L)).thenReturn(session);
+        when(historyService.createSession(7L)).thenReturn(session);
         when(historyService.loadMessagesSinceLatestSummary(11L)).thenReturn(List.of(), List.of());
         when(historyService.countCompletedRoundsSinceLatestSummary(11L)).thenReturn(0);
         when(chatClientBuilder.build()).thenReturn(chatClient);
@@ -97,9 +98,50 @@ class AiChatServiceImplTest {
     }
 
     @Test
+    void chatShouldUseOwnedExistingSessionAndEmitSessionEvent() throws IOException {
+        ChatClient chatClient = mock(ChatClient.class);
+        ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.StreamResponseSpec streamResponseSpec = mock(ChatClient.StreamResponseSpec.class);
+
+        AiChatSession session = session(11L, 7L);
+        when(historyService.getOwnedSession(7L, 11L)).thenReturn(session);
+        when(historyService.loadMessagesSinceLatestSummary(11L)).thenReturn(List.of(), List.of());
+        when(historyService.countCompletedRoundsSinceLatestSummary(11L)).thenReturn(0);
+        when(chatClientBuilder.build()).thenReturn(chatClient);
+        when(chatClient.prompt()).thenReturn(requestSpec);
+        when(requestSpec.messages(anyList())).thenReturn(requestSpec);
+        when(requestSpec.user(anyString())).thenReturn(requestSpec);
+        when(requestSpec.system(anyString())).thenReturn(requestSpec);
+        when(requestSpec.toolContext(any())).thenReturn(requestSpec);
+        when(requestSpec.toolCallbacks(any(ToolCallback[].class))).thenReturn(requestSpec);
+        when(requestSpec.stream()).thenReturn(streamResponseSpec);
+        when(streamResponseSpec.chatClientResponse()).thenReturn(Flux.just(chatClientResponse("ok")));
+        doNothing().when(emitter).send(any(SseEmitter.SseEventBuilder.class));
+
+        AiChatServiceImpl aiChatService = service();
+        aiChatService.chat(7L, "Continue this conversation", 11L, emitter);
+
+        verify(historyService, timeout(2000)).getOwnedSession(7L, 11L);
+        verify(emitter, timeout(2000).atLeast(3)).send(any(SseEmitter.SseEventBuilder.class));
+        verify(historyService, timeout(2000).times(2)).saveMessage(any(AiChatMessage.class));
+    }
+
+    @Test
+    void chatShouldReturnErrorWhenSessionDoesNotBelongToUser() throws IOException {
+        when(historyService.getOwnedSession(7L, 11L)).thenThrow(new IllegalStateException("会话不存在或无权访问"));
+
+        AiChatServiceImpl aiChatService = service();
+        aiChatService.chat(7L, "Continue this conversation", 11L, emitter);
+
+        verify(historyService, timeout(2000)).getOwnedSession(7L, 11L);
+        verify(historyService, never()).saveMessage(any(AiChatMessage.class));
+        verify(chatClientBuilder, never()).build();
+    }
+
+    @Test
     void chatShouldRejectNegativeBudgetBeforeInvokingModel() {
         AiChatSession session = session(11L, 7L);
-        when(historyService.getOrCreateSession(7L)).thenReturn(session);
+        when(historyService.createSession(7L)).thenReturn(session);
         when(historyService.loadMessagesSinceLatestSummary(11L)).thenReturn(List.of(), List.of());
         when(historyService.countCompletedRoundsSinceLatestSummary(11L)).thenReturn(0);
 
@@ -122,7 +164,7 @@ class AiChatServiceImplTest {
         ChatClient.StreamResponseSpec streamResponseSpec = mock(ChatClient.StreamResponseSpec.class);
 
         AiChatSession session = session(11L, 7L);
-        when(historyService.getOrCreateSession(7L)).thenReturn(session);
+        when(historyService.createSession(7L)).thenReturn(session);
         when(historyService.loadMessagesSinceLatestSummary(11L)).thenReturn(List.of(), List.of());
         when(historyService.countCompletedRoundsSinceLatestSummary(11L)).thenReturn(0);
         when(chatClientBuilder.build()).thenReturn(chatClient);
@@ -155,13 +197,31 @@ class AiChatServiceImplTest {
     }
 
     @Test
+    void sendHousesEventIfPresentShouldEmitSearchHouseRecommendations() throws IOException {
+        doNothing().when(emitter).send(any(SseEmitter.SseEventBuilder.class));
+
+        AiChatServiceImpl aiChatService = service();
+        boolean emitted = aiChatService.sendHousesEventIfPresent(
+                emitter,
+                "searchHouses",
+                """
+                        {"ok":true,"count":1,"location":"陆家嘴","houses":[{"houseId":101,"title":"陆家嘴精装一居","priceYuan":3500,"rentMode":"整租","highlights":["近地铁"],"reasons":["月租贴近预算"]}]}
+                        """
+        );
+
+        assertTrue(emitted);
+        verify(emitter).send(any(SseEmitter.SseEventBuilder.class));
+        assertFalse(aiChatService.sendHousesEventIfPresent(emitter, "getHouseDetail", "{\"ok\":true}"));
+    }
+
+    @Test
     void chatShouldUseLatestSummaryAndIncrementalMessagesOnly() throws IOException {
         ChatClient chatClient = mock(ChatClient.class);
         ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
         ChatClient.StreamResponseSpec streamResponseSpec = mock(ChatClient.StreamResponseSpec.class);
 
         AiChatSession session = session(11L, 7L);
-        when(historyService.getOrCreateSession(7L)).thenReturn(session);
+        when(historyService.createSession(7L)).thenReturn(session);
         when(historyService.loadMessagesSinceLatestSummary(11L)).thenReturn(List.of(
                 textMessage(11L, "summary", "summary snapshot"),
                 textMessage(11L, "user", "recent question"),
@@ -205,7 +265,7 @@ class AiChatServiceImplTest {
         ChatClient.CallResponseSpec summaryCallSpec = mock(ChatClient.CallResponseSpec.class);
 
         AiChatSession session = session(11L, 7L);
-        when(historyService.getOrCreateSession(7L)).thenReturn(session);
+        when(historyService.createSession(7L)).thenReturn(session);
         when(historyService.loadMessagesSinceLatestSummary(11L)).thenReturn(
                 nineCompletedRounds(11L),
                 tenCompletedRounds(11L)

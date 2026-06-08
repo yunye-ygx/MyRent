@@ -2,7 +2,7 @@ package cn.yy.myrent.consumer;
 
 import cn.yy.myrent.config.RabbitMQConfig;
 import cn.yy.myrent.sync.house.HouseSyncConstants;
-import cn.yy.myrent.sync.house.model.HouseSyncMessage;
+import cn.yy.myrent.sync.house.model.HouseChangedEvent;
 import cn.yy.myrent.sync.house.service.HouseEsSyncService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rabbitmq.client.Channel;
@@ -28,27 +28,26 @@ public class HouseSyncConsumer {
     public void consume(String body, Message message, Channel channel) throws IOException {
         long deliveryTag = message.getMessageProperties().getDeliveryTag();
         try {
-            HouseSyncMessage syncMessage = objectMapper.readValue(body, HouseSyncMessage.class);
-            Long houseId = syncMessage.getHouseId();
-            String eventType = syncMessage.getEventType();
+            HouseChangedEvent event = objectMapper.readValue(body, HouseChangedEvent.class);
+            Long houseId = event.getHouseId();
+            String eventType = event.getEventType();
 
-            if (HouseSyncConstants.EVENT_HOUSE_ES_DELETE.equals(eventType)) {
+            if (HouseSyncConstants.EVENT_HOUSE_DELETED.equals(eventType)) {
                 houseEsSyncService.deleteByHouseId(houseId);
-            } else if (HouseSyncConstants.EVENT_HOUSE_ES_UPSERT.equals(eventType)) {
+            } else if (houseId != null) {
                 houseEsSyncService.upsertByHouseId(houseId);
             } else {
-                log.warn("未知房源同步事件，忽略处理，eventType={}, messageId={}", eventType, syncMessage.getMessageId());
+                log.warn("unknown house sync event ignored, eventType={}, eventId={}", eventType, event.getEventId());
             }
 
             channel.basicAck(deliveryTag, false);
-            log.info("房源同步消息消费成功，houseId={}, eventType={}, messageId={}",
-                    syncMessage.getHouseId(),
-                    syncMessage.getEventType(),
-                    syncMessage.getMessageId());
+            log.info("house sync message consumed, houseId={}, eventType={}, eventId={}",
+                    event.getHouseId(),
+                    event.getEventType(),
+                    event.getEventId());
         } catch (Exception e) {
-            log.error("房源同步消息消费失败，deliveryTag={}, body={}", deliveryTag, body, e);
+            log.error("house sync message consume failed, deliveryTag={}, body={}", deliveryTag, body, e);
             channel.basicNack(deliveryTag, false, true);
         }
     }
 }
-

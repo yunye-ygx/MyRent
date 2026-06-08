@@ -13,54 +13,108 @@
       </div>
     </section>
 
-    <section class="ai-chat-card">
-      <div class="chat-thread" ref="threadRef">
-        <AiChatMessage
-          v-for="(msg, index) in messages"
-          :key="index"
-          :role="msg.role"
-          :text="msg.text"
-        />
-      </div>
-
-      <AiQuickPromptChips
-        v-if="messages.length <= 1"
-        :prompts="quickPrompts"
-        @select="sendMessage"
-      />
-
-      <form class="chat-form" @submit.prevent="sendMessage(draft)">
-        <textarea
-          ref="inputRef"
-          v-model="draft"
-          class="chat-input"
-          rows="3"
-          placeholder="比如：预算 3500，想在浦东整租，最好近地铁"
-          :disabled="streaming"
-        />
-        <div class="chat-actions">
-          <span v-if="streaming" class="chat-status">Roam 正在思考中...</span>
-          <button v-if="streaming" class="chat-send chat-send--stop" type="button" @click="stopStreaming">停止</button>
-          <button v-else class="chat-send" type="submit" :disabled="!draft.trim()">发送</button>
+    <section class="ai-chat-shell">
+      <aside class="session-panel app-surface">
+        <div class="session-panel__header">
+          <div>
+            <p class="session-panel__eyebrow">AI 会话</p>
+            <h2>聊天记录</h2>
+          </div>
+          <button data-testid="new-session" class="new-session-button" type="button" @click="startNewSession">
+            新建会话
+          </button>
         </div>
-      </form>
+
+        <div class="session-list">
+          <button
+            v-for="session in sessions"
+            :key="session.id"
+            class="session-item"
+            :class="{ active: Number(session.id) === Number(sessionId) }"
+            :data-session-id="session.id"
+            type="button"
+            @click="selectSession(session.id)"
+          >
+            <span class="session-item__title">{{ session.title || '新会话' }}</span>
+            <span class="session-item__time">{{ formatSessionTime(session.updateTime) }}</span>
+          </button>
+        </div>
+      </aside>
+
+      <section class="ai-chat-card" ref="chatCardRef">
+        <div class="chat-thread" ref="threadRef">
+          <template v-for="(msg, index) in messages" :key="msg.id || `${msg.role}-${index}`">
+            <AiChatMessage
+              :role="msg.role"
+              :text="msg.text"
+            />
+            <AiHouseRecommendationCards
+              v-if="msg.houses?.length"
+              :houses="msg.houses"
+              @open-detail="openHouseDetail"
+              @action="handleRecommendationAction"
+            />
+          </template>
+        </div>
+
+        <AiQuickPromptChips
+          v-if="messages.length <= 1"
+          :prompts="quickPrompts"
+          @select="sendMessage"
+        />
+
+        <form class="chat-form" @submit.prevent="sendMessage(draft)">
+          <textarea
+            ref="inputRef"
+            v-model="draft"
+            class="chat-input"
+            rows="1"
+            aria-label="AI 对话输入"
+            placeholder="比如：预算 3500，想在浦东整租，最好近地铁"
+            :disabled="streaming"
+            @keydown.enter.exact.prevent="sendMessage(draft)"
+          />
+          <div class="chat-actions">
+            <span v-if="streaming" class="chat-status">Roam 正在思考中...</span>
+            <button v-if="streaming" class="chat-send chat-send--stop" type="button" @click="stopStreaming">停止</button>
+            <button v-else class="chat-send" type="submit" :disabled="!draft.trim() || !sessionId">发送</button>
+          </div>
+        </form>
+      </section>
     </section>
   </div>
 </template>
 
 <script setup>
 import { nextTick, onMounted, ref } from 'vue'
-import { streamAiChat } from '@/api/aiChat'
+import { useRouter } from 'vue-router'
+import {
+  createAiChatSession,
+  fetchAiChatMessages,
+  fetchAiChatSessions,
+  streamAiChat
+} from '@/api/aiChat'
+import AiHouseRecommendationCards from '@/components/ai/AiHouseRecommendationCards.vue'
 import AiChatMessage from '@/components/ai/AiChatMessage.vue'
 import AiQuickPromptChips from '@/components/ai/AiQuickPromptChips.vue'
 import RoamMascotIcon from '@/components/icons/RoamMascotIcon.vue'
 
+const WELCOME_MESSAGE = '你好，我是 Roam。告诉我你想在哪个区域租房、预算大概多少，或者直接描述你的偏好也可以。'
+const ACTION_PROMPTS = {
+  more: '帮我按当前条件换一批房源',
+  'relax-budget': '帮我把预算放宽 500 元再找一批',
+  'adjust-area': '我想调整区域，请先问我更想靠近哪里'
+}
+
 const messages = ref([])
+const sessions = ref([])
 const draft = ref('')
 const streaming = ref(false)
 const threadRef = ref(null)
+const chatCardRef = ref(null)
 const inputRef = ref(null)
 const sessionId = ref(null)
+const router = useRouter()
 let abortFn = null
 
 const quickPrompts = [
@@ -70,22 +124,106 @@ const quickPrompts = [
   '预算有限，可以接受合租'
 ]
 
-onMounted(() => {
-  messages.value.push({
-    role: 'assistant',
-    text: '你好，我是 Roam。告诉我你想在哪个区域租房、预算大概多少，或者直接描述你的偏好也可以。'
-  })
+onMounted(async () => {
+  await initializeSessions()
 })
+
+async function initializeSessions() {
+  const sessionRecords = await fetchAiChatSessions()
+  sessions.value = Array.isArray(sessionRecords) ? sessionRecords : []
+
+  if (sessions.value.length > 0) {
+    await selectSession(sessions.value[0].id)
+    return
+  }
+
+  await startNewSession()
+}
+
+async function startNewSession() {
+  stopStreaming()
+  const session = await createAiChatSession()
+  upsertSession(session, { moveToTop: true })
+  sessionId.value = session.id
+  messages.value = [buildWelcomeMessage()]
+  draft.value = ''
+  await scrollToBottom()
+  inputRef.value?.focus?.()
+}
+
+async function selectSession(targetSessionId) {
+  if (!targetSessionId) return
+
+  stopStreaming()
+  sessionId.value = Number(targetSessionId)
+
+  const records = await fetchAiChatMessages(sessionId.value)
+  const normalized = normalizeHistoryMessages(records)
+
+  messages.value = normalized.length > 0 ? normalized : [buildWelcomeMessage()]
+  await scrollToBottom()
+}
+
+function normalizeHistoryMessages(records) {
+  const normalized = []
+  let pendingHouses = []
+
+  for (const item of Array.isArray(records) ? records : []) {
+    if (isHouseSearchToolMessage(item)) {
+      const houses = parseToolHouses(item.toolResult)
+      if (!houses.length) continue
+
+      const lastMessage = normalized.at(-1)
+      if (lastMessage?.role === 'assistant') {
+        lastMessage.houses = houses
+      } else {
+        pendingHouses = houses
+      }
+      continue
+    }
+
+    if (item?.role !== 'user' && item?.role !== 'assistant') {
+      continue
+    }
+
+    const message = {
+      id: item.id,
+      role: item.role,
+      text: item.content || '',
+      houses: []
+    }
+    if (message.role === 'assistant' && pendingHouses.length) {
+      message.houses = pendingHouses
+      pendingHouses = []
+    }
+    normalized.push(message)
+  }
+
+  if (pendingHouses.length) {
+    normalized.push({ role: 'assistant', text: '', houses: pendingHouses })
+  }
+  return normalized
+}
+
+function isHouseSearchToolMessage(item) {
+  return item?.role === 'tool' && item?.toolName === 'searchHouses'
+}
+
+function parseToolHouses(toolResult) {
+  if (!toolResult) return []
+  try {
+    const parsed = typeof toolResult === 'string' ? JSON.parse(toolResult) : toolResult
+    return Array.isArray(parsed?.houses) ? parsed.houses : []
+  } catch {
+    return []
+  }
+}
 
 function sendMessage(text) {
   const content = String(text || draft.value || '').trim()
-  if (!content || streaming.value) return
+  if (!content || streaming.value || !sessionId.value) return
 
-  if (abortFn) {
-    abortFn()
-    abortFn = null
-  }
-
+  stopStreaming()
   messages.value.push({ role: 'user', text: content })
   draft.value = ''
   streaming.value = true
@@ -102,12 +240,25 @@ function sendMessage(text) {
         messages.value[assistantIndex].text += chunk
         scrollToBottom()
       },
-      onDone() {
+      onSession(payload) {
+        if (payload?.sessionId) {
+          sessionId.value = Number(payload.sessionId)
+        }
+      },
+      onHouses(payload) {
+        const last = messages.value[assistantIndex]
+        if (last && last.role === 'assistant') {
+          last.houses = Array.isArray(payload?.houses) ? payload.houses : []
+        }
+        scrollToBottom()
+      },
+      async onDone() {
         streaming.value = false
         const last = messages.value[assistantIndex]
-        if (last && last.role === 'assistant' && !last.text) {
+        if (last && last.role === 'assistant' && !last.text && !last.houses?.length) {
           messages.value.splice(assistantIndex, 1)
         }
+        await refreshSessions(sessionId.value)
       },
       onError() {
         streaming.value = false
@@ -120,6 +271,18 @@ function sendMessage(text) {
   )
 }
 
+function openHouseDetail(houseId) {
+  if (!houseId) return
+  router.push(`/house/${houseId}`)
+}
+
+function handleRecommendationAction(action) {
+  const prompt = ACTION_PROMPTS[action]
+  if (prompt) {
+    sendMessage(prompt)
+  }
+}
+
 function stopStreaming() {
   if (abortFn) {
     abortFn()
@@ -128,10 +291,40 @@ function stopStreaming() {
   streaming.value = false
 }
 
+async function refreshSessions(activeSessionId = sessionId.value) {
+  const sessionRecords = await fetchAiChatSessions()
+  sessions.value = Array.isArray(sessionRecords) ? sessionRecords : []
+  if (activeSessionId) {
+    sessionId.value = Number(activeSessionId)
+  }
+}
+
+function upsertSession(session, options = {}) {
+  if (!session?.id) return
+
+  const current = sessions.value.filter((item) => Number(item.id) !== Number(session.id))
+  if (options.moveToTop) {
+    sessions.value = [session, ...current]
+    return
+  }
+  sessions.value = [...current, session]
+}
+
+function buildWelcomeMessage() {
+  return { role: 'assistant', text: WELCOME_MESSAGE, houses: [] }
+}
+
+function formatSessionTime(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
 async function scrollToBottom() {
   await nextTick()
-  if (threadRef.value) {
-    threadRef.value.scrollTop = threadRef.value.scrollHeight
+  if (chatCardRef.value?.scrollIntoView) {
+    chatCardRef.value.scrollIntoView({ block: 'end', behavior: 'smooth' })
   }
 }
 </script>
@@ -141,6 +334,8 @@ async function scrollToBottom() {
   display: grid;
   gap: 16px;
   width: 100%;
+  min-height: 100%;
+  overflow: visible;
 }
 
 .ai-hero {
@@ -150,6 +345,7 @@ async function scrollToBottom() {
   padding: 36px 24px 28px;
   text-align: center;
 }
+
 .ai-hero__sky {
   position: absolute;
   inset: 0;
@@ -158,6 +354,7 @@ async function scrollToBottom() {
     radial-gradient(circle at 85% 20%, rgba(255, 184, 200, 0.22), transparent 45%),
     linear-gradient(180deg, #eaf4ff 0%, #f8f4ff 60%, #fff8e6 100%);
 }
+
 .ai-hero__content {
   position: relative;
   z-index: 1;
@@ -165,20 +362,24 @@ async function scrollToBottom() {
   gap: 10px;
   justify-items: center;
 }
+
 .ai-hero__mascot {
   width: 140px;
   height: 120px;
   animation: roam-float 3.5s ease-in-out infinite;
 }
+
 @keyframes roam-float {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-6px); }
 }
+
 .ai-hero__title {
   margin: 2px 0 0;
   font-size: clamp(20px, 3vw, 26px);
   color: #2d3748;
 }
+
 .ai-hero__sub {
   margin: 4px auto 10px;
   color: #5b6a8a;
@@ -186,71 +387,213 @@ async function scrollToBottom() {
   max-width: 500px;
 }
 
+.ai-chat-shell {
+  display: grid;
+  grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.session-panel,
 .ai-chat-card {
   background: #ffffff;
   border-radius: 24px;
   padding: 18px;
   border: 1px solid rgba(184, 200, 224, 0.3);
   box-shadow: 0 4px 14px rgba(100, 130, 200, 0.06);
+}
+
+.session-panel {
   display: grid;
   gap: 16px;
 }
 
+.session-panel__header {
+  display: grid;
+  gap: 12px;
+}
+
+.session-panel__eyebrow {
+  margin: 0 0 4px;
+  color: #7b8ca8;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.session-panel__header h2 {
+  margin: 0;
+  font-size: 20px;
+  color: #2d3748;
+}
+
+.new-session-button {
+  border: 0;
+  border-radius: 16px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #2d6cdf, #6ca2ff);
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.session-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.session-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(184, 200, 224, 0.35);
+  border-radius: 18px;
+  padding: 12px 14px;
+  background: #f8fbff;
+  cursor: pointer;
+}
+
+.session-item.active {
+  background: #eef5ff;
+  border-color: rgba(108, 162, 255, 0.6);
+}
+
+.session-item__title {
+  color: #2d3748;
+  font-weight: 700;
+}
+
+.session-item__time {
+  color: #7b8ca8;
+  font-size: 12px;
+}
+
+.ai-chat-card {
+  display: grid;
+  gap: 18px;
+  min-height: calc(100vh - 180px);
+  padding: clamp(18px, 2vw, 26px);
+}
+
 .chat-thread {
-  min-height: 320px;
-  max-height: 60vh;
-  overflow-y: auto;
+  min-height: 420px;
   display: grid;
   gap: 14px;
   align-content: start;
+  padding: 4px 2px 32px;
 }
 
-.chat-form { display: grid; gap: 12px; }
+.chat-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(184, 200, 224, 0.45);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 18px 42px rgba(74, 103, 148, 0.14);
+  backdrop-filter: blur(14px);
+}
+
 .chat-input {
   width: 100%;
-  min-height: 100px;
-  resize: vertical;
-  border: 1px solid rgba(184, 200, 224, 0.4);
-  border-radius: 18px;
-  padding: 12px 14px;
+  min-height: 46px;
+  max-height: 160px;
+  resize: none;
+  border: 0;
+  border-radius: 16px;
+  padding: 13px 14px;
   font-size: 14px;
-  background: #f8fbff;
+  line-height: 1.5;
+  background: transparent;
   outline: none;
   font-family: inherit;
 }
+
 .chat-input:focus {
-  border-color: #7aa3e0;
-  background: #ffffff;
-  box-shadow: 0 0 0 4px rgba(122, 163, 224, 0.15);
+  background: rgba(248, 251, 255, 0.8);
+  box-shadow: inset 0 0 0 1px rgba(122, 163, 224, 0.24);
 }
+
 .chat-actions {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  padding-bottom: 2px;
 }
-.chat-status { color: #5b6a8a; font-size: 13px; }
+
+.chat-status {
+  color: #5b6a8a;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .chat-send {
   border: 0;
   background: linear-gradient(135deg, #7aa3e0, #9bb5e8);
   color: #ffffff;
   border-radius: 999px;
-  padding: 10px 22px;
+  min-width: 68px;
+  height: 46px;
+  padding: 0 20px;
   font-weight: 800;
   font-size: 13px;
   cursor: pointer;
   box-shadow: 0 6px 14px rgba(122, 163, 224, 0.35);
   margin-left: auto;
 }
-.chat-send:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.chat-send:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .chat-send--stop {
   background: linear-gradient(135deg, #e88a7a, #e8a07a);
   box-shadow: 0 6px 14px rgba(232, 138, 122, 0.35);
 }
 
+@media (max-width: 900px) {
+  .ai-chat-shell {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 640px) {
-  .ai-hero { padding: 28px 16px 20px; }
-  .ai-hero__mascot { width: 110px; height: 95px; }
-  .ai-chat-card { padding: 14px; border-radius: 20px; }
+  .ai-hero {
+    padding: 28px 16px 20px;
+  }
+
+  .ai-hero__mascot {
+    width: 110px;
+    height: 95px;
+  }
+
+  .session-panel,
+  .ai-chat-card {
+    padding: 14px;
+    border-radius: 20px;
+  }
+
+  .ai-chat-card {
+    min-height: calc(100vh - 150px);
+  }
+
+  .chat-thread {
+    min-height: 360px;
+  }
+
+  .chat-form {
+    grid-template-columns: 1fr;
+    border-radius: 20px;
+  }
+
+  .chat-actions {
+    justify-content: space-between;
+  }
 }
 </style>

@@ -77,6 +77,11 @@ const routes = [
         path: 'mine/student-benefits',
         name: 'mine-student-benefits',
         component: () => import('@/views/mine/StudentBenefitsView.vue')
+      },
+      {
+        path: 'mine/alerts',
+        name: 'mine-alerts',
+        component: () => import('@/views/mine/MineHouseAlertView.vue')
       }
     ]
   },

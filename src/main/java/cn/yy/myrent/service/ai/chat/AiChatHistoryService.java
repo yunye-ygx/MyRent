@@ -6,15 +6,21 @@ import java.util.List;
 
 public interface AiChatHistoryService {
 
-    AiChatSession getOrCreateSession(Long userId);
+    AiChatSession createSession(Long userId);
+
+    AiChatSession getOwnedSession(Long userId, Long sessionId);
 
     List<AiChatSession> listSessions(Long userId);
 
     List<AiChatMessage> loadMessages(Long sessionId, int limit);
 
+    List<AiChatMessage> loadVisibleMessages(Long userId, Long sessionId, int limit);
+
     List<AiChatMessage> loadMessagesSinceLatestSummary(Long sessionId);
 
     int countCompletedRoundsSinceLatestSummary(Long sessionId);
+
+    void touchSession(Long sessionId, String latestUserMessage);
 
     void saveMessage(AiChatMessage message);
 

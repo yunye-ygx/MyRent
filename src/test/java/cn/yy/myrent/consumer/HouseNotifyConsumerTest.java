@@ -1,7 +1,7 @@
 package cn.yy.myrent.consumer;
 
 import cn.yy.myrent.sync.house.model.HouseChangedEvent;
-import cn.yy.myrent.sync.house.service.HouseHotSyncService;
+import cn.yy.myrent.sync.house.notify.HouseEventNotificationDispatcher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rabbitmq.client.Channel;
 import org.junit.jupiter.api.Test;
@@ -17,26 +17,23 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class HouseHotSyncConsumerTest {
+class HouseNotifyConsumerTest {
 
     @Mock
     private ObjectMapper objectMapper;
 
     @Mock
-    private HouseHotSyncService houseHotSyncService;
+    private HouseEventNotificationDispatcher dispatcher;
 
     @Mock
     private Channel channel;
 
     @InjectMocks
-    private HouseHotSyncConsumer consumer;
+    private HouseNotifyConsumer consumer;
 
     @Test
-    void consumeShouldSyncHouseChangeAndAck() throws Exception {
-        HouseChangedEvent event = new HouseChangedEvent();
-        event.setHouseId(7L);
-        event.setEventType("HOUSE_CREATED");
-        event.setEventId("evt-1");
+    void consumeShouldDispatchNotificationEventAndAck() throws Exception {
+        HouseChangedEvent event = new HouseChangedEvent().setHouseId(7L).setEventType("HOUSE_CREATED").setEventId("evt-1");
         MessageProperties properties = new MessageProperties();
         properties.setDeliveryTag(99L);
         Message message = new Message(new byte[0], properties);
@@ -45,20 +42,19 @@ class HouseHotSyncConsumerTest {
 
         consumer.consume(body, message, channel);
 
-        verify(houseHotSyncService).syncHouseChange(7L);
+        verify(dispatcher).dispatch(event);
         verify(channel).basicAck(99L, false);
     }
 
     @Test
-    void consumeShouldNackWhenSyncFails() throws Exception {
-        HouseChangedEvent event = new HouseChangedEvent();
-        event.setHouseId(7L);
+    void consumeShouldNackWhenNotificationDispatchFails() throws Exception {
+        HouseChangedEvent event = new HouseChangedEvent().setHouseId(7L).setEventType("HOUSE_CREATED").setEventId("evt-1");
         MessageProperties properties = new MessageProperties();
         properties.setDeliveryTag(99L);
         Message message = new Message(new byte[0], properties);
         String body = "{\"houseId\":7}";
         when(objectMapper.readValue(body, HouseChangedEvent.class)).thenReturn(event);
-        doThrow(new RuntimeException("redis down")).when(houseHotSyncService).syncHouseChange(7L);
+        doThrow(new RuntimeException("db down")).when(dispatcher).dispatch(event);
 
         consumer.consume(body, message, channel);
 

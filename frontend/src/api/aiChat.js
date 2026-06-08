@@ -1,15 +1,28 @@
+import http from './http'
 import { getToken } from '@/utils/storage'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL
 
+export function fetchAiChatSessions() {
+  return http.get('/ai/sessions')
+}
+
+export function createAiChatSession() {
+  return http.post('/ai/sessions')
+}
+
+export function fetchAiChatMessages(sessionId, params = {}) {
+  return http.get(`/ai/sessions/${sessionId}/messages`, { params })
+}
+
 /**
  * SSE 流式聊天请求
  * @param {Object} params - { message, sessionId }
- * @param {Object} callbacks - { onText, onDone, onError }
+ * @param {Object} callbacks - { onText, onSession, onHouses, onDone, onError }
  * @returns {Function} abort function
  */
 export function streamAiChat(params, callbacks) {
-  const { onText, onDone, onError } = callbacks
+  const { onText, onSession, onHouses, onDone, onError } = callbacks
   const token = getToken()
 
   const controller = new AbortController()
@@ -56,6 +69,12 @@ export function streamAiChat(params, callbacks) {
               switch (currentEvent) {
                 case 'text':
                   onText?.(data.content)
+                  break
+                case 'session':
+                  onSession?.(data)
+                  break
+                case 'houses':
+                  onHouses?.(data)
                   break
                 case 'done':
                   doneEmitted = true

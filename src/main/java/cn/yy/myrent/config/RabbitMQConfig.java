@@ -34,6 +34,7 @@ public class RabbitMQConfig {
     public static final String HOUSE_SYNC_EXCHANGE = "house.sync.exchange";
     public static final String HOUSE_SYNC_QUEUE = "house.sync.queue";
     public static final String HOUSE_HOT_SYNC_QUEUE = "house.hot.sync.queue";
+    public static final String HOUSE_NOTIFY_QUEUE = "house.notify.queue";
     public static final String HOUSE_SYNC_ROUTING_KEY = "house.sync.routing.key";
 
     // ================== 死信组件配置 ==================
@@ -135,5 +136,16 @@ public class RabbitMQConfig {
     public Binding houseHotSyncBinding(@Qualifier("houseHotSyncQueue") Queue houseHotSyncQueue,
                                        @Qualifier("houseSyncExchange") DirectExchange houseSyncExchange) {
         return BindingBuilder.bind(houseHotSyncQueue).to(houseSyncExchange).with(HOUSE_SYNC_ROUTING_KEY);
+    }
+
+    @Bean
+    public Queue houseNotifyQueue() {
+        return QueueBuilder.durable(HOUSE_NOTIFY_QUEUE).build();
+    }
+
+    @Bean
+    public Binding houseNotifyBinding(@Qualifier("houseNotifyQueue") Queue houseNotifyQueue,
+                                      @Qualifier("houseSyncExchange") DirectExchange houseSyncExchange) {
+        return BindingBuilder.bind(houseNotifyQueue).to(houseSyncExchange).with(HOUSE_SYNC_ROUTING_KEY);
     }
 }

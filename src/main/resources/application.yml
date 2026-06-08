@@ -60,4 +60,4 @@ myrent:
       prompt-history-limit: 6
       default-budget-scope: STRICT
   scheduling:
-    enabled: false
+    enabled: true

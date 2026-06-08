@@ -4,6 +4,7 @@ import cn.yy.myrent.config.RabbitMQConfig;
 import cn.yy.myrent.entity.LocalTask;
 import cn.yy.myrent.mapper.LocalTaskMapper;
 import cn.yy.myrent.sync.house.HouseSyncConstants;
+import cn.yy.myrent.sync.house.model.HouseChangedEvent;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -23,9 +24,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 本地任务表扫描并投递 MQ。
- */
 @Component
 @Slf4j
 public class MessageSend {
@@ -59,7 +57,7 @@ public class MessageSend {
     public void initRabbitCallbacks() {
         rabbitTemplate.setConfirmCallback((correlationData, ack, cause) -> {
             if (correlationData == null || correlationData.getId() == null) {
-                log.warn("收到 MQ confirm 但缺少 correlationData, ack={}, cause={}", ack, cause);
+                log.warn("mq confirm missing correlationData, ack={}, cause={}", ack, cause);
                 return;
             }
 
@@ -76,7 +74,7 @@ public class MessageSend {
                     ? null
                     : returned.getMessage().getMessageProperties().getMessageId();
             if (messageId == null || messageId.trim().isEmpty()) {
-                log.error("收到 MQ returned 但缺少 messageId, replyCode={}, replyText={}, exchange={}, routingKey={}",
+                log.error("mq returned callback missing messageId, replyCode={}, replyText={}, exchange={}, routingKey={}",
                         returned.getReplyCode(),
                         returned.getReplyText(),
                         returned.getExchange(),
@@ -130,7 +128,7 @@ public class MessageSend {
             return;
         }
 
-        log.info("刚刚事务创建的本地任务没有被定时任务抢先执行，任务仍然处于投递的状态，messageId={}", messageId);
+        log.info("newly created local task is still pending, dispatch immediately, messageId={}", messageId);
         dispatchTask(task);
     }
 
@@ -159,7 +157,7 @@ public class MessageSend {
                 .in(LocalTask::getStatus, LOCAL_TASK_STATUS_SUCCESS, LOCAL_TASK_STATUS_DEAD)
                 .lt(LocalTask::getUpdateTime, cutoffTime));
 
-        log.info("本地任务清理完成，deleted={}, retainDays={}, cutoffTime={}",
+        log.info("local task cleanup completed, deleted={}, retainDays={}, cutoffTime={}",
                 deleted,
                 CLEANUP_RETAIN_DAYS,
                 cutoffTime);
@@ -172,7 +170,7 @@ public class MessageSend {
 
         try {
             sendTaskToMq(task);
-            log.info("本地任务已投递 MQ，等待 broker confirm，messageId={}, bizType={}, eventType={}, bizId={}",
+            log.info("local task sent to mq, waiting broker confirm, messageId={}, bizType={}, eventType={}, bizId={}",
                     task.getMessageId(),
                     task.getBizType(),
                     task.getEventType(),
@@ -195,33 +193,30 @@ public class MessageSend {
     private void sendTaskToMq(LocalTask task) {
         if (LOCAL_TASK_BIZ_TYPE_ORDER.equals(task.getBizType())
                 && LOCAL_TASK_EVENT_ORDER_TIMEOUT_RELEASE.equals(task.getEventType())) {
-            log.info("此次任务是订单超时释放，messageId={}, bizId={}",
-                    task.getMessageId(),
-                    task.getBizId());
             sendOrderTimeoutTask(task);
             return;
         }
 
         if (LOCAL_TASK_BIZ_TYPE_HOUSE.equals(task.getBizType())
-                && (HouseSyncConstants.EVENT_HOUSE_ES_UPSERT.equals(task.getEventType())
-                || HouseSyncConstants.EVENT_HOUSE_ES_DELETE.equals(task.getEventType()))) {
+                && task.getEventType() != null
+                && task.getEventType().startsWith("HOUSE_")) {
             sendWithConfirm(
                     task,
                     RabbitMQConfig.HOUSE_SYNC_EXCHANGE,
                     RabbitMQConfig.HOUSE_SYNC_ROUTING_KEY,
-                    buildHouseSyncMessage(task),
+                    buildHouseChangedEvent(task),
                     null);
             return;
         }
 
-        throw new IllegalStateException("不支持的本地任务类型，bizType=" + task.getBizType() + ", eventType=" + task.getEventType());
+        throw new IllegalStateException("unsupported local task type, bizType=" + task.getBizType() + ", eventType=" + task.getEventType());
     }
 
     private void sendOrderTimeoutTask(LocalTask task) {
         LocalDateTime expireTime = resolveOrderExpireTime(task);
         long ttlMs = Duration.between(LocalDateTime.now(), expireTime).toMillis();
         if (ttlMs <= 0) {
-            log.warn("订单超时任务已接近或超过过期时间，立即投递，messageId={}, bizId={}, expireTime={}",
+            log.warn("order timeout task is close to or already expired, dispatch immediately, messageId={}, bizId={}, expireTime={}",
                     task.getMessageId(),
                     task.getBizId(),
                     expireTime);
@@ -274,7 +269,7 @@ public class MessageSend {
                 return node.asText();
             }
         } catch (Exception e) {
-            log.warn("订单本地任务 payload 非 JSON 格式，回退原始值，messageId={}, payload={}",
+            log.warn("order local task payload is not json, fallback to raw payload, messageId={}, payload={}",
                     task.getMessageId(),
                     payload);
             return payload;
@@ -295,7 +290,7 @@ public class MessageSend {
                     }
                 }
             } catch (Exception e) {
-                log.warn("订单本地任务 expireTime 解析失败，回退 executeTime，messageId={}, payload={}",
+                log.warn("order local task expireTime parse failed, fallback to executeTime, messageId={}, payload={}",
                         task.getMessageId(),
                         payload);
             }
@@ -304,15 +299,34 @@ public class MessageSend {
         return task.getExecuteTime();
     }
 
-    private String buildHouseSyncMessage(LocalTask task) {
-        Map<String, Object> message = new LinkedHashMap<>();
-        message.put("messageId", task.getMessageId());
-        message.put("eventType", task.getEventType());
-        message.put("houseId", resolveHouseId(task));
+    private String buildHouseChangedEvent(LocalTask task) {
         try {
+            String payload = task.getPayload();
+            if (payload != null && !payload.trim().isEmpty()) {
+                try {
+                    HouseChangedEvent event = objectMapper.readValue(payload, HouseChangedEvent.class);
+                    if (event.getEventId() == null || event.getEventId().isBlank()) {
+                        event.setEventId(task.getMessageId());
+                    }
+                    if (event.getEventType() == null || event.getEventType().isBlank()) {
+                        event.setEventType(task.getEventType());
+                    }
+                    if (event.getHouseId() == null) {
+                        event.setHouseId(resolveHouseId(task));
+                    }
+                    return objectMapper.writeValueAsString(event);
+                } catch (Exception ignore) {
+                    // fall back to legacy payload reconstruction
+                }
+            }
+
+            Map<String, Object> message = new LinkedHashMap<>();
+            message.put("eventId", task.getMessageId());
+            message.put("eventType", task.getEventType());
+            message.put("houseId", resolveHouseId(task));
             return objectMapper.writeValueAsString(message);
         } catch (Exception e) {
-            throw new IllegalStateException("房源同步消息序列化失败", e);
+            throw new IllegalStateException("house sync message serialization failed", e);
         }
     }
 
@@ -334,7 +348,7 @@ public class MessageSend {
                     }
                 }
             } catch (Exception e) {
-                log.warn("房源本地任务 payload 解析失败，回退 bizId，messageId={}, payload={}",
+                log.warn("house local task payload parse failed, fallback to bizId, messageId={}, payload={}",
                         task.getMessageId(),
                         payload);
             }
@@ -343,7 +357,7 @@ public class MessageSend {
         try {
             return Long.parseLong(task.getBizId());
         } catch (Exception e) {
-            throw new IllegalStateException("房源本地任务 bizId 无法解析为 houseId, bizId=" + task.getBizId(), e);
+            throw new IllegalStateException("house local task bizId cannot parse to houseId, bizId=" + task.getBizId(), e);
         }
     }
 
@@ -356,7 +370,7 @@ public class MessageSend {
                 .set(LocalTask::getUpdateTime, LocalDateTime.now()));
 
         if (updated == 1) {
-            log.info("本地任务收到 broker confirm 并标记成功，messageId={}", messageId);
+            log.info("local task broker confirm success, messageId={}", messageId);
         }
     }
 
@@ -398,7 +412,7 @@ public class MessageSend {
         }
 
         if (retry > maxRetry) {
-            log.error("本地任务发送失败并进入死信状态，messageId={}, bizType={}, eventType={}, bizId={}, retry={}, maxRetry={}",
+            log.error("local task send failed and entered dead status, messageId={}, bizType={}, eventType={}, bizId={}, retry={}, maxRetry={}",
                     task.getMessageId(),
                     task.getBizType(),
                     task.getEventType(),
@@ -408,7 +422,7 @@ public class MessageSend {
                     e);
         } else {
             LocalDateTime nextRetryTime = now.plusSeconds((long) RETRY_BASE_SECONDS * retry);
-            log.warn("本地任务发送失败，等待后续重试，messageId={}, bizType={}, eventType={}, bizId={}, retry={}/{}, nextRetryTime={}",
+            log.warn("local task send failed, waiting retry, messageId={}, bizType={}, eventType={}, bizId={}, retry={}/{}, nextRetryTime={}",
                     task.getMessageId(),
                     task.getBizType(),
                     task.getEventType(),

@@ -5,6 +5,7 @@ import cn.yy.myrent.entity.AiChatSession;
 import cn.yy.myrent.service.ai.chat.tools.GetHouseDetailTool;
 import cn.yy.myrent.service.ai.chat.tools.SearchHousesTool;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -111,13 +112,15 @@ public class AiChatServiceImpl implements AiChatService {
         CompletableFuture.runAsync(() -> {
             try {
                 AiChatSession session = (sessionId != null)
-                        ? resolveExistingSession(userId, sessionId)
-                        : historyService.getOrCreateSession(userId);
+                        ? historyService.getOwnedSession(userId, sessionId)
+                        : historyService.createSession(userId);
                 Long actualSessionId = session.getId();
+                sendSessionEvent(emitter, actualSessionId);
 
                 List<AiChatMessage> incrementalMessages = historyService.loadMessagesSinceLatestSummary(actualSessionId);
                 List<Message> historyMessages = buildHistory(incrementalMessages);
                 saveUserMessage(actualSessionId, userMessage);
+                historyService.touchSession(actualSessionId, userMessage);
 
                 ValidationIssue validationIssue = validateUserMessage(userMessage);
                 if (validationIssue != null) {
@@ -152,6 +155,7 @@ public class AiChatServiceImpl implements AiChatService {
                         .blockLast();
 
                 persistToolInteractions(actualSessionId, toolCalls, toolExecutions);
+                emitSearchHouseResults(toolExecutions, emitter);
 
                 if (assistantText.length() > 0) {
                     saveAssistantMessage(actualSessionId, assistantText.toString());
@@ -251,6 +255,37 @@ public class AiChatServiceImpl implements AiChatService {
         }
 
         historyService.saveMessages(messages);
+    }
+
+    void emitSearchHouseResults(List<ToolExecutionRecord> toolExecutions, SseEmitter emitter) {
+        if (toolExecutions == null || toolExecutions.isEmpty()) {
+            return;
+        }
+        for (ToolExecutionRecord toolExecution : toolExecutions) {
+            sendHousesEventIfPresent(emitter, toolExecution.toolName(), toolExecution.result());
+        }
+    }
+
+    boolean sendHousesEventIfPresent(SseEmitter emitter, String toolName, String toolResult) {
+        if (!"searchHouses".equals(toolName) || !StringUtils.hasText(toolResult)) {
+            return false;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(toolResult);
+            JsonNode houses = root.get("houses");
+            if (houses == null || !houses.isArray() || houses.isEmpty()) {
+                return false;
+            }
+
+            sendSse(emitter, "houses", objectMapper.writeValueAsString(new HousesEvent(
+                    root.path("location").asText(""),
+                    houses
+            )));
+            return true;
+        } catch (Exception ex) {
+            log.warn("Failed to stream house recommendation cards, toolName={}", toolName, ex);
+            return false;
+        }
     }
 
     private ToolExecutionRecord matchExecution(ToolCallSnapshot toolCall, List<ToolExecutionRecord> executionPool) {
@@ -454,11 +489,25 @@ public class AiChatServiceImpl implements AiChatService {
         }
     }
 
+    private void sendSessionEvent(SseEmitter emitter, Long sessionId) {
+        try {
+            sendSse(emitter, "session", objectMapper.writeValueAsString(new SessionEvent(sessionId)));
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to stream AI session event", e);
+        }
+    }
+
     private void sendSse(SseEmitter emitter, String eventName, String data) throws IOException {
         emitter.send(SseEmitter.event().name(eventName).data(data));
     }
 
     private record TextContent(String content) {
+    }
+
+    private record SessionEvent(Long sessionId) {
+    }
+
+    private record HousesEvent(String location, JsonNode houses) {
     }
 
     private record ErrorEvent(String message) {

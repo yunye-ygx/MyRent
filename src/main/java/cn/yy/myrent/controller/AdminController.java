@@ -5,6 +5,7 @@ import cn.yy.myrent.entity.House;
 import cn.yy.myrent.entity.Order;
 import cn.yy.myrent.entity.Payment;
 import cn.yy.myrent.entity.User;
+import cn.yy.myrent.service.IHouseCommandService;
 import cn.yy.myrent.service.IHouseService;
 import cn.yy.myrent.service.IOrderService;
 import cn.yy.myrent.service.IPaymentService;
@@ -28,6 +29,7 @@ public class AdminController {
 
     @Autowired private IUserService userService;
     @Autowired private IHouseService houseService;
+    @Autowired private IHouseCommandService houseCommandService;
     @Autowired private IOrderService orderService;
     @Autowired private IPaymentService paymentService;
 
@@ -96,7 +98,10 @@ public class AdminController {
         house.setVersion(0);
         house.setAuditStatus(1);
         house.setCreateTime(LocalDateTime.now());
-        houseService.save(house);
+        house.setTotalCost(null);
+        if (!houseCommandService.createHouseWithSync(house)) {
+            return Result.error("发布房源失败");
+        }
         return Result.success("发布成功", house.getId());
     }
 
@@ -104,15 +109,16 @@ public class AdminController {
     @Operation(summary = "编辑房源")
     public Result<Void> updateHouse(@PathVariable Long id, @RequestBody House house) {
         house.setId(id);
+        house.setTotalCost(null);
         house.setStatus(null);
         house.setVersion(null);
-        return houseService.updateById(house) ? Result.success() : Result.error("房源不存在");
+        return houseCommandService.updateHouseWithSync(id, house) ? Result.success() : Result.error("房源不存在");
     }
 
     @DeleteMapping("/houses/{id}")
     @Operation(summary = "删除房源")
     public Result<Void> deleteHouse(@PathVariable Long id) {
-        return houseService.removeById(id) ? Result.success() : Result.error("房源不存在");
+        return houseCommandService.deleteHouseWithSync(id) ? Result.success() : Result.error("房源不存在");
     }
 
     @PutMapping("/houses/{id}/approve")

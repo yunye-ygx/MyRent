@@ -1,13 +1,8 @@
 package cn.yy.myrent.service.impl;
 
 import cn.yy.myrent.common.NotificationType;
-import cn.yy.myrent.entity.House;
-import cn.yy.myrent.entity.HouseFavorite;
 import cn.yy.myrent.entity.Notification;
-import cn.yy.myrent.entity.PublisherFollow;
-import cn.yy.myrent.mapper.HouseFavoriteMapper;
 import cn.yy.myrent.mapper.NotificationMapper;
-import cn.yy.myrent.mapper.PublisherFollowMapper;
 import cn.yy.myrent.service.INotificationService;
 import cn.yy.myrent.vo.UnreadTotalVO;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -22,20 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Notification> implements INotificationService {
 
-    private static final int ACTIVE_STATUS = 1;
-    private static final int HOUSE_STATUS_OFFLINE = 0;
-    private static final int HOUSE_STATUS_RENTED = 2;
-
     private final NotificationMapper notificationMapper;
-    private final HouseFavoriteMapper houseFavoriteMapper;
-    private final PublisherFollowMapper publisherFollowMapper;
 
-    public NotificationServiceImpl(NotificationMapper notificationMapper,
-                                   HouseFavoriteMapper houseFavoriteMapper,
-                                   PublisherFollowMapper publisherFollowMapper) {
+    public NotificationServiceImpl(NotificationMapper notificationMapper) {
         this.notificationMapper = notificationMapper;
-        this.houseFavoriteMapper = houseFavoriteMapper;
-        this.publisherFollowMapper = publisherFollowMapper;
     }
 
     @Override
@@ -101,120 +86,13 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void notifyHouseCreated(House house) {
-        if (house == null || house.getId() == null || house.getPublisherUserId() == null) {
-            return;
-        }
-
-        for (PublisherFollow follow : publisherFollowMapper.selectList(new QueryWrapper<PublisherFollow>()
-                .eq("publisher_user_id", house.getPublisherUserId())
-                .eq("status", ACTIVE_STATUS))) {
-            insertInbox(
-                    follow.getUserId(),
-                    NotificationType.PUBLISHER_NEW_HOUSE,
-                    "Publisher posted a new house",
-                    safeHouseTitle(house) + " is now available.",
-                    "publisher:" + house.getPublisherUserId() + ":house:" + house.getId() + ":new",
-                    house.getId(),
-                    "{\"houseId\":" + house.getId() + ",\"publisherUserId\":" + house.getPublisherUserId() + "}"
-            );
-        }
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void notifyHouseUpdated(House oldHouse, House newHouse) {
-        if (oldHouse == null || newHouse == null || oldHouse.getId() == null) {
-            return;
-        }
-
-        if (oldHouse.getPrice() != null
-                && newHouse.getPrice() != null
-                && !oldHouse.getPrice().equals(newHouse.getPrice())) {
-            log.info("房源价格发生变化 {}", oldHouse.getId());
-            fanoutToFavoriteUsers(
-                    oldHouse.getId(),
-                    NotificationType.HOUSE_PRICE_CHANGED,
-                    "Price changed",
-                    "The monthly price changed from " + oldHouse.getPrice() + " to " + newHouse.getPrice() + ".",
-                    "house:" + oldHouse.getId() + ":price:" + oldHouse.getPrice() + "->" + newHouse.getPrice(),
-                    newHouse.getId(),
-                    "{\"houseId\":" + newHouse.getId() + ",\"oldPrice\":" + oldHouse.getPrice() + ",\"newPrice\":" + newHouse.getPrice() + "}"
-            );
-        }
-
-        if (!equalsStatus(oldHouse.getStatus(), newHouse.getStatus())
-                && Integer.valueOf(HOUSE_STATUS_RENTED).equals(newHouse.getStatus())) {
-            log.info("房源状态发生变化 {}", oldHouse.getId());
-            fanoutToFavoriteUsers(
-                    oldHouse.getId(),
-                    NotificationType.HOUSE_RENTED,
-                    "House rented",
-                    safeHouseTitle(oldHouse) + " has been rented.",
-                    "house:" + oldHouse.getId() + ":type:HOUSE_RENTED:version:" + normalizeVersion(newHouse),
-                    newHouse.getId(),
-                    "{\"houseId\":" + newHouse.getId() + ",\"status\":" + HOUSE_STATUS_RENTED + "}"
-            );
-        }
-
-        if (!equalsStatus(oldHouse.getStatus(), newHouse.getStatus())
-                && Integer.valueOf(HOUSE_STATUS_OFFLINE).equals(newHouse.getStatus())) {
-            log.info("房源状态发生变化 {}", oldHouse.getId());
-            fanoutToFavoriteUsers(
-                    oldHouse.getId(),
-                    NotificationType.HOUSE_OFFLINE,
-                    "House offline",
-                    safeHouseTitle(oldHouse) + " is now offline.",
-                    "house:" + oldHouse.getId() + ":type:HOUSE_OFFLINE:version:" + normalizeVersion(newHouse),
-                    newHouse.getId(),
-                    "{\"houseId\":" + newHouse.getId() + ",\"status\":" + HOUSE_STATUS_OFFLINE + "}"
-            );
-        }
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void notifyHouseDeleted(House oldHouse) {
-        if (oldHouse == null || oldHouse.getId() == null) {
-            return;
-        }
-
-        fanoutToFavoriteUsers(
-                oldHouse.getId(),
-                NotificationType.HOUSE_DELETED,
-                "House deleted",
-                safeHouseTitle(oldHouse) + " is no longer available.",
-                "house:" + oldHouse.getId() + ":type:HOUSE_DELETED:version:delete",
-                oldHouse.getId(),
-                "{\"houseId\":" + oldHouse.getId() + ",\"deleted\":true}"
-        );
-    }
-
-    private void fanoutToFavoriteUsers(Long houseId,
-                                       String type,
-                                       String title,
-                                       String content,
-                                       String bizKey,
-                                       Long targetHouseId,
-                                       String extraJson) {
-        if (houseId == null || targetHouseId == null) {
-            return;
-        }
-
-        for (HouseFavorite favorite : houseFavoriteMapper.selectList(new QueryWrapper<HouseFavorite>()
-                .eq("house_id", houseId)
-                .eq("status", ACTIVE_STATUS))) {
-            insertInbox(favorite.getUserId(), type, title, content, bizKey, targetHouseId, extraJson);
-        }
-    }
-
-    private void insertInbox(Long userId,
-                             String type,
-                             String title,
-                             String content,
-                             String bizKey,
-                             Long targetId,
-                             String extraJson) {
+    public void createHouseNotification(Long userId,
+                                        String type,
+                                        String title,
+                                        String content,
+                                        String bizKey,
+                                        Long targetId,
+                                        String extraJson) {
         if (userId == null || type == null || bizKey == null || targetId == null) {
             return;
         }
@@ -230,13 +108,11 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
                     .setRedirectTargetId(targetId)
                     .setExtraJson(extraJson)
                     .setIsRead(0));
-        } catch (Exception ignore) {
+            log.info("notification created, userId={}, type={}, bizKey={}, targetId={}", userId, type, bizKey, targetId);
+        } catch (Exception e) {
+            log.warn("notification insert skipped (possible duplicate), userId={}, type={}, bizKey={}", userId, type, bizKey, e);
             // rely on unique(user_id, biz_key) to keep retries idempotent
         }
-    }
-
-    private boolean equalsStatus(Integer left, Integer right) {
-        return left == null ? right == null : left.equals(right);
     }
 
     private QueryWrapper<Notification> visibleInboxQuery(Long userId) {
@@ -249,15 +125,5 @@ public class NotificationServiceImpl extends ServiceImpl<NotificationMapper, Not
 
     private boolean shouldRemoveAfterRead(String type) {
         return NotificationType.PUBLISHER_NEW_HOUSE.equals(type);
-    }
-
-    private int normalizeVersion(House house) {
-        return house == null || house.getVersion() == null ? 0 : house.getVersion();
-    }
-
-    private String safeHouseTitle(House house) {
-        return house == null || house.getTitle() == null || house.getTitle().isBlank()
-                ? "This house"
-                : house.getTitle();
     }
 }
