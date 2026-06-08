@@ -29,9 +29,9 @@ const routes = [
         component: () => import('@/views/HouseListView.vue')
       },
       {
-        path: 'ai-recommend',
-        name: 'ai-recommend',
-        component: () => import('@/views/AiRecommendView.vue')
+        path: 'ai-chat',
+        name: 'ai-chat',
+        component: () => import('@/views/AiChatView.vue')
       },
       {
         path: 'messages',
@@ -77,6 +77,11 @@ const routes = [
         path: 'mine/student-benefits',
         name: 'mine-student-benefits',
         component: () => import('@/views/mine/StudentBenefitsView.vue')
+      },
+      {
+        path: 'mine/alerts',
+        name: 'mine-alerts',
+        component: () => import('@/views/mine/MineHouseAlertView.vue')
       }
     ]
   },

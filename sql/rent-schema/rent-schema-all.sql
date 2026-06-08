@@ -268,6 +268,24 @@ CREATE TABLE `notification` (
   KEY `idx_notification_user_read_time` (`user_id`,`is_read`,`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='in-app notification inbox';
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `house_alert`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `house_alert` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'primary key',
+  `user_id` bigint NOT NULL COMMENT 'subscriber user id',
+  `city` varchar(32) NOT NULL COMMENT 'city',
+  `region` varchar(32) NOT NULL COMMENT 'region',
+  `max_price` int NOT NULL COMMENT 'max monthly price, same unit as house.price',
+  `rent_type` tinyint NOT NULL COMMENT '1-whole rent, 2-shared rent',
+  `status` tinyint NOT NULL DEFAULT '1' COMMENT '1-active, 0-disabled',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'update time',
+  PRIMARY KEY (`id`),
+  KEY `idx_house_alert_match` (`status`,`city`,`region`,`rent_type`,`max_price`),
+  KEY `idx_house_alert_user` (`user_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='house alert subscription';
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `publisher_follow`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;

@@ -41,7 +41,7 @@ describe('AppTopNav', () => {
         items: [
           { label: '首页', to: '/home' },
           { label: '找房', to: '/houses' },
-          { label: '智能推荐', to: '/ai-recommend', featured: true, icon: 'dog' },
+          { label: 'AI 助手', to: '/ai-chat', featured: true, icon: 'dog' },
           { label: '消息', to: '/messages' }
         ],
         currentPath: '/houses'
@@ -54,14 +54,14 @@ describe('AppTopNav', () => {
     })
 
     expect(wrapper.text()).toContain('青年租房')
-    expect(wrapper.text()).toContain('智能推荐')
-    expect(wrapper.find('[data-nav="/ai-recommend"]').classes()).toContain('is-featured')
+    expect(wrapper.text()).toContain('AI 助手')
+    expect(wrapper.find('[data-nav="/ai-chat"]').classes()).toContain('is-featured')
     expect(wrapper.get('[data-nav="/houses"]').classes()).toContain('is-active')
     expect(wrapper.findAll('.city-select option').map((option) => option.text())).toEqual(
       HOT_CITY_OPTIONS.map((city) => city.name)
     )
     expect(
-      wrapper.find('[data-nav="/ai-recommend"] .featured-core svg.roam-mascot-icon').exists()
+      wrapper.find('[data-nav="/ai-chat"] .featured-core svg.roam-mascot-icon').exists()
     ).toBe(true)
   })
 
@@ -71,10 +71,10 @@ describe('AppTopNav', () => {
         items: [
           { label: '首页', to: '/home' },
           { label: '找房', to: '/houses' },
-          { label: '智能推荐', to: '/ai-recommend', featured: true, icon: 'dog' },
+          { label: 'AI 助手', to: '/ai-chat', featured: true, icon: 'dog' },
           { label: '消息', to: '/messages' }
         ],
-        currentPath: '/ai-recommend'
+        currentPath: '/ai-chat'
       },
       global: {
         stubs: {
@@ -83,7 +83,7 @@ describe('AppTopNav', () => {
       }
     })
 
-    expect(wrapper.get('[data-nav="/ai-recommend"]').classes()).toContain('is-active')
+    expect(wrapper.get('[data-nav="/ai-chat"]').classes()).toContain('is-active')
   })
 
   it('switches current city when selecting another hot city', async () => {
@@ -92,7 +92,7 @@ describe('AppTopNav', () => {
         items: [
           { label: '首页', to: '/home' },
           { label: '找房', to: '/houses' },
-          { label: '智能推荐', to: '/ai-recommend', featured: true, icon: 'dog' },
+          { label: 'AI 助手', to: '/ai-chat', featured: true, icon: 'dog' },
           { label: '消息', to: '/messages' }
         ],
         currentPath: '/home'

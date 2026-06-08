@@ -2,6 +2,7 @@ package cn.yy.myrent.sync.house.strategy;
 
 import cn.yy.myrent.config.RabbitMQConfig;
 import cn.yy.myrent.sync.house.HouseSyncConstants;
+import cn.yy.myrent.sync.house.model.HouseChangedEvent;
 import cn.yy.myrent.sync.house.model.HouseNormalRetryMessage;
 import cn.yy.myrent.sync.house.model.HouseSyncContext;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -33,13 +34,13 @@ public class NormalHouseSyncDispatchStrategy implements HouseSyncDispatchStrateg
     @Override
     public void dispatch(HouseSyncContext context) {
         String messageId = UUID.randomUUID().toString().replace("-", "");
-        String messageBody = buildMinimalMessage(context, messageId);
+        String messageBody = buildMessage(context, messageId);
         try {
             rabbitTemplate.convertAndSend(
                     RabbitMQConfig.HOUSE_SYNC_EXCHANGE,
                     RabbitMQConfig.HOUSE_SYNC_ROUTING_KEY,
                     messageBody);
-            log.info("普通房源同步事件发送MQ成功，houseId={}, eventType={}, messageId={}, reason={}",
+            log.info("normal house sync event sent, houseId={}, eventType={}, messageId={}, reason={}",
                     context.getHouseId(),
                     context.getEventType(),
                     messageId,
@@ -47,13 +48,13 @@ public class NormalHouseSyncDispatchStrategy implements HouseSyncDispatchStrateg
         } catch (Exception e) {
             try {
                 pushRetryMessage(messageBody);
-                log.warn("普通房源同步事件发送MQ失败，已进入Redis补偿，houseId={}, eventType={}, messageId={}",
+                log.warn("normal house sync event send failed, pushed to redis retry, houseId={}, eventType={}, messageId={}",
                         context.getHouseId(),
                         context.getEventType(),
                         messageId,
                         e);
             } catch (Exception retryException) {
-                log.error("普通房源同步事件发送MQ失败且写入Redis补偿也失败，houseId={}, eventType={}, messageId={}",
+                log.error("normal house sync event send and retry enqueue both failed, houseId={}, eventType={}, messageId={}",
                         context.getHouseId(),
                         context.getEventType(),
                         messageId,
@@ -62,11 +63,18 @@ public class NormalHouseSyncDispatchStrategy implements HouseSyncDispatchStrateg
         }
     }
 
-    private String buildMinimalMessage(HouseSyncContext context, String messageId) {
+    private String buildMessage(HouseSyncContext context, String messageId) {
+        if (context != null && context.getEvent() != null) {
+            HouseChangedEvent event = context.getEvent();
+            if (event.getEventId() == null || event.getEventId().isBlank()) {
+                event.setEventId(messageId);
+            }
+            return toJson(event);
+        }
         Map<String, Object> message = new LinkedHashMap<>();
-        message.put("messageId", messageId);
-        message.put("houseId", context.getHouseId());
-        message.put("eventType", context.getEventType());
+        message.put("eventId", messageId);
+        message.put("houseId", context == null ? null : context.getHouseId());
+        message.put("eventType", context == null ? null : context.getEventType());
         return toJson(message);
     }
 
@@ -84,7 +92,7 @@ public class NormalHouseSyncDispatchStrategy implements HouseSyncDispatchStrateg
         try {
             return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("房源同步消息序列化失败", e);
+            throw new IllegalStateException("house sync message serialization failed", e);
         }
     }
 }

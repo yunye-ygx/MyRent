@@ -1,6 +1,5 @@
 package cn.yy.myrent.service;
 
-import cn.yy.myrent.entity.House;
 import cn.yy.myrent.entity.Notification;
 import cn.yy.myrent.vo.UnreadTotalVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -16,9 +15,11 @@ public interface INotificationService extends IService<Notification> {
 
     void markAllRead(Long userId);
 
-    void notifyHouseCreated(House house);
-
-    void notifyHouseUpdated(House oldHouse, House newHouse);
-
-    void notifyHouseDeleted(House oldHouse);
+    void createHouseNotification(Long userId,
+                                 String type,
+                                 String title,
+                                 String content,
+                                 String bizKey,
+                                 Long targetId,
+                                 String extraJson);
 }

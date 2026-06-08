@@ -1,6 +1,6 @@
 package cn.yy.myrent.consumer;
 
-import cn.yy.myrent.sync.house.model.HouseSyncMessage;
+import cn.yy.myrent.sync.house.model.HouseChangedEvent;
 import cn.yy.myrent.sync.house.service.HouseHotSyncService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rabbitmq.client.Channel;
@@ -33,15 +33,15 @@ class HouseHotSyncConsumerTest {
 
     @Test
     void consumeShouldSyncHouseChangeAndAck() throws Exception {
-        HouseSyncMessage syncMessage = new HouseSyncMessage();
-        syncMessage.setHouseId(7L);
-        syncMessage.setEventType("HOUSE_ES_UPSERT");
-        syncMessage.setMessageId("m1");
+        HouseChangedEvent event = new HouseChangedEvent();
+        event.setHouseId(7L);
+        event.setEventType("HOUSE_CREATED");
+        event.setEventId("evt-1");
         MessageProperties properties = new MessageProperties();
         properties.setDeliveryTag(99L);
         Message message = new Message(new byte[0], properties);
         String body = "{\"houseId\":7}";
-        when(objectMapper.readValue(body, HouseSyncMessage.class)).thenReturn(syncMessage);
+        when(objectMapper.readValue(body, HouseChangedEvent.class)).thenReturn(event);
 
         consumer.consume(body, message, channel);
 
@@ -51,13 +51,13 @@ class HouseHotSyncConsumerTest {
 
     @Test
     void consumeShouldNackWhenSyncFails() throws Exception {
-        HouseSyncMessage syncMessage = new HouseSyncMessage();
-        syncMessage.setHouseId(7L);
+        HouseChangedEvent event = new HouseChangedEvent();
+        event.setHouseId(7L);
         MessageProperties properties = new MessageProperties();
         properties.setDeliveryTag(99L);
         Message message = new Message(new byte[0], properties);
         String body = "{\"houseId\":7}";
-        when(objectMapper.readValue(body, HouseSyncMessage.class)).thenReturn(syncMessage);
+        when(objectMapper.readValue(body, HouseChangedEvent.class)).thenReturn(event);
         doThrow(new RuntimeException("redis down")).when(houseHotSyncService).syncHouseChange(7L);
 
         consumer.consume(body, message, channel);

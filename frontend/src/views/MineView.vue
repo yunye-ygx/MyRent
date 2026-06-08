@@ -159,6 +159,7 @@ import { computed, defineComponent, h, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchMyBrowseHistory } from '@/api/history'
 import { fetchMyFavoritePage } from '@/api/house'
+import { fetchMyHouseAlerts } from '@/api/houseAlert'
 import { fetchMyOrderPage } from '@/api/order'
 import { fetchCurrentUser } from '@/api/user'
 import EmptyState from '@/components/EmptyState.vue'
@@ -176,6 +177,7 @@ const currentUser = ref(null)
 const favoriteTotal = ref(0)
 const historyTotal = ref(0)
 const orders = ref([])
+const houseAlertTotal = ref(0)
 
 const displayName = computed(() => currentUser.value?.name || authStore.profile?.name || '未命名用户')
 const avatarText = computed(() => {
@@ -279,6 +281,12 @@ const todoItems = computed(() => {
 })
 
 const serviceItems = computed(() => [
+  {
+    key: 'alerts',
+    label: '找房订阅',
+    hint: houseAlertTotal.value > 0 ? `${houseAlertTotal.value} 条在用` : '新增或管理订阅提醒',
+    icon: 'spark'
+  },
   {
     key: 'profile',
     label: '个人资料',
@@ -438,10 +446,11 @@ async function loadDashboard() {
   dashboardError.value = ''
 
   const failedModules = []
-  const [favoriteResult, historyResult, orderResult, unreadResult] = await Promise.allSettled([
+  const [favoriteResult, historyResult, orderResult, alertResult, unreadResult] = await Promise.allSettled([
     fetchMyFavoritePage({ current: 1, size: 1 }),
     fetchMyBrowseHistory({ current: 1, size: 1 }),
     fetchAllOrders(),
+    fetchMyHouseAlerts(),
     messageCenterStore.loadUnreadTotals({ force: true })
   ])
 
@@ -464,6 +473,13 @@ async function loadDashboard() {
   } else {
     orders.value = []
     failedModules.push('订单')
+  }
+
+  if (alertResult.status === 'fulfilled') {
+    houseAlertTotal.value = Array.isArray(alertResult.value) ? alertResult.value.length : 0
+  } else {
+    houseAlertTotal.value = 0
+    failedModules.push('找房订阅')
   }
 
   if (unreadResult.status !== 'fulfilled') {
@@ -526,6 +542,10 @@ function openModule(key, label) {
   }
   if (key === 'student-benefits') {
     router.push('/mine/student-benefits')
+    return
+  }
+  if (key === 'alerts') {
+    router.push('/mine/alerts')
     return
   }
   router.push(`/placeholder/${key}?title=${encodeURIComponent(label)}`)
