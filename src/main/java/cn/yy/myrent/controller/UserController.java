@@ -1,5 +1,6 @@
 package cn.yy.myrent.controller;
 
+import cn.dev33.satoken.stp.StpUtil;
 import cn.yy.myrent.common.JwtTokenUtil;
 import cn.yy.myrent.common.Result;
 import cn.yy.myrent.common.UserContext;
@@ -33,51 +34,48 @@ public class UserController {
     private JwtTokenUtil jwtTokenUtil;
 
     @PostMapping("/register")
-    @Operation(summary = "用户注册", description = "手机号+密码注册")
+    @Operation(summary = "用户注册", description = "手机号 + 密码注册")
     public Result<User> register(@RequestBody UserPhoneReqDTO reqDTO) {
         if (reqDTO == null) {
             return Result.error("参数不能为空");
         }
-        try {
-            User user = userService.registerByPhone(reqDTO.getPhone(), reqDTO.getPassword(), reqDTO.getName());
-            return Result.success("注册成功", user);
-        } catch (RuntimeException e) {
-            return Result.error(e.getMessage());
-        }
+        User user = userService.registerByPhone(reqDTO.getPhone(), reqDTO.getPassword(), reqDTO.getName());
+        return Result.success("注册成功", user);
     }
 
     @PostMapping("/login")
-    @Operation(summary = "用户登录", description = "手机号+密码登录")
+    @Operation(summary = "用户登录", description = "手机号 + 密码登录")
     public Result<LoginVO> login(@RequestBody UserPhoneReqDTO reqDTO) {
-        if (reqDTO == null) return Result.error("参数不能为空");
-        try {
-            User user = userService.loginByPhone(reqDTO.getPhone(), reqDTO.getPassword());
-            if (Integer.valueOf(1).equals(user.getBanned())) {
-                return Result.error("账号已被封禁，请联系管理员");
-            }
-            Integer role = user.getRole() != null ? user.getRole() : 0;
-            String token = jwtTokenUtil.generateToken(user.getId(), user.getPhone(), role);
-            LoginVO loginVO = new LoginVO();
-            loginVO.setToken(token);
-            loginVO.setUserId(user.getId());
-            loginVO.setPhone(user.getPhone());
-            loginVO.setName(user.getName());
-            loginVO.setRole(role);
-            return Result.success("登录成功", loginVO);
-        } catch (RuntimeException e) {
-            return Result.error(e.getMessage());
+        if (reqDTO == null) {
+            return Result.error("参数不能为空");
         }
+        User user = userService.loginByPhone(reqDTO.getPhone(), reqDTO.getPassword());
+        if (Integer.valueOf(1).equals(user.getBanned())) {
+            return Result.error("账号已被封禁，请联系管理员");
+        }
+        Integer role = user.getRole() != null ? user.getRole() : 0;
+        String token = jwtTokenUtil.generateToken(user.getId(), user.getPhone(), role);
+        LoginVO loginVO = new LoginVO();
+        loginVO.setToken(token);
+        loginVO.setUserId(user.getId());
+        loginVO.setPhone(user.getPhone());
+        loginVO.setName(user.getName());
+        loginVO.setRole(role);
+        return Result.success("登录成功", loginVO);
+    }
+
+    @PostMapping("/logout")
+    @Operation(summary = "用户退出登录")
+    public Result<Void> logout() {
+        StpUtil.logout();
+        return Result.success();
     }
 
     @GetMapping("/me")
     @Operation(summary = "获取当前登录用户资料")
     public Result<User> getCurrentUserProfile() {
-        try {
-            Long userId = UserContext.requireCurrentUserId();
-            return Result.success(userService.getSafeById(userId));
-        } catch (RuntimeException e) {
-            return Result.error(e.getMessage());
-        }
+        Long userId = UserContext.requireCurrentUserId();
+        return Result.success(userService.getSafeById(userId));
     }
 
     @PutMapping("/me/name")
@@ -86,23 +84,15 @@ public class UserController {
         if (reqDTO == null) {
             return Result.error("参数不能为空");
         }
-        try {
-            Long userId = UserContext.requireCurrentUserId();
-            User user = userService.updateName(userId, reqDTO.getName());
-            return Result.success("修改成功", user);
-        } catch (RuntimeException e) {
-            return Result.error(e.getMessage());
-        }
+        Long userId = UserContext.requireCurrentUserId();
+        User user = userService.updateName(userId, reqDTO.getName());
+        return Result.success("修改成功", user);
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "按ID查询用户")
+    @Operation(summary = "按 ID 查询用户")
     public Result<User> getById(@PathVariable("id") Long id) {
-        try {
-            return Result.success(userService.getSafeById(id));
-        } catch (RuntimeException e) {
-            return Result.error(e.getMessage());
-        }
+        return Result.success(userService.getSafeById(id));
     }
 
     @GetMapping("/page")
@@ -128,12 +118,8 @@ public class UserController {
                 || !StringUtils.hasText(user.getName())) {
             return Result.error("手机号、密码和昵称不能为空");
         }
-        try {
-            User created = userService.registerByPhone(user.getPhone(), user.getPassword(), user.getName());
-            return Result.success("新增用户成功", created.getId());
-        } catch (RuntimeException e) {
-            return Result.error(e.getMessage());
-        }
+        User created = userService.registerByPhone(user.getPhone(), user.getPassword(), user.getName());
+        return Result.success("新增用户成功", created.getId());
     }
 
     @PutMapping("/{id}")

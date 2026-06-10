@@ -10,6 +10,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.HandlerInterceptor;
 
+import java.util.Map;
+
 @Component
 @Slf4j
 public class UserContextInterceptor implements HandlerInterceptor {
@@ -36,10 +38,10 @@ public class UserContextInterceptor implements HandlerInterceptor {
         }
 
         try {
-            Long userId = jwtTokenUtil.parseUserId(token);
-            UserContext.setCurrentUserId(userId);
-            UserContext.setCurrentRole(jwtTokenUtil.parseRole(token));
-            log.debug("鉴权通过，userId={}, path={}", userId, requestPath);
+            Map<String, Object> claims = jwtTokenUtil.parseAndVerify(token);
+            UserContext.setCurrentUserId((Long) claims.get("userId"));
+            UserContext.setCurrentRole((Integer) claims.get("role"));
+            log.debug("鉴权通过，userId={}, path={}", claims.get("userId"), requestPath);
             return true;
         } catch (RuntimeException e) {
             log.warn("鉴权失败：token解析异常，path={}, message={}", requestPath, e.getMessage());

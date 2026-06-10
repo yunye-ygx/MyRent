@@ -44,6 +44,13 @@ springdoc:
   swagger-ui:
     enabled: true
 
+sa-token:
+  token-name: Authorization
+  token-prefix: Bearer
+  timeout: ${MYRENT_JWT_EXPIRE_SECONDS:86400}
+  is-read-header: true
+  is-read-cookie: false
+
 myrent:
   jwt:
     secret: ${MYRENT_JWT_SECRET:MyRentJwtSecretChangeMe}

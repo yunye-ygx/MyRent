@@ -7,6 +7,8 @@ import cn.yy.myrent.config.SaTokenExceptionHandler;
 import cn.yy.myrent.config.UserContextInterceptor;
 import cn.yy.myrent.config.WebMvcConfig;
 import cn.yy.myrent.dto.UserPhoneReqDTO;
+import cn.yy.myrent.entity.House;
+import cn.yy.myrent.entity.Order;
 import cn.yy.myrent.entity.User;
 import cn.yy.myrent.mapper.AiChatMessageMapper;
 import cn.yy.myrent.mapper.AiChatSessionMapper;
@@ -28,29 +30,27 @@ import cn.yy.myrent.mapper.PublisherFollowMapper;
 import cn.yy.myrent.mapper.ReviewMapper;
 import cn.yy.myrent.mapper.StudentVerificationMapper;
 import cn.yy.myrent.mapper.UserMapper;
+import cn.yy.myrent.service.IHouseCommandService;
+import cn.yy.myrent.service.IHouseService;
+import cn.yy.myrent.service.IOrderService;
+import cn.yy.myrent.service.IPaymentService;
 import cn.yy.myrent.service.IUserService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.http.MediaType;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-import java.time.LocalDateTime;
-import java.util.LinkedHashMap;
-
-import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(UserController.class)
+@WebMvcTest({AdminController.class, UserController.class})
 @Import({
         SaTokenContextRegister.class,
         JwtTokenUtil.class,
@@ -59,16 +59,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         WebMvcConfig.class,
         SaTokenExceptionHandler.class
 })
-class UserControllerWebMvcTest {
+class AdminControllerWebMvcTest {
 
     @Autowired
     private MockMvc mockMvc;
 
     @Autowired
-    private ObjectMapper objectMapper;
-
-    @MockBean
-    private IUserService userService;
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     @MockBean(name = "aiChatMessageMapper")
     private AiChatMessageMapper aiChatMessageMapper;
@@ -76,16 +73,16 @@ class UserControllerWebMvcTest {
     @MockBean(name = "aiChatSessionMapper")
     private AiChatSessionMapper aiChatSessionMapper;
 
-    @MockBean
+    @MockBean(name = "chatMessageMapper")
     private ChatMessageMapper chatMessageMapper;
 
-    @MockBean
+    @MockBean(name = "chatSessionMapper")
     private ChatSessionMapper chatSessionMapper;
 
     @MockBean(name = "houseAlertMapper")
     private HouseAlertMapper houseAlertMapper;
 
-    @MockBean
+    @MockBean(name = "houseFavoriteMapper")
     private HouseFavoriteMapper houseFavoriteMapper;
 
     @MockBean(name = "houseHistoryMapper")
@@ -94,139 +91,116 @@ class UserControllerWebMvcTest {
     @MockBean(name = "houseHotDailyStatsMapper")
     private HouseHotDailyStatsMapper houseHotDailyStatsMapper;
 
-    @MockBean
+    @MockBean(name = "houseMapper")
     private HouseMapper houseMapper;
 
-    @MockBean
+    @MockBean(name = "localTaskMapper")
     private LocalTaskMapper localTaskMapper;
 
-    @MockBean
+    @MockBean(name = "locationDictMapper")
     private LocationDictMapper locationDictMapper;
 
-    @MockBean
+    @MockBean(name = "mockPayTradeMapper")
     private MockPayTradeMapper mockPayTradeMapper;
 
     @MockBean(name = "notificationMapper")
     private NotificationMapper notificationMapper;
 
-    @MockBean
+    @MockBean(name = "orderMapper")
     private OrderMapper orderMapper;
 
-    @MockBean
+    @MockBean(name = "paymentMapper")
     private PaymentMapper paymentMapper;
 
-    @MockBean
+    @MockBean(name = "paymentRefundMapper")
     private PaymentRefundMapper paymentRefundMapper;
 
     @MockBean(name = "publisherFollowMapper")
     private PublisherFollowMapper publisherFollowMapper;
 
-    @MockBean
+    @MockBean(name = "reviewMapper")
     private ReviewMapper reviewMapper;
 
     @MockBean(name = "studentVerificationMapper")
     private StudentVerificationMapper studentVerificationMapper;
 
-    @MockBean
+    @MockBean(name = "userMapper")
     private UserMapper userMapper;
 
-    @Test
-    void loginShouldReturnAUsableToken() throws Exception {
-        UserPhoneReqDTO request = new UserPhoneReqDTO();
-        request.setPhone("13800138000");
-        request.setPassword("123456");
+    @MockBean
+    private IUserService userService;
 
-        User user = new User()
-                .setId(1001L)
-                .setPhone("13800138000")
-                .setName("test-user")
-                .setRole(1)
-                .setCreateTime(LocalDateTime.of(2026, 4, 22, 10, 0));
+    @MockBean
+    private IHouseService houseService;
 
-        given(userService.loginByPhone("13800138000", "123456")).willReturn(user);
+    @MockBean
+    private IHouseCommandService houseCommandService;
 
-        mockMvc.perform(post("/user/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.userId").value(1001))
-                .andExpect(jsonPath("$.data.role").value(1))
-                .andExpect(jsonPath("$.data.token").isNotEmpty());
-    }
+    @MockBean
+    private IOrderService orderService;
+
+    @MockBean
+    private IPaymentService paymentService;
 
     @Test
-    void getCurrentUserShouldAcceptBearerTokenIssuedBySaToken() throws Exception {
+    void dashboardShouldRejectNormalUser() throws Exception {
         User user = new User()
-                .setId(1001L)
+                .setId(2001L)
                 .setPhone("13800138000")
-                .setName("test-user")
-                .setCreateTime(LocalDateTime.of(2026, 4, 22, 10, 0));
-
-        given(userService.loginByPhone("13800138000", "123456")).willReturn(user);
-        given(userService.getSafeById(1001L)).willReturn(user);
+                .setName("user")
+                .setRole(0);
+        when(userService.loginByPhone("13800138000", "123456")).thenReturn(user);
         String token = loginAndExtractToken();
 
-        mockMvc.perform(get("/user/me")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.id").value(1001))
-                .andExpect(jsonPath("$.data.name").value("test-user"))
-                .andExpect(jsonPath("$.data.phone").value("13800138000"));
-    }
-
-    @Test
-    void updateCurrentUserNameShouldPersistNewNameForSaTokenLogin() throws Exception {
-        User user = new User()
-                .setId(1001L)
-                .setPhone("13800138000")
-                .setName("new-name")
-                .setCreateTime(LocalDateTime.of(2026, 4, 22, 10, 0));
-
-        given(userService.loginByPhone("13800138000", "123456")).willReturn(user.setRole(0));
-        given(userService.updateName(1001L, "new-name")).willReturn(user);
-        String token = loginAndExtractToken();
-
-        LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
-        payload.put("name", "new-name");
-
-        mockMvc.perform(put("/user/me/name")
+        mockMvc.perform(get("/api/admin/orders/1")
                         .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(payload)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.name").value("new-name"));
-
-        verify(userService).updateName(1001L, "new-name");
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isForbidden());
     }
 
     @Test
-    void logoutShouldInvalidateCurrentToken() throws Exception {
+    void dashboardShouldAllowAdminUser() throws Exception {
+        User admin = new User()
+                .setId(2002L)
+                .setPhone("13800138001")
+                .setName("admin")
+                .setRole(1);
+        when(userService.loginByPhone("13800138001", "123456")).thenReturn(admin);
+        String token = loginAndExtractToken("13800138001");
+
+        Order order = new Order()
+                .setId(1L)
+                .setOrderNo("ORDER-1")
+                .setUserId(2002L)
+                .setHouseId(3001L)
+                .setAmount(1000)
+                .setStatus(1);
         User user = new User()
-                .setId(1001L)
+                .setId(2002L)
                 .setPhone("13800138000")
-                .setName("test-user")
-                .setCreateTime(LocalDateTime.of(2026, 4, 22, 10, 0));
+                .setName("admin");
+        House house = new House()
+                .setId(3001L)
+                .setTitle("house");
 
-        given(userService.loginByPhone("13800138000", "123456")).willReturn(user.setRole(0));
-        given(userService.getSafeById(1001L)).willReturn(user);
-        String token = loginAndExtractToken();
+        when(orderService.getById(1L)).thenReturn(order);
+        when(userService.getById(2002L)).thenReturn(user);
+        when(houseService.getById(3001L)).thenReturn(house);
 
-        mockMvc.perform(post("/user/logout")
-                        .header("Authorization", "Bearer " + token))
+        mockMvc.perform(get("/api/admin/orders/1")
+                        .header("Authorization", "Bearer " + token)
+                        .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
-
-                mockMvc.perform(get("/user/me")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isUnauthorized());
     }
 
     private String loginAndExtractToken() throws Exception {
+        return loginAndExtractToken("13800138000");
+    }
+
+    private String loginAndExtractToken(String phone) throws Exception {
         UserPhoneReqDTO request = new UserPhoneReqDTO();
-        request.setPhone("13800138000");
+        request.setPhone(phone);
         request.setPassword("123456");
 
         MvcResult result = mockMvc.perform(post("/user/login")

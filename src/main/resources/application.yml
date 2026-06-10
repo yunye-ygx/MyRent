@@ -46,6 +46,13 @@ springdoc:
   swagger-ui:
     enabled: true
 
+sa-token:
+  token-name: Authorization
+  token-prefix: Bearer
+  timeout: 86400
+  is-read-header: true
+  is-read-cookie: false
+
 
 
 myrent:
